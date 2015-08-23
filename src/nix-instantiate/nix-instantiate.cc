@@ -61,23 +61,30 @@ void processExpr(EvalState & state, const Strings & attrPaths,
             DrvInfos drvs;
             getDerivations(state, v, "", autoArgs, drvs, false);
             for (auto & i : drvs) {
-                Path drvPath = i.queryDrvPath();
+                try {
+                    Path drvPath = i.queryDrvPath();
 
-                /* What output do we want? */
-                std::string outputName = i.queryOutputName();
-                if (outputName == "")
-                    throw Error("derivation '%1%' lacks an 'outputName' attribute ", drvPath);
+                    /* What output do we want? */
+                    std::string outputName = i.queryOutputName();
+                    if (outputName == "")
+                        throw Error("derivation '%1%' lacks an 'outputName' attribute ", drvPath);
 
-                if (gcRoot == "")
-                    printGCWarning();
-                else {
-                    Path rootName = absPath(gcRoot);
-                    if (++rootNr > 1) rootName += "-" + std::to_string(rootNr);
-                    auto store2 = state.store.dynamic_pointer_cast<LocalFSStore>();
-                    if (store2)
-                        drvPath = store2->addPermRoot(store2->parseStorePath(drvPath), rootName);
+                    if (gcRoot == "")
+                        printGCWarning();
+                    else {
+                        Path rootName = absPath(gcRoot);
+                        if (++rootNr > 1) rootName += "-" + std::to_string(rootNr);
+                        auto store2 = state.store.dynamic_pointer_cast<LocalFSStore>();
+                        if (store2)
+                            drvPath = store2->addPermRoot(store2->parseStorePath(drvPath), rootName);
+                    }
+                    std::cout << fmt("%s%s\n", drvPath, (outputName != "out" ? "!" + outputName : ""));
+                } catch (Error & e) {
+                    e.addTrace(std::nullopt, "while evaluating the derivation at attribute path ‘%1%’:\n", i.attrPath);
+                    if(!settings.keepGoing)
+                      throw;
+                    logError(e.info());
                 }
-                std::cout << fmt("%s%s\n", drvPath, (outputName != "out" ? "!" + outputName : ""));
             }
         }
     }

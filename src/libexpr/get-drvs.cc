@@ -278,24 +278,30 @@ static bool getDerivation(EvalState & state, Value & v,
     bool ignoreAssertionFailures)
 {
     try {
-        state.forceValue(v, [&]() { return v.determinePos(noPos); });
-        if (!state.isDerivation(v)) return true;
+        try {
+            state.forceValue(v, [&]() { return v.determinePos(noPos); });
+            if (!state.isDerivation(v)) return true;
 
-        /* Remove spurious duplicates (e.g., a set like `rec { x =
-           derivation {...}; y = x;}'. */
-        if (!done.insert(v.attrs).second) return false;
+            /* Remove spurious duplicates (e.g., a set like `rec { x =
+               derivation {...}; y = x;}'. */
+            if (!done.insert(v.attrs).second) return false;
 
-        DrvInfo drv(state, attrPath, v.attrs);
+            DrvInfo drv(state, attrPath, v.attrs);
 
-        drv.queryName();
+            drvs.push_back(drv);
 
-        drvs.push_back(drv);
+            return false;
 
+        } catch (AssertionError & e) {
+            if (ignoreAssertionFailures) return false;
+            throw;
+        }
+    } catch (Error & e) {
+        e.addTrace(std::nullopt, "while evaluating the attribute path '%1%'", attrPath);
+        if(!settings.keepGoing)
+          throw;
+        logError(e.info());
         return false;
-
-    } catch (AssertionError & e) {
-        if (ignoreAssertionFailures) return false;
-        throw;
     }
 }
 
