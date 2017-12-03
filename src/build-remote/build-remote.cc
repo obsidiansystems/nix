@@ -178,8 +178,12 @@ int main (int argc, char * * argv)
 
                     Store::Params storeParams;
                     if (hasPrefix(bestMachine->storeUri, "ssh://")) {
-                        storeParams["max-connections"] ="1";
+                        storeParams["max-connections"] = "1";
                         storeParams["log-fd"] = "4";
+                        if (bestMachine->sshKey != "")
+                            storeParams["ssh-key"] = bestMachine->sshKey;
+                    }
+                    if (hasPrefix(bestMachine->storeUri, "ssh-ng://")) {
                         if (bestMachine->sshKey != "")
                             storeParams["ssh-key"] = bestMachine->sshKey;
                     }

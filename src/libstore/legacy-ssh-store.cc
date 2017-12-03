@@ -186,6 +186,9 @@ struct LegacySSHStore : public Store
     {
         auto conn(connections->get());
 
+        printMsg(lvlVomit, format("building '%1%' on legacy ssh store")
+            % drvPath);
+
         conn->to
             << cmdBuildDerivation
             << drvPath

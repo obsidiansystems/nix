@@ -31,6 +31,9 @@ std::unique_ptr<SSHMaster::Connection> SSHMaster::startCommand(const std::string
     in.create();
     out.create();
 
+    printMsg(lvlVomit, format("starting command '%1%' on host '%2%'")
+        % command % host);
+
     auto conn = std::make_unique<Connection>();
     conn->sshPid = startProcess([&]() {
         restoreSignals();
