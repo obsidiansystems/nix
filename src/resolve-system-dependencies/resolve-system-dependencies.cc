@@ -154,16 +154,47 @@ std::set<string> getPath(const Path & path)
     return paths;
 }
 
+Source & readDerivation(Source & in, BasicDerivation & drv)
+{
+    drv.outputs.clear();
+    auto nr = readNum<size_t>(in);
+    for (size_t n = 0; n < nr; n++) {
+        auto name = readString(in);
+        DerivationOutput o;
+        in >> o.path >> o.hashAlgo >> o.hash;
+        drv.outputs[name] = o;
+    }
+
+    drv.inputSrcs = readStrings<PathSet>(in);
+    in >> drv.platform >> drv.builder;
+    drv.args = readStrings<Strings>(in);
+
+    nr = readNum<size_t>(in);
+    for (size_t n = 0; n < nr; n++) {
+        auto key = readString(in);
+        auto value = readString(in);
+        drv.env[key] = value;
+    }
+
+    return in;
+}
+
 int main(int argc, char ** argv)
 {
     return handleExceptions(argv[0], [&]() {
         initNix();
 
-        struct utsname _uname;
+        logger = makeJSONLogger(*logger);
 
-        uname(&_uname);
+        if (argc != 2)
+            throw UsageError("called without required arguments");
+
+        verbosity = (Verbosity) std::stoll(argv[1]);
 
         auto cacheParentDir = (format("%1%/dependency-maps") % settings.nixStateDir).str();
+
+        struct utsname _uname;
+        uname(&_uname);
 
         cacheDir = (format("%1%/%2%-%3%-%4%")
                 % cacheParentDir
@@ -174,27 +205,43 @@ int main(int argc, char ** argv)
         mkdir(cacheParentDir.c_str(), 0755);
         mkdir(cacheDir.c_str(), 0755);
 
-        auto store = openStore();
+        FdSource source(STDIN_FILENO);
 
-        StringSet impurePaths;
-
-        if (std::string(argv[1]) == "--test")
-            impurePaths.insert(argv[2]);
-        else {
-            auto drv = store->derivationFromPath(Path(argv[1]));
-            impurePaths = tokenizeString<StringSet>(get(drv.env, "__impureHostDeps"));
-            impurePaths.insert("/usr/lib/libSystem.dylib");
+        /* Read the parent's settings. */
+        while (readInt(source)) {
+            auto name = readString(source);
+            auto value = readString(source);
+            settings.set(name, value);
         }
 
-        std::set<string> allPaths;
+        auto s = readString(source);
+        if (s != "try")
+            throw Error(format("unexpected input '%1%'") % s);
 
+        auto drvPath = readString(source);
+
+        printMsg(lvlVomit, format("received path '%1%'")
+            % drvPath);
+
+        BasicDerivation drv;
+        readDerivation(source, drv);
+
+        auto impurePaths = tokenizeString<StringSet>(get(drv.env, "__impureHostDeps"));
+        impurePaths.insert("/usr/lib/libSystem.dylib");
+
+        std::cerr << "# accept" << std::endl;
+
+        PathSet allPaths;
         for (auto & path : impurePaths)
             for (auto & p : getPath(path))
                 allPaths.insert(p);
 
-        std::cout << "extra-chroot-dirs" << std::endl;
-        for (auto & path : allPaths)
-            std::cout << path << std::endl;
-        std::cout << std::endl;
+        FdSink sink(STDERR_FILENO);
+
+        StringMap overrides;
+        overrides.emplace(settings.extraSandboxPaths.name, concatStringsSep(" ", allPaths));
+        sink << overrides.size();
+        for (auto & i : overrides)
+            sink << i.first << i.second;
     });
 }

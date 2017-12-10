@@ -615,15 +615,15 @@ struct HookInstance
 
     std::map<ActivityId, Activity> activities;
 
-    HookInstance();
+    HookInstance(Path program);
 
     ~HookInstance();
 };
 
 
-HookInstance::HookInstance()
+HookInstance::HookInstance(Path program)
 {
-    debug("starting build hook '%s'", settings.buildHook);
+    debug("starting build hook '%s'", program);
 
     /* Create a pipe to get the output of the child. */
     fromHook.create();
@@ -636,7 +636,6 @@ HookInstance::HookInstance()
 
     /* Fork the hook. */
     pid = startProcess([&]() {
-
         commonChildInit(fromHook);
 
         if (chdir("/") == -1) throw SysError("changing into /");
@@ -650,13 +649,12 @@ HookInstance::HookInstance()
             throw SysError("dupping builder's stdout/stderr");
 
         Strings args = {
-            baseNameOf(settings.buildHook),
+            baseNameOf(program),
             std::to_string(verbosity),
         };
 
-        execv(settings.buildHook.get().c_str(), stringsToCharPtrs(args).data());
-
-        throw SysError("executing '%s'", settings.buildHook);
+        execv(program.c_str(), stringsToCharPtrs(args).data());
+        throw SysError("executing '%s'", program);
     });
 
     pid.setSeparatePG(true);
@@ -1642,7 +1640,7 @@ HookReply DerivationGoal::tryBuildHook()
     if (!worker.tryBuildHook || !useDerivation) return rpDecline;
 
     if (!worker.hook)
-        worker.hook = std::make_unique<HookInstance>();
+        worker.hook = std::make_unique<HookInstance>(settings.buildHook);
 
     try {
 
@@ -1658,7 +1656,8 @@ HookReply DerivationGoal::tryBuildHook()
             << (worker.getNrLocalBuilds() < settings.maxBuildJobs ? 1 : 0)
             << drv->platform
             << drvPath
-            << features;
+            << features
+            ;
         worker.hook->sink.flush();
 
         /* Read the first line of input, which should be a word indicating
@@ -1878,6 +1877,54 @@ void DerivationGoal::startBuilder()
         }
     }
 
+    if (useChroot && settings.preBuildHook != "") {
+        printMsg(lvlChatty, format("executing pre-build hook '%1%'")
+            % settings.preBuildHook);
+        auto preHook = std::make_unique<HookInstance>(settings.preBuildHook);
+
+        preHook->sink << "try" << drvPath << *drv;
+        preHook->sink.flush();
+
+        Activity act(*logger, lvlInfo, actBuild, "pre-build hook");
+            // Logger::Fields{drvPath, settings.preBuildHook}
+
+        /* Read the first line of input, which should be a word indicating
+           whether the hook wishes to perform the build. */
+        string reply;
+        while (true) {
+            string s = readLine(preHook->fromHook.readSide.get());
+            if (handleJSONLogMessage(s, act, preHook->activities, true))
+                ;
+            else if (string(s, 0, 2) == "# ") {
+                reply = string(s, 2);
+                break;
+            }
+            else {
+                s += "\n";
+                writeToStderr(s);
+            }
+        }
+
+        debug(format("hook reply is '%1%'") % reply);
+
+        FdSource source(preHook->fromHook.readSide.get());
+
+        if (reply == "accept") {
+            size_t size = readInt(source);
+            while (size--) {
+                string name = readString(source);
+                string value = readString(source);
+                printMsg(lvlVomit, format("received override, %1% = '%2%'")
+                    % name % value);
+                settings.set(name, value);
+            }
+        }
+        else if (reply == "decline")
+            preHook = 0;
+        else
+            throw Error(format("bad hook reply '%1%'") % reply);
+    }
+
     if (useChroot) {
 
         /* Allow a user-configurable set of directories from the
@@ -2071,43 +2118,6 @@ void DerivationGoal::startBuilder()
                     addHashRewrite(i);
                     redirectedBadOutputs.insert(i);
                 }
-    }
-
-    if (useChroot && settings.preBuildHook != "" && dynamic_cast<Derivation *>(drv.get())) {
-        printMsg(lvlChatty, format("executing pre-build hook '%1%'")
-            % settings.preBuildHook);
-        auto args = useChroot ? Strings({drvPath, chrootRootDir}) :
-            Strings({ drvPath });
-        enum BuildHookState {
-            stBegin,
-            stExtraChrootDirs
-        };
-        auto state = stBegin;
-        auto lines = runProgram(settings.preBuildHook, false, args);
-        auto lastPos = std::string::size_type{0};
-        for (auto nlPos = lines.find('\n'); nlPos != string::npos;
-                nlPos = lines.find('\n', lastPos)) {
-            auto line = std::string{lines, lastPos, nlPos - lastPos};
-            lastPos = nlPos + 1;
-            if (state == stBegin) {
-                if (line == "extra-sandbox-paths" || line == "extra-chroot-dirs") {
-                    state = stExtraChrootDirs;
-                } else {
-                    throw Error(format("unknown pre-build hook command '%1%'")
-                        % line);
-                }
-            } else if (state == stExtraChrootDirs) {
-                if (line == "") {
-                    state = stBegin;
-                } else {
-                    auto p = line.find('=');
-                    if (p == string::npos)
-                        dirsInChroot[line] = line;
-                    else
-                        dirsInChroot[string(line, 0, p)] = string(line, p + 1);
-                }
-            }
-        }
     }
 
     /* Run the builder. */
