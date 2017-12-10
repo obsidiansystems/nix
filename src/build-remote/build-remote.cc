@@ -183,6 +183,9 @@ int main (int argc, char * * argv)
                         if (bestMachine->sshKey != "")
                             storeParams["ssh-key"] = bestMachine->sshKey;
                     }
+                    if (hasPrefix(bestMachine->storeUri, "ssh-ng://"))
+                        if (bestMachine->sshKey != "")
+                            storeParams["ssh-key"] = bestMachine->sshKey;
 
                     sshStore = openStore(bestMachine->storeUri, storeParams);
                     sshStore->connect();
