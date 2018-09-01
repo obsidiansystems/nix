@@ -61,31 +61,40 @@ else
 fi
 
 if [ "$DAEMON_SUPPORT" -eq 1 ]; then
-    if [ -t 2 ]; then
-        echo "Choose installation method." >&2
-        echo "" >&2
-        echo " no-daemon: Simple, single-user installation that does not require root and is" >&2
-        echo "            trivial to uninstall." >&2
-        echo "" >&2
-        echo " daemon:    Installs and configures a background daemon that manages the store," >&2
-        echo "            providing multi-user support and better isolation for local builds." >&2
-        echo "            Both for security and reproducibility, this method is recommended if" >&2
-        echo "            supported on your platform." >&2
-        echo "            TODO: provide more details https://nixos.org/nix/manual/#chap-nix-daemon" >&2
-        echo "" >&2
+    (
+        echo "installation methods"
+        echo ""
+        echo " no-daemon: Simple, single-user installation that does not require root and is"
+        echo "            trivial to uninstall."
+        echo ""
+        echo " daemon:    Installs and configures a background daemon that manages the store,"
+        echo "            providing multi-user support and better isolation for local builds."
+        echo "            Both for security and reproducibility, this method is recommended if"
+        echo "            supported on your platform."
+        echo "            TODO: provide more details https://nixos.org/nix/manual/#chap-nix-daemon"
+        echo ""
+    ) >&2
 
-        while true; do
-            printf "Use daemon [y/n] " >&2
-            read -r y
-            case $y in
-                y|yes)
-                    INSTALL_MODE=daemon
-                    break;;
-                n|no)
-                    INSTALL_MODE=no-daemon
-                    break;;
-            esac
-        done
+    if [ -z "$INSTALL_MODE" ]; then
+        if [ -t 2 ]; then
+            if ! [ -t 0 ]; then
+                echo "error: no interactive input" >&2
+                exit
+            fi
+
+            while true; do
+                printf "Use daemon [y/n] " >&2
+                read -r y
+                case $y in
+                    y|yes)
+                        INSTALL_MODE=daemon
+                        break;;
+                    n|no)
+                        INSTALL_MODE=no-daemon
+                        break;;
+                esac
+            done
+        fi
     fi
 fi
 
