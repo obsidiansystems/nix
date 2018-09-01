@@ -30,15 +30,6 @@ if [ "$(uname -s)" = "Darwin" ]; then
     fi
 fi
 
-# Determine if we should punt to the single-user installer or not
-if [ "$(uname -s)" = "Darwin" ]; then
-    INSTALL_MODE=daemon
-elif [ "$(uname -s)" = "Linux" ] && [ -e /run/systemd/system ]; then
-    INSTALL_MODE=daemon
-else
-    INSTALL_MODE=no-daemon
-fi
-
 # Trivially handle the --daemon / --no-daemon options
 if [ "x${1:-}" = "x--no-daemon" ]; then
     INSTALL_MODE=no-daemon
@@ -60,10 +51,48 @@ elif [ "x${1:-}" != "x" ]; then
     exit
 fi
 
+# Determine if we should punt to the single-user installer or not
+if [ "$(uname -s)" = "Darwin" ]; then
+    DAEMON_SUPPORT=1
+elif [ "$(uname -s)" = "Linux" ] && [ -e /run/systemd/system ]; then
+    DAEMON_SUPPORT=1
+else
+    DAEMON_SUPPORT=0
+fi
+
+if [ "$DAEMON_SUPPORT" -eq 1 ]; then
+    if [ -t 2 ]; then
+        echo "Choose installation method." >&2
+        echo "" >&2
+        echo " no-daemon: Simple, single-user installation that does not require root and is" >&2
+        echo "            trivial to uninstall." >&2
+        echo "" >&2
+        echo " daemon:    Installs and configures a background daemon that manages the store," >&2
+        echo "            providing multi-user support and better isolation for local builds." >&2
+        echo "            Both for security and reproducibility, this method is recommended if" >&2
+        echo "            supported on your platform." >&2
+        echo "            TODO: provide more details https://nixos.org/nix/manual/#chap-nix-daemon" >&2
+        echo "" >&2
+
+        while true; do
+            printf "Use daemon [y/n] " >&2
+            read -r y
+            case $y in
+                y|yes)
+                    INSTALL_MODE=daemon
+                    break;;
+                n|no)
+                    INSTALL_MODE=no-daemon
+                    break;;
+            esac
+        done
+    fi
+fi
+
 if [ "$INSTALL_MODE" = "daemon" ]; then
     printf '\e[1;31mSwitching to the Daemon-based Installer\e[0m\n'
-    exec "$self/install-multi-user"
-    exit 0
+    exec true
+    exit 2
 fi
 
 if [ "$(id -u)" -eq 0 ]; then
@@ -71,6 +100,9 @@ if [ "$(id -u)" -eq 0 ]; then
 fi
 
 echo "performing a single-user installation of Nix..." >&2
+
+exec false
+exit 2
 
 if ! [ -e $dest ]; then
     cmd="mkdir -m 0755 $dest && chown $USER $dest"
