@@ -217,14 +217,13 @@ static void prim_fetchMercurial(EvalState & state, const Pos & pos, Value * * ar
         if (state.allowedPaths)
             state.allowedPaths->insert(hgInfo.storePath);
     } catch (ExecError & e) {
-        if (e.status / 256 == 127) {
-            std::ostringstream out;
-            out << e.what() << std::endl;
-            out << "The program 'hg' is currently not installed. It is required for builtins.fetchMercurial" << std::endl;
-            out << "You can install it by running the following:" << std::endl;
-            out << "nix-env -f '<nixpkgs>' -iA mercurial";
-            throw ExecError(e.status, out.str());
-        }
+        if (WEXITSTATUS(e.status) == 127)
+            throw ExecError(e.status,
+                    "%s\n"
+                    "The program 'hg' is currently not installed. It is required for builtins.fetchMercurial\n"
+                    "You can install it by running the following:\n"
+                    "nix-env -f '<nixpkgs>' -iA mercurial",
+                    e.what());
         throw;
     }
 }

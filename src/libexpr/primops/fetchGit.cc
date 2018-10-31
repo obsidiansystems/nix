@@ -238,14 +238,13 @@ static void prim_fetchGit(EvalState & state, const Pos & pos, Value * * args, Va
         if (state.allowedPaths)
             state.allowedPaths->insert(gitInfo.storePath);
     } catch (ExecError & e) {
-        if (e.status / 256 == 127) {
-            std::ostringstream out;
-            out << e.what() << std::endl;
-            out << "The program 'git' is currently not installed. It is required for builtins.fetchGit" << std::endl;
-            out << "You can install it by running the following:" << std::endl;
-            out << "nix-env -f '<nixpkgs>' -iA git";
-            throw ExecError(e.status, out.str());
-        }
+        if (WEXITSTATUS(e.status) == 127)
+            throw ExecError(e.status,
+                    "%s\n"
+                    "The program 'git' is currently not installed. It is required for builtins.fetchGit\n"
+                    "You can install it by running the following:\n"
+                    "nix-env -f '<nixpkgs>' -iA git",
+                    e.what());
         throw;
     }
 }
