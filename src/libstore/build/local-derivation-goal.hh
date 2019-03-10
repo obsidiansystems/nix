@@ -12,6 +12,14 @@ struct LocalDerivationGoal : public DerivationGoal
     /* User selected for running the builder. */
     std::unique_ptr<UserLock> buildUser;
 
+    /* The uid we will use for the build, outside any sandboxing. */
+    uid_t hostUid;
+
+    /* The gid we will use for the build, outside any sandboxing. */
+    gid_t hostGid;
+
+    uid_t nrIds;
+
     /* The process ID of the builder. */
     Pid pid;
 
@@ -26,9 +34,6 @@ struct LocalDerivationGoal : public DerivationGoal
 
     /* Pipe for the builder's standard output/error. */
     Pipe builderOut;
-
-    /* Pipe for synchronising updates to the builder namespaces. */
-    Pipe userNamespaceSync;
 
     /* The mount namespace and user namespace of the builder, used to add additional
        paths to the sandbox as a result of recursive Nix calls. */
