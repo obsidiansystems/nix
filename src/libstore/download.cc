@@ -897,10 +897,11 @@ Path Downloader::downloadCached(ref<Store> store, const string & url_, bool unpa
     }
 
     if (expectedStorePath != "" && storePath != expectedStorePath) {
+        unsigned int statusCode = 102;
         Hash gotHash = unpack
             ? hashPath(expectedHash.type, store->toRealPath(storePath)).first
             : hashFile(expectedHash.type, store->toRealPath(storePath));
-        throw nix::Error("hash mismatch in file downloaded from '%s':\n  wanted: %s\n  got:    %s",
+        throw nix::Error(statusCode, "hash mismatch in file downloaded from '%s':\n  wanted: %s\n  got:    %s",
             url, expectedHash.to_string(), gotHash.to_string());
     }
 

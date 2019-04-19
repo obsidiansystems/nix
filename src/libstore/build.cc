@@ -265,6 +265,12 @@ public:
     /* Set if at least one derivation had a timeout. */
     bool timedOut;
 
+    /* Set if at least one derivation fails with a hash mismatch. */
+    bool hashMismatch;
+
+    /* Set if at least one derivation is not deterministic in check mode. */
+    bool checkMismatch;
+
     LocalStore & store;
 
     std::unique_ptr<HookInstance> hook;
@@ -3168,6 +3174,7 @@ void DerivationGoal::registerOutputs()
 
                 /* Throw an error after registering the path as
                    valid. */
+                worker.hashMismatch = true;
                 delayedException = std::make_exception_ptr(
                     BuildError("hash mismatch in fixed-output derivation '%s':\n  wanted: %s\n  got:    %s",
                         dest, h.to_string(), h2.to_string()));
@@ -3210,6 +3217,7 @@ void DerivationGoal::registerOutputs()
             if (!worker.store.isValidPath(path)) continue;
             auto info = *worker.store.queryPathInfo(path);
             if (hash.first != info.narHash) {
+                worker.checkMismatch = true;
                 if (settings.runDiffHook || settings.keepFailed) {
                     Path dst = worker.store.toRealPath(path + checkSuffix);
                     deletePath(dst);
@@ -3221,10 +3229,10 @@ void DerivationGoal::registerOutputs()
                         buildUser ? buildUser->getGID() : getgid(),
                         path, dst, drvPath, tmpDir);
 
-                    throw Error(format("derivation '%1%' may not be deterministic: output '%2%' differs from '%3%'")
+                    throw NotDeterministic(format("derivation '%1%' may not be deterministic: output '%2%' differs from '%3%'")
                         % drvPath % path % dst);
                 } else
-                    throw Error(format("derivation '%1%' may not be deterministic: output '%2%' differs")
+                    throw NotDeterministic(format("derivation '%1%' may not be deterministic: output '%2%' differs")
                         % drvPath % path);
             }
 
@@ -4056,6 +4064,8 @@ Worker::Worker(LocalStore & store)
     lastWokenUp = steady_time_point::min();
     permanentFailure = false;
     timedOut = false;
+    hashMismatch = false;
+    checkMismatch = false;
 }
 
 
@@ -4415,7 +4425,7 @@ void Worker::waitForInput()
 
 unsigned int Worker::exitStatus()
 {
-    return timedOut ? 101 : (permanentFailure ? 100 : 1);
+    return checkMismatch ? 104 : (hashMismatch ? 102 : (timedOut ? 101 : (permanentFailure ? 100 : 1)));
 }
 
 
