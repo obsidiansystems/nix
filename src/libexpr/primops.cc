@@ -37,7 +37,7 @@ namespace nix {
 InvalidPathError::InvalidPathError(const Path & path) :
     EvalError("path '%s' is not valid", path), path(path) {}
 
-StringMap EvalState::realiseContext(const PathSet & context)
+StringMap EvalState::realiseContext(const PathSet & context, const PosIdx pos, const std::string & reason)
 {
     std::vector<DerivedPath::Built> drvs;
     StringMap res;
@@ -49,6 +49,9 @@ StringMap EvalState::realiseContext(const PathSet & context)
             debugThrowLastTrace(InvalidPathError(store->printStorePath(ctx)));
         if (!outputName.empty() && ctx.isDerivation()) {
             drvs.push_back({ctx, {outputName}});
+            if (evalSettings.logAllIFD) {
+              printInfo("%1% importing from derivation %2% via %3%", positions[pos], ctxS, reason);
+            }
         } else {
             res.insert_or_assign(ctxS, ctxS);
         }
@@ -97,7 +100,7 @@ struct RealisePathFlags {
     bool checkForPureEval = true;
 };
 
-static Path realisePath(EvalState & state, const PosIdx pos, Value & v, const RealisePathFlags flags = {})
+static Path realisePath(EvalState & state, const PosIdx pos, Value & v, const std::string & reason, const RealisePathFlags flags = {})
 {
     PathSet context;
 
@@ -112,7 +115,7 @@ static Path realisePath(EvalState & state, const PosIdx pos, Value & v, const Re
     }();
 
     try {
-        StringMap rewrites = state.realiseContext(context);
+        StringMap rewrites = state.realiseContext(context, pos, reason);
 
         auto realPath = state.toRealPath(rewriteStrings(path, rewrites), context);
 
@@ -160,7 +163,7 @@ static void mkOutputString(
    argument. */
 static void import(EvalState & state, const PosIdx pos, Value & vPath, Value * vScope, Value & v)
 {
-    auto path = realisePath(state, pos, vPath);
+    auto path = realisePath(state, pos, vPath, "scopedImport");
 
     // FIXME
     auto isValidDerivationInStore = [&]() -> std::optional<StorePath> {
@@ -313,7 +316,7 @@ extern "C" typedef void (*ValueInitializer)(EvalState & state, Value & v);
 /* Load a ValueInitializer from a DSO and return whatever it initializes */
 void prim_importNative(EvalState & state, const PosIdx pos, Value * * args, Value & v)
 {
-    auto path = realisePath(state, pos, *args[0]);
+    auto path = realisePath(state, pos, *args[0], "importNative");
 
     std::string sym(state.forceStringNoCtx(*args[1], pos));
 
@@ -355,7 +358,7 @@ void prim_exec(EvalState & state, const PosIdx pos, Value * * args, Value & v)
         commandArgs.push_back(state.coerceToString(pos, *elems[i], context, false, false).toOwned());
     }
     try {
-        auto _ = state.realiseContext(context); // FIXME: Handle CA derivations
+        auto _ = state.realiseContext(context, pos, "exec"); // FIXME: Handle CA derivations
     } catch (InvalidPathError & e) {
         state.debugThrowLastTrace(EvalError({
             .msg = hintfmt("cannot execute '%1%', since path '%2%' is not valid",
@@ -1465,7 +1468,7 @@ static void prim_pathExists(EvalState & state, const PosIdx pos, Value * * args,
       can’t just catch the exception here because we still want to
       throw if something in the evaluation of `*args[0]` tries to
       access an unauthorized path). */
-    auto path = realisePath(state, pos, *args[0], { .checkForPureEval = false });
+    auto path = realisePath(state, pos, *args[0], "pathExists", { .checkForPureEval = false });
 
     try {
         v.mkBool(pathExists(state.checkSourcePath(path)));
@@ -1532,7 +1535,7 @@ static RegisterPrimOp primop_dirOf({
 /* Return the contents of a file as a string. */
 static void prim_readFile(EvalState & state, const PosIdx pos, Value * * args, Value & v)
 {
-    auto path = realisePath(state, pos, *args[0]);
+    auto path = realisePath(state, pos, *args[0], "readFile");
     auto s = readFile(path);
     if (s.find((char) 0) != std::string::npos)
         state.debugThrowLastTrace(Error("the contents of the file '%1%' cannot be represented as a Nix string", path));
@@ -1584,7 +1587,7 @@ static void prim_findFile(EvalState & state, const PosIdx pos, Value * * args, V
         auto path = state.coerceToString(pos, *i->value, context, false, false).toOwned();
 
         try {
-            auto rewrites = state.realiseContext(context);
+            auto rewrites = state.realiseContext(context, pos, "findFile");
             path = rewriteStrings(path, rewrites);
         } catch (InvalidPathError & e) {
             state.debugThrowLastTrace(EvalError({
@@ -1618,7 +1621,7 @@ static void prim_hashFile(EvalState & state, const PosIdx pos, Value * * args, V
             .errPos = state.positions[pos]
         }));
 
-    auto path = realisePath(state, pos, *args[1]);
+    auto path = realisePath(state, pos, *args[1], "hashFile");
 
     v.mkString(hashFile(*ht, path).to_string(Base16, false));
 }
@@ -1637,7 +1640,7 @@ static RegisterPrimOp primop_hashFile({
 /* Read a directory (without . or ..) */
 static void prim_readDir(EvalState & state, const PosIdx pos, Value * * args, Value & v)
 {
-    auto path = realisePath(state, pos, *args[0]);
+    auto path = realisePath(state, pos, *args[0], "readDir");
 
     DirEntries entries = readDirectory(path);
 
@@ -1967,7 +1970,7 @@ static void addPath(
     try {
         // FIXME: handle CA derivation outputs (where path needs to
         // be rewritten to the actual output).
-        auto rewrites = state.realiseContext(context);
+        auto rewrites = state.realiseContext(context, noPos, "addPath");
         path = state.toRealPath(rewriteStrings(path, rewrites), context);
 
         StorePathSet refs;

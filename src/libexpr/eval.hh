@@ -507,7 +507,7 @@ public:
     /* Realise the given context, and return a mapping from the placeholders
      * used to construct the associated value to their final store path
      */
-    [[nodiscard]] StringMap realiseContext(const PathSet & context);
+    [[nodiscard]] StringMap realiseContext(const PathSet & context, const PosIdx pos, const std::string & reason);
 
 private:
 
@@ -656,6 +656,9 @@ struct EvalSettings : Config
 
     Setting<bool> traceVerbose{this, false, "trace-verbose",
         "Whether `builtins.traceVerbose` should trace its first argument when evaluated."};
+    
+    Setting<bool> logAllIFD{this, false, "log-all-ifd",
+        "Emit log messages for all imports from derivation at the 'info' log level"};
 };
 
 extern EvalSettings evalSettings;
