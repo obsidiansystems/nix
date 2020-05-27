@@ -4,12 +4,13 @@
 #include "shared.hh"
 #include "references.hh"
 #include "archive.hh"
+#include "git.hh"
 
 using namespace nix;
 
 struct CmdHash : Command
 {
-    enum Mode { mFile, mPath };
+    enum Mode { mFile, mPath, mGit };
     Mode mode;
     Base base = SRI;
     bool truncate = false;
@@ -36,9 +37,12 @@ struct CmdHash : Command
 
     std::string description() override
     {
-        return mode == mFile
-            ? "print cryptographic hash of a regular file"
-            : "print cryptographic hash of the NAR serialisation of a path";
+        switch (mode) {
+        case mFile: return "print cryptographic hash of a regular file";
+        case mPath: return "print cryptographic hash of the NAR serialisation of a path";
+        case mGit: return "print cryptographic hash of the Git serialisation of a path";
+        }
+        throw;
     }
 
     Category category() override { return catUtility; }
@@ -55,6 +59,8 @@ struct CmdHash : Command
 
             if (mode == mFile)
                 readFile(path, *hashSink);
+            else if (mode == mGit)
+                dumpGit(path, *hashSink);
             else
                 dumpPath(path, *hashSink);
 
@@ -67,6 +73,7 @@ struct CmdHash : Command
 
 static RegisterCommand r1("hash-file", [](){ return make_ref<CmdHash>(CmdHash::mFile); });
 static RegisterCommand r2("hash-path", [](){ return make_ref<CmdHash>(CmdHash::mPath); });
+static RegisterCommand r3("hash-git", [](){ return make_ref<CmdHash>(CmdHash::mGit); });
 
 struct CmdToBase : Command
 {
@@ -98,10 +105,10 @@ struct CmdToBase : Command
     }
 };
 
-static RegisterCommand r3("to-base16", [](){ return make_ref<CmdToBase>(Base16); });
-static RegisterCommand r4("to-base32", [](){ return make_ref<CmdToBase>(Base32); });
-static RegisterCommand r5("to-base64", [](){ return make_ref<CmdToBase>(Base64); });
-static RegisterCommand r6("to-sri", [](){ return make_ref<CmdToBase>(SRI); });
+static RegisterCommand r4("to-base16", [](){ return make_ref<CmdToBase>(Base16); });
+static RegisterCommand r5("to-base32", [](){ return make_ref<CmdToBase>(Base32); });
+static RegisterCommand r6("to-base64", [](){ return make_ref<CmdToBase>(Base64); });
+static RegisterCommand r7("to-sri", [](){ return make_ref<CmdToBase>(SRI); });
 
 /* Legacy nix-hash command. */
 static int compatNixHash(int argc, char * * argv)
