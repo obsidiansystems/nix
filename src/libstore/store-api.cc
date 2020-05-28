@@ -118,8 +118,8 @@ string storePathToHash(const Path & path)
        for paths copied by addToStore() or produced by fixed-output
        derivations:
          the string "fixed:out:<rec><algo>:<hash>:", where
-           <rec> = "r:" for recursive (path) hashes, or "" for flat
-             (file) hashes
+           <rec> = "r:" for recursive (path) hashes, "git:" for git
+             paths, or "" for flat (file) hashes
            <algo> = "md5", "sha1" or "sha256"
            <hash> = base-16 representation of the path or flat hash of
              the contents of the path (or expected contents of the
@@ -172,20 +172,20 @@ static std::string makeType(
 
 
 StorePath Store::makeFixedOutputPath(
-    FileIngestionMethod recursive,
+    FileIngestionMethod method,
     const Hash & hash,
     std::string_view name,
     const StorePathSet & references,
     bool hasSelfReference) const
 {
-    if (hash.type == htSHA256 && recursive == FileIngestionMethod::Recursive) {
+    if (hash.type == htSHA256 && method == FileIngestionMethod::Recursive) {
         return makeStorePath(makeType(*this, "source", references, hasSelfReference), hash, name);
     } else {
         assert(references.empty());
         return makeStorePath("output:out",
             hashString(htSHA256,
                 "fixed:out:"
-                + (recursive == FileIngestionMethod::Recursive ? (string) "r:" : "")
+                + ingestionMethodPrefix(method)
                 + hash.to_string(Base16) + ":"),
             name);
     }
@@ -787,15 +787,19 @@ bool ValidPathInfo::isContentAddressed(const Store & store) const
     }
 
     else if (hasPrefix(ca, "fixed:")) {
-        FileIngestionMethod recursive { ca.compare(6, 2, "r:") == 0 };
-        Hash hash(std::string(ca, recursive == FileIngestionMethod::Recursive ? 8 : 6));
+        FileIngestionMethod method = FileIngestionMethod::Flat;
+        if (ca.compare(6, 2, "r:") == 0)
+            method = FileIngestionMethod::Recursive;
+        else if (ca.compare(6, 4, "git:") == 0)
+            method = FileIngestionMethod::Git;
+        Hash hash(std::string(ca, 6 + ingestionMethodPrefix(method).length()));
         auto refs = cloneStorePathSet(references);
         bool hasSelfReference = false;
         if (refs.count(path)) {
             hasSelfReference = true;
             refs.erase(path);
         }
-        if (store.makeFixedOutputPath(recursive, hash, path.name(), refs, hasSelfReference) == path)
+        if (store.makeFixedOutputPath(method, hash, path.name(), refs, hasSelfReference) == path)
             return true;
         else
             warn();
@@ -832,11 +836,9 @@ Strings ValidPathInfo::shortRefs() const
 }
 
 
-std::string makeFixedOutputCA(FileIngestionMethod recursive, const Hash & hash)
+std::string makeFixedOutputCA(FileIngestionMethod method, const Hash & hash)
 {
-    return "fixed:"
-        + (recursive == FileIngestionMethod::Recursive ? (std::string) "r:" : "")
-        + hash.to_string();
+    return "fixed:" + ingestionMethodPrefix(method) + hash.to_string();
 }
 
 

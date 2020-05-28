@@ -54,25 +54,36 @@ struct CmdHash : Command
     {
         for (auto path : paths) {
 
-            std::unique_ptr<AbstractHashSink> hashSink;
-            if (modulus)
-                hashSink = std::make_unique<HashModuloSink>(ht, *modulus);
-            else
-                hashSink = std::make_unique<HashSink>(ht);
+            auto makeHashSink = [&]() -> std::unique_ptr<AbstractHashSink> {
+                std::unique_ptr<AbstractHashSink> t;
+                if (modulus)
+                    t = std::make_unique<HashModuloSink>(ht, *modulus);
+                else
+                    t = std::make_unique<HashSink>(ht);
+                return t;
+            };
 
+            Hash h;
             switch (mode) {
-            case FileIngestionMethod::Flat:
+            case FileIngestionMethod::Flat: {
+                auto hashSink = makeHashSink();
                 readFile(path, *hashSink);
+                h = hashSink->finish().first;
                 break;
-            case FileIngestionMethod::Recursive:
+            }
+            case FileIngestionMethod::Recursive: {
+                auto hashSink = makeHashSink();
                 dumpPath(path, *hashSink);
+                h = hashSink->finish().first;
                 break;
+            }
             case FileIngestionMethod::Git:
+                auto hashSink = makeHashSink();
                 dumpGit(path, *hashSink);
+                h = hashSink->finish().first;
                 break;
             }
 
-            Hash h = hashSink->finish().first;
             if (truncate && h.hashSize > 20) h = compressHash(h, 20);
             logger->stdout(h.to_string(base, base == SRI));
         }
