@@ -81,9 +81,7 @@ struct CmdHash : Command
                 break;
             }
             case FileIngestionMethod::Git:
-                auto hashSink = makeHashSink();
-                dumpGit(path, *hashSink);
-                h = hashSink->finish().first;
+                h = dumpGitHash(makeHashSink, path);
                 break;
             }
 
