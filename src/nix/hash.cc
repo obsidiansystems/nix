@@ -10,15 +10,14 @@ using namespace nix;
 
 struct CmdHash : Command
 {
-    enum Mode { mFile, mPath, mGit };
-    Mode mode;
+    FileIngestionMethod mode;
     Base base = SRI;
     bool truncate = false;
     HashType ht = htSHA256;
     std::vector<std::string> paths;
     std::optional<std::string> modulus;
 
-    CmdHash(Mode mode) : mode(mode)
+    CmdHash(FileIngestionMethod mode) : mode(mode)
     {
         mkFlag(0, "sri", "print hash in SRI format", &base, SRI);
         mkFlag(0, "base64", "print hash in base-64", &base, Base64);
@@ -37,12 +36,16 @@ struct CmdHash : Command
 
     std::string description() override
     {
+        const char* d;
         switch (mode) {
-        case mFile: return "print cryptographic hash of a regular file";
-        case mPath: return "print cryptographic hash of the NAR serialisation of a path";
-        case mGit: return "print cryptographic hash of the Git serialisation of a path";
-        }
-        throw;
+        case FileIngestionMethod::Flat:
+            d = "print cryptographic hash of a regular file";
+        case FileIngestionMethod::Recursive:
+            d = "print cryptographic hash of the NAR serialisation of a path";
+        case FileIngestionMethod::Git:
+            d = "print cryptographic hash of the Git serialisation of a path";
+        };
+        return d;
     }
 
     Category category() override { return catUtility; }
@@ -57,12 +60,17 @@ struct CmdHash : Command
             else
                 hashSink = std::make_unique<HashSink>(ht);
 
-            if (mode == mFile)
+            switch (mode) {
+            case FileIngestionMethod::Flat:
                 readFile(path, *hashSink);
-            else if (mode == mGit)
-                dumpGit(path, *hashSink);
-            else
+                break;
+            case FileIngestionMethod::Recursive:
                 dumpPath(path, *hashSink);
+                break;
+            case FileIngestionMethod::Git:
+                dumpGit(path, *hashSink);
+                break;
+            }
 
             Hash h = hashSink->finish().first;
             if (truncate && h.hashSize > 20) h = compressHash(h, 20);
@@ -71,9 +79,9 @@ struct CmdHash : Command
     }
 };
 
-static RegisterCommand r1("hash-file", [](){ return make_ref<CmdHash>(CmdHash::mFile); });
-static RegisterCommand r2("hash-path", [](){ return make_ref<CmdHash>(CmdHash::mPath); });
-static RegisterCommand r3("hash-git", [](){ return make_ref<CmdHash>(CmdHash::mGit); });
+static RegisterCommand r1("hash-file", [](){ return make_ref<CmdHash>(FileIngestionMethod::Flat); });
+static RegisterCommand r2("hash-path", [](){ return make_ref<CmdHash>(FileIngestionMethod::Recursive); });
+static RegisterCommand r3("hash-git", [](){ return make_ref<CmdHash>(FileIngestionMethod::Git); });
 
 struct CmdToBase : Command
 {
@@ -144,7 +152,7 @@ static int compatNixHash(int argc, char * * argv)
     });
 
     if (op == opHash) {
-        CmdHash cmd(flat ? CmdHash::mFile : CmdHash::mPath);
+        CmdHash cmd(flat ? FileIngestionMethod::Flat : FileIngestionMethod::Recursive);
         cmd.ht = ht;
         cmd.base = base32 ? Base32 : Base16;
         cmd.truncate = truncate;
