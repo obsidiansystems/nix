@@ -7,7 +7,8 @@ using namespace std::string_literals;
 
 namespace nix {
 
-void dumpGit(const Path & path, Sink & sink, PathFilter & filter)
+// Internal version, returns the perm.
+unsigned int dumpGitInternal(const Path & path, Sink & sink, PathFilter & filter)
 {
     struct stat st;
     if (lstat(path.c_str(), &st))
@@ -19,6 +20,9 @@ void dumpGit(const Path & path, Sink & sink, PathFilter & filter)
         vector<unsigned char> v;
         std::copy(s.begin(), s.end(), std::back_inserter(v));
         sink(v.data(), v.size());
+        return st.st_mode & S_IXUSR
+            ? 100755
+            : 100644;
     }
 
     else if (S_ISDIR(st.st_mode)) {
@@ -31,24 +35,8 @@ void dumpGit(const Path & path, Sink & sink, PathFilter & filter)
         for (auto & i : entries)
             if (filter(path + "/" + i.first)) {
                 HashSink hashSink(htSHA1);
-                dumpGit(path + "/" + i.first, hashSink, filter);
+                unsigned int perm = dumpGitInternal(path + "/" + i.first, hashSink, filter);
                 auto hash = hashSink.finish().first;
-
-                struct stat st2;
-                if (lstat((path + "/" + i.first).c_str(), &st2))
-                    throw SysError(format("getting attributes of path '%1%'") % (path + "/" + i.first));
-
-                unsigned int perm;
-                if (S_ISDIR(st2.st_mode))
-                    perm = 40000;
-                else if (S_ISREG(st2.st_mode)) {
-                    if (st2.st_mode & S_IXUSR)
-                        perm = 100755;
-                    else
-                        perm = 100644;
-                } else
-                    throw Error(format("file '%1%' has an unsupported type") % (path + "/" + i.first));
-
                 s1 += (format("%6d %s\0%s"s) % perm % i.first % hash.hash).str();
             }
 
@@ -57,9 +45,15 @@ void dumpGit(const Path & path, Sink & sink, PathFilter & filter)
         vector<unsigned char> v;
         std::copy(s2.begin(), s2.end(), std::back_inserter(v));
         sink(v.data(), v.size());
+        return 40000;
     }
 
     else throw Error(format("file '%1%' has an unsupported type") % path);
+}
+
+void dumpGit(const Path & path, Sink & sink, PathFilter & filter)
+{
+    dumpGitInternal(path, sink, filter);
 }
 
 }
