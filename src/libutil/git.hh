@@ -2,7 +2,7 @@
 
 #include "types.hh"
 #include "serialise.hh"
-#include "archive.hh"
+#include "fs-sink.hh"
 
 namespace nix {
 
@@ -10,6 +10,6 @@ void restoreGit(const Path & path, Source & source);
 
 void parseGit(ParseSink & sink, Source & source);
 
-static void parse(ParseSink & sink, Source & source, const Path & path);
+void dumpGit(const Path & path, Sink & sink, PathFilter & filter = defaultPathFilter);
 
 }
