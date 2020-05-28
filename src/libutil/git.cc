@@ -93,32 +93,49 @@ std::pair<GitMode, Hash> dumpGitHashInternal(
 {
     auto hashSink = makeHashSink();
     struct stat st;
-    GitMode perm;
     if (lstat(path.c_str(), &st))
         throw SysError(format("getting attributes of path '%1%'") % path);
 
     if (S_ISREG(st.st_mode)) {
-        perm = dumpGitBlob(path, st, *hashSink);
-    } else if (S_ISDIR(st.st_mode)) {
-        GitTree entries;
-        for (auto & i : readDirectory(path))
-            if (filter(path + "/" + i.name)) {
-                entries[i.name] = dumpGitHashInternal(makeHashSink, path + "/" + i.name, filter);
-            }
-        perm = dumpGitTree(entries, *hashSink);
-    } else {
-        throw Error(format("file '%1%' has an unsupported type") % path);
+        auto s = (format("blob %d\0%s"s) % std::to_string(st.st_size) % readFile(path)).str();
+
+        vector<unsigned char> v;
+        std::copy(s.begin(), s.end(), std::back_inserter(v));
+        sink(v.data(), v.size());
+        return st.st_mode & S_IXUSR
+            ? 100755
+            : 100644;
     }
 
-    auto hash = hashSink->finish().first;
-    return std::pair { perm, hash };
+    else if (S_ISDIR(st.st_mode)) {
+        std::string s1 = "";
+
+        std::map<string, string> entries;
+        for (auto & i : readDirectory(path))
+            entries[i.name] = i.name;
+
+        for (auto & i : entries)
+            if (filter(path + "/" + i.first)) {
+                HashSink hashSink(htSHA1);
+                unsigned int perm = dumpGitInternal(path + "/" + i.first, hashSink, filter);
+                auto hash = hashSink.finish().first;
+                s1 += (format("%6d %s\0%s"s) % perm % i.first % hash.hash).str();
+            }
+
+        std::string s2 = (format("tree %d\0%s"s) % s1.size() % s1).str();
+
+        vector<unsigned char> v;
+        std::copy(s2.begin(), s2.end(), std::back_inserter(v));
+        sink(v.data(), v.size());
+        return 40000;
+    }
+
+    else throw Error(format("file '%1%' has an unsupported type") % path);
 }
 
-Hash dumpGitHash(
-    std::function<std::unique_ptr<AbstractHashSink>()> makeHashSink,
-    const Path & path, PathFilter & filter)
+void dumpGit(const Path & path, Sink & sink, PathFilter & filter)
 {
-    return dumpGitHashInternal(makeHashSink, path, filter).second;
+    dumpGitInternal(path, sink, filter);
 }
 
 }
