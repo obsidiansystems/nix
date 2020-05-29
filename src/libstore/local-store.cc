@@ -1133,6 +1133,14 @@ StorePath LocalStore::addToStore(const string & name, const Path & _srcPath,
         break;
     }
     case FileIngestionMethod::Git: {
+        // recursively add to store if path is a directory
+        struct stat st;
+        if (lstat(srcPath.c_str(), &st))
+            throw SysError(format("getting attributes of path '%1%'") % srcPath);
+        if (S_ISDIR(st.st_mode))
+            for (auto & i : readDirectory(srcPath))
+                addToStore(i.name, srcPath + "/" + i.name, method, hashAlgo, filter, repair);
+
         dumpGit(hashAlgo, srcPath, sink, filter);
         break;
     }
