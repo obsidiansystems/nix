@@ -64,7 +64,7 @@ struct CmdAddToStore : MixDryRun, StoreCommand
         info.ca = makeFixedOutputCA(ingestionMethod, info.narHash);
 
         if (!dryRun)
-            store->addToStore(info, sink.s);
+            store->addToStore(*namePart, path, ingestionMethod, git ? htSHA1 : htSHA256);
 
         logger->stdout("%s", store->printStorePath(info.path));
     }
