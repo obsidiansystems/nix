@@ -12,9 +12,9 @@ enum struct GitMode {
     Regular,
 };
 
-void restoreGit(const Path & path, Source & source);
+void restoreGit(const Path & path, Source & source, const Path & storeDir);
 
-void parseGit(ParseSink & sink, Source & source);
+void parseGit(ParseSink & sink, Source & source, const Path & storeDir);
 
 void dumpGit(const Path & path, Sink & sink, PathFilter & filter = defaultPathFilter);
 
