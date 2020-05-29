@@ -133,7 +133,7 @@ unsigned int dumpGitInternal(const Path & path, Sink & sink, PathFilter & filter
                 HashSink hashSink(htSHA1);
                 unsigned int perm = dumpGitInternal(path + "/" + i.first, hashSink, filter);
                 auto hash = hashSink.finish().first;
-                s1 += (format("%6d %s\0%s"s) % perm % i.first % hash.hash).str();
+                s1 += (format("%06d %s\0%s"s) % perm % i.first % hash.hash).str();
             }
 
         std::string s2 = (format("tree %d\0%s"s) % s1.size() % s1).str();
