@@ -144,53 +144,80 @@ static void parse(ParseSink & sink, Source & source, const Path & path, const Pa
         }
     } else throw Error("input doesn't look like a Git object");
 }
-// Internal version, returns the perm.
-unsigned int dumpGitInternal(const Path & path, Sink & sink, PathFilter & filter)
+
+// TODO stream file into sink, rather than reading into vector
+GitMode dumpGitBlob(const Path & path, const struct stat st, Sink & sink)
+{
+    auto s = (format("blob %d\0%s"s) % std::to_string(st.st_size) % readFile(path)).str();
+
+    vector<uint8_t> v;
+    std::copy(s.begin(), s.end(), std::back_inserter(v));
+    sink(v.data(), v.size());
+    return st.st_mode & S_IXUSR
+        ? GitMode::Executable
+        : GitMode::Regular;
+}
+
+GitMode dumpGitTree(const GitTree & entries, Sink & sink)
+{
+    std::string s1 = "";
+    for (auto & i : entries) {
+        unsigned int mode;
+        switch (i.second.first) {
+        case GitMode::Directory: mode = 40000; break;
+        case GitMode::Executable: mode = 100755; break;
+        case GitMode::Regular: mode = 100644; break;
+        }
+        s1 += (format("%06d %s\0%s"s) % mode % i.first % i.second.second.hash).str();
+    }
+
+    std::string s2 = (format("tree %d\0%s"s) % s1.size() % s1).str();
+
+    vector<uint8_t> v;
+    std::copy(s2.begin(), s2.end(), std::back_inserter(v));
+    sink(v.data(), v.size());
+    return GitMode::Directory;
+}
+
+static std::pair<GitMode, Hash> dumpGitHashInternal(HashType ht, const Path & path, PathFilter & filter);
+
+static GitMode dumpGitInternal(HashType ht, const Path & path, Sink & sink, PathFilter & filter)
 {
     struct stat st;
+    GitMode perm;
     if (lstat(path.c_str(), &st))
         throw SysError(format("getting attributes of path '%1%'") % path);
 
-    if (S_ISREG(st.st_mode)) {
-        auto s = (format("blob %d\0%s"s) % std::to_string(st.st_size) % readFile(path)).str();
-
-        vector<unsigned char> v;
-        std::copy(s.begin(), s.end(), std::back_inserter(v));
-        sink(v.data(), v.size());
-        return st.st_mode & S_IXUSR
-            ? 100755
-            : 100644;
-    }
-
+    if (S_ISREG(st.st_mode))
+        perm = dumpGitBlob(path, st, sink);
     else if (S_ISDIR(st.st_mode)) {
-        std::string s1 = "";
-
-        std::map<string, string> entries;
+        GitTree entries;
         for (auto & i : readDirectory(path))
-            entries[i.name] = i.name;
+            if (filter(path + "/" + i.name))
+                entries[i.name] = dumpGitHashInternal(ht, path + "/" + i.name, filter);
+        perm = dumpGitTree(entries, sink);
+    } else throw Error(format("file '%1%' has an unsupported type") % path);
 
-        for (auto & i : entries)
-            if (filter(path + "/" + i.first)) {
-                HashSink hashSink(htSHA1);
-                unsigned int perm = dumpGitInternal(path + "/" + i.first, hashSink, filter);
-                auto hash = hashSink.finish().first;
-                s1 += (format("%06d %s\0%s"s) % perm % i.first % hash.hash).str();
-            }
-
-        std::string s2 = (format("tree %d\0%s"s) % s1.size() % s1).str();
-
-        vector<unsigned char> v;
-        std::copy(s2.begin(), s2.end(), std::back_inserter(v));
-        sink(v.data(), v.size());
-        return 40000;
-    }
-
-    else throw Error(format("file '%1%' has an unsupported type") % path);
+    return perm;
 }
 
-void dumpGit(const Path & path, Sink & sink, PathFilter & filter)
+
+static std::pair<GitMode, Hash> dumpGitHashInternal(HashType ht, const Path & path, PathFilter & filter)
 {
-    dumpGitInternal(path, sink, filter);
+    auto hashSink = new HashSink(ht);
+    auto perm = dumpGitInternal(ht, path, *hashSink, filter);
+    auto hash = hashSink->finish().first;
+    return std::pair { perm, hash };
+}
+
+Hash dumpGitHash(HashType ht, const Path & path, PathFilter & filter)
+{
+    return dumpGitHashInternal(ht, path, filter).second;
+}
+
+void dumpGit(HashType ht, const Path & path, Sink & sink, PathFilter & filter)
+{
+    dumpGitInternal(ht, path, sink, filter);
 }
 
 }

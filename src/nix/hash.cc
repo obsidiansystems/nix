@@ -36,14 +36,17 @@ struct CmdHash : Command
 
     std::string description() override
     {
-        const char* d;
+        const char *d;
         switch (mode) {
         case FileIngestionMethod::Flat:
             d = "print cryptographic hash of a regular file";
+            break;
         case FileIngestionMethod::Recursive:
             d = "print cryptographic hash of the NAR serialisation of a path";
+            break;
         case FileIngestionMethod::Git:
             d = "print cryptographic hash of the Git serialisation of a path";
+            break;
         };
         return d;
     }
@@ -54,33 +57,28 @@ struct CmdHash : Command
     {
         for (auto path : paths) {
 
-            auto makeHashSink = [&]() -> std::unique_ptr<AbstractHashSink> {
-                std::unique_ptr<AbstractHashSink> t;
-                if (modulus)
-                    t = std::make_unique<HashModuloSink>(ht, *modulus);
-                else
-                    t = std::make_unique<HashSink>(ht);
-                return t;
-            };
+            std::unique_ptr<AbstractHashSink> t;
+            if (modulus)
+                t = std::make_unique<HashModuloSink>(ht, *modulus);
+            else
+                t = std::make_unique<HashSink>(ht);
 
             Hash h;
             switch (mode) {
             case FileIngestionMethod::Flat: {
-                auto hashSink = makeHashSink();
+                auto hashSink = new HashSink(ht);
                 readFile(path, *hashSink);
                 h = hashSink->finish().first;
                 break;
             }
             case FileIngestionMethod::Recursive: {
-                auto hashSink = makeHashSink();
+                auto hashSink = new HashSink(ht);
                 dumpPath(path, *hashSink);
                 h = hashSink->finish().first;
                 break;
             }
             case FileIngestionMethod::Git:
-                auto hashSink = makeHashSink();
-                dumpGit(path, *hashSink);
-                h = hashSink->finish().first;
+                h = dumpGitHash(ht, path);
                 break;
             }
 

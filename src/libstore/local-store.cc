@@ -1128,11 +1128,12 @@ StorePath LocalStore::addToStore(const string & name, const Path & _srcPath,
        small files. */
     StringSink sink;
     switch (method) {
-    case FileIngestionMethod::Recursive:
+    case FileIngestionMethod::Recursive: {
         dumpPath(srcPath, sink, filter);
         break;
-    case FileIngestionMethod::Git:{
-        dumpGit(srcPath, sink, filter);
+    }
+    case FileIngestionMethod::Git: {
+        dumpGit(hashAlgo, srcPath, sink, filter);
         break;
     }
     case FileIngestionMethod::Flat: {

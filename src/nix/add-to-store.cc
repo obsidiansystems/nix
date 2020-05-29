@@ -52,7 +52,7 @@ struct CmdAddToStore : MixDryRun, StoreCommand
 
         StringSink sink;
         if (git)
-            dumpGit(path, sink);
+            dumpGit(htSHA1, path, sink);
         else
             dumpPath(path, sink);
 
