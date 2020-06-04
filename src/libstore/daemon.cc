@@ -8,6 +8,7 @@
 #include "archive.hh"
 #include "derivations.hh"
 #include "args.hh"
+#include "git.hh"
 
 namespace nix::daemon {
 
@@ -114,7 +115,13 @@ struct TunnelLogger : public Logger
         }
 
         StringSink buf;
-        buf << STDERR_START_ACTIVITY << act << lvl << type << s << fields << parent;
+        buf << STDERR_START_ACTIVITY 
+            << act
+            << (uint64_t) lvl
+            << (uint64_t) type
+            << s
+            << fields
+            << parent;
         enqueueMsg(*buf.s);
     }
 
@@ -130,7 +137,10 @@ struct TunnelLogger : public Logger
     {
         if (GET_PROTOCOL_MINOR(clientVersion) < 20) return;
         StringSink buf;
-        buf << STDERR_RESULT << act << type << fields;
+        buf << STDERR_RESULT
+            << act
+            << (uint64_t) type
+            << fields;
         enqueueMsg(*buf.s);
     }
 };
@@ -302,7 +312,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         logger->startWork();
         auto hash = store->queryPathInfo(path)->narHash;
         logger->stopWork();
-        to << hash.to_string(Base16, false);
+        to << hash.to_string(Base::Base16, false);
         break;
     }
 
@@ -358,7 +368,8 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         std::string s, baseName;
         FileIngestionMethod method;
         {
-            bool fixed, recursive;
+            bool fixed;
+            unsigned char recursive;
             from >> baseName >> fixed /* obsolete */ >> recursive >> s;
             method = FileIngestionMethod { recursive };
             /* Compatibility hack. */
@@ -372,20 +383,31 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         TeeSource savedNAR(from);
         RetrieveRegularNARSink savedRegular;
 
-        if (method == FileIngestionMethod::Recursive) {
+        switch (method) {
+        case FileIngestionMethod::Recursive: {
             /* Get the entire NAR dump from the client and save it to
                a string so that we can pass it to
                addToStoreFromDump(). */
             ParseSink sink; /* null sink; just parse the NAR */
             parseDump(sink, savedNAR);
-        } else
+            break;
+        }
+        case FileIngestionMethod::Git: {
+            ParseSink sink;
+            parseGit(sink, savedNAR, store->storeDir, store->storeDir);
+            break;
+        }
+        case FileIngestionMethod::Flat: {
             parseDump(savedRegular, from);
+            break;
+        }
+        }
 
         logger->startWork();
         if (!savedRegular.regular) throw Error("regular file expected");
 
         auto path = store->addToStoreFromDump(
-            method == FileIngestionMethod::Recursive ? *savedNAR.data : savedRegular.s,
+            method == FileIngestionMethod::Flat ? savedRegular.s : *savedNAR.data,
             baseName,
             method,
             hashAlgo);
@@ -550,7 +572,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         clientSettings.maxBuildJobs = readInt(from);
         clientSettings.maxSilentTime = readInt(from);
         readInt(from); // obsolete useBuildHook
-        clientSettings.verboseBuild = lvlError == (Verbosity) readInt(from);
+        clientSettings.verboseBuild = Verbosity::Error == (Verbosity) readInt(from);
         readInt(from); // obsolete logType
         readInt(from); // obsolete printBuildTrace
         clientSettings.buildCores = readInt(from);
@@ -635,7 +657,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
             if (GET_PROTOCOL_MINOR(clientVersion) >= 17)
                 to << 1;
             to << (info->deriver ? store->printStorePath(*info->deriver) : "")
-               << info->narHash.to_string(Base16, false);
+               << info->narHash.to_string(Base::Base16, false);
             writeStorePaths(*store, to, info->references);
             to << info->registrationTime << info->narSize;
             if (GET_PROTOCOL_MINOR(clientVersion) >= 16) {
@@ -695,7 +717,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         auto deriver = readString(from);
         if (deriver != "")
             info.deriver = store->parseStorePath(deriver);
-        info.narHash = Hash(readString(from), htSHA256);
+        info.narHash = Hash(readString(from), HashType::SHA256);
         info.references = readStorePaths<StorePathSet>(*store, from);
         from >> info.registrationTime >> info.narSize >> info.ultimate;
         info.sigs = readStrings<StringSet>(from);
@@ -778,7 +800,7 @@ void processConnection(
 
     Finally finally([&]() {
         _isInterrupted = false;
-        prevLogger->log(lvlDebug, fmt("%d operations", opCount));
+        prevLogger->log(Verbosity::Debug, fmt("%d operations", opCount));
     });
 
     if (GET_PROTOCOL_MINOR(clientVersion) >= 14 && readInt(from)) {

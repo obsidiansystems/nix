@@ -581,7 +581,7 @@ uint64_t LocalStore::addValidPath(State & state,
 
     state.stmtRegisterValidPath.use()
         (printStorePath(info.path))
-        (info.narHash.to_string(Base16))
+        (info.narHash.to_string(Base::Base16))
         (info.registrationTime == 0 ? time(0) : info.registrationTime)
         (info.deriver ? printStorePath(*info.deriver) : "", (bool) info.deriver)
         (info.narSize, info.narSize != 0)
@@ -681,7 +681,7 @@ void LocalStore::updatePathInfo(State & state, const ValidPathInfo & info)
 {
     state.stmtUpdatePathInfo.use()
         (info.narSize, info.narSize != 0)
-        (info.narHash.to_string(Base16))
+        (info.narHash.to_string(Base::Base16))
         (info.ultimate ? 1 : 0, info.ultimate)
         (concatStringsSep(" ", info.sigs), !info.sigs.empty())
         (info.ca, !info.ca.empty())
@@ -909,7 +909,7 @@ void LocalStore::registerValidPaths(const ValidPathInfos & infos)
         StorePathSet paths;
 
         for (auto & i : infos) {
-            assert(i.narHash.type == htSHA256);
+            assert(i.narHash.type == HashType::SHA256);
             if (isValidPath_(*state, i.path))
                 updatePathInfo(*state, i);
             else
@@ -1007,9 +1007,9 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source,
                of the NAR. */
             std::unique_ptr<AbstractHashSink> hashSink;
             if (info.ca == "" || !info.references.count(info.path))
-                hashSink = std::make_unique<HashSink>(htSHA256);
+                hashSink = std::make_unique<HashSink>(HashType::SHA256);
             else
-                hashSink = std::make_unique<HashModuloSink>(htSHA256, storePathToHash(printStorePath(info.path)));
+                hashSink = std::make_unique<HashModuloSink>(HashType::SHA256, storePathToHash(printStorePath(info.path)));
 
             LambdaSource wrapperSource([&](unsigned char * data, size_t len) -> size_t {
                 size_t n = source.read(data, len);
@@ -1017,7 +1017,10 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source,
                 return n;
             });
 
-            restorePath(realPath, wrapperSource);
+            if (hasPrefix(info.ca, "fixed:git:"))
+                restoreGit(realPath, wrapperSource, realStoreDir, storeDir);
+            else
+                restorePath(realPath, wrapperSource);
 
             auto hashResult = hashSink->finish();
 
@@ -1046,6 +1049,9 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source,
 StorePath LocalStore::addToStoreFromDump(const string & dump, const string & name,
     FileIngestionMethod method, HashType hashAlgo, RepairFlag repair)
 {
+    if (method == FileIngestionMethod::Git && hashAlgo != HashType::SHA1)
+        throw Error("git ingestion must use sha1 hash");
+
     Hash h = hashString(hashAlgo, dump);
 
     auto dstPath = makeFixedOutputPath(method, h, name);
@@ -1079,7 +1085,7 @@ StorePath LocalStore::addToStoreFromDump(const string & dump, const string & nam
             }
             case FileIngestionMethod::Git: {
                 StringSource source(dump);
-                restoreGit(realPath, source);
+                restoreGit(realPath, source, realStoreDir, storeDir);
                 break;
             }
             }
@@ -1092,10 +1098,10 @@ StorePath LocalStore::addToStoreFromDump(const string & dump, const string & nam
                sha256); otherwise, compute it here. */
             HashResult hash;
             if (method == FileIngestionMethod::Recursive) {
-                hash.first = hashAlgo == htSHA256 ? h : hashString(htSHA256, dump);
+                hash.first = hashAlgo == HashType::SHA256 ? h : hashString(HashType::SHA256, dump);
                 hash.second = dump.size();
             } else
-                hash = hashPath(htSHA256, realPath);
+                hash = hashPath(HashType::SHA256, realPath);
 
             optimisePath(realPath); // FIXME: combine with hashPath()
 
@@ -1118,14 +1124,35 @@ StorePath LocalStore::addToStore(const string & name, const Path & _srcPath,
 {
     Path srcPath(absPath(_srcPath));
 
+    if (method == FileIngestionMethod::Git && hashAlgo != HashType::SHA1)
+        throw Error("git ingestion must use sha1 hash");
+
     /* Read the whole path into memory. This is not a very scalable
        method for very large paths, but `copyPath' is mainly used for
        small files. */
     StringSink sink;
-    if (method == FileIngestionMethod::Recursive)
+    switch (method) {
+    case FileIngestionMethod::Recursive: {
         dumpPath(srcPath, sink, filter);
-    else
+        break;
+    }
+    case FileIngestionMethod::Git: {
+        // recursively add to store if path is a directory
+        struct stat st;
+        if (lstat(srcPath.c_str(), &st))
+            throw SysError(format("getting attributes of path '%1%'") % srcPath);
+        if (S_ISDIR(st.st_mode))
+            for (auto & i : readDirectory(srcPath))
+                addToStore("git", srcPath + "/" + i.name, method, hashAlgo, filter, repair);
+
+        dumpGit(hashAlgo, srcPath, sink, filter);
+        break;
+    }
+    case FileIngestionMethod::Flat: {
         sink.s = make_ref<std::string>(readFile(srcPath));
+        break;
+    }
+    }
 
     return addToStoreFromDump(*sink.s, name, method, hashAlgo, repair);
 }
@@ -1134,7 +1161,7 @@ StorePath LocalStore::addToStore(const string & name, const Path & _srcPath,
 StorePath LocalStore::addTextToStore(const string & name, const string & s,
     const StorePathSet & references, RepairFlag repair)
 {
-    auto hash = hashString(htSHA256, s);
+    auto hash = hashString(HashType::SHA256, s);
     auto dstPath = makeTextPath(name, hash, references);
 
     addTempRoot(dstPath);
@@ -1158,7 +1185,7 @@ StorePath LocalStore::addTextToStore(const string & name, const string & s,
 
             StringSink sink;
             dumpString(s, sink);
-            auto narHash = hashString(htSHA256, *sink.s);
+            auto narHash = hashString(HashType::SHA256, *sink.s);
 
             optimisePath(realPath);
 
@@ -1244,9 +1271,9 @@ bool LocalStore::verifyStore(bool checkContents, RepairFlag repair)
         printInfo("checking link hashes...");
 
         for (auto & link : readDirectory(linksDir)) {
-            printMsg(lvlTalkative, "checking contents of '%s'", link.name);
+            printMsg(Verbosity::Talkative, "checking contents of '%s'", link.name);
             Path linkPath = linksDir + "/" + link.name;
-            string hash = hashPath(htSHA256, linkPath).first.to_string(Base32, false);
+            string hash = hashPath(HashType::SHA256, linkPath).first.to_string(Base::Base32, false);
             if (hash != link.name) {
                 printError(
                     "link '%s' was modified! expected hash '%s', got '%s'",
@@ -1264,20 +1291,20 @@ bool LocalStore::verifyStore(bool checkContents, RepairFlag repair)
 
         printInfo("checking store hashes...");
 
-        Hash nullHash(htSHA256);
+        Hash nullHash(HashType::SHA256);
 
         for (auto & i : validPaths) {
             try {
                 auto info = std::const_pointer_cast<ValidPathInfo>(std::shared_ptr<const ValidPathInfo>(queryPathInfo(i)));
 
                 /* Check the content hash (optionally - slow). */
-                printMsg(lvlTalkative, "checking contents of '%s'", printStorePath(i));
+                printMsg(Verbosity::Talkative, "checking contents of '%s'", printStorePath(i));
 
                 std::unique_ptr<AbstractHashSink> hashSink;
                 if (info->ca == "" || !info->references.count(info->path))
-                    hashSink = std::make_unique<HashSink>(info->narHash.type);
+                    hashSink = std::make_unique<HashSink>(*info->narHash.type);
                 else
-                    hashSink = std::make_unique<HashModuloSink>(info->narHash.type, storePathToHash(printStorePath(info->path)));
+                    hashSink = std::make_unique<HashModuloSink>(*info->narHash.type, storePathToHash(printStorePath(info->path)));
 
                 dumpPath(Store::toRealPath(i), *hashSink);
                 auto current = hashSink->finish();
