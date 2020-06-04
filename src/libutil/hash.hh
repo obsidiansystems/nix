@@ -58,6 +58,12 @@ struct Hash
     // hash type must be part of string
     Hash(const std::string & s);
 
+    Hash(const Hash &) = default;
+
+    Hash(Hash &&) = default;
+
+    Hash & operator = (const Hash &) = default;
+
     void init();
 
     /* Check whether a hash is set. */

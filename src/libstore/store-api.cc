@@ -185,12 +185,9 @@ StorePath Store::makeFixedOutputPath(
         return makeStorePath(makeType(*this, "source", references, hasSelfReference), hash, name);
     } else {
         assert(references.empty());
-        return makeStorePath("output:out",
-            hashString(HashType::SHA256,
-                "fixed:out:"
-                + ingestionMethodPrefix(method)
-                + hash.to_string(Base::Base16) + ":"),
-            name);
+        return makeStorePath("output:out", hashString(HashType::SHA256,
+                "fixed:out:" + makeFileIngestionPrefix(method) +
+                hash.to_string(Base::Base16) + ":"), name);
     }
 }
 
@@ -708,21 +705,6 @@ void copyClosure(ref<Store> srcStore, ref<Store> dstStore,
 }
 
 
-ValidPathInfo::ValidPathInfo(const ValidPathInfo & other)
-    : path(other.path.clone())
-    , deriver(other.deriver ? other.deriver->clone(): std::optional<StorePath>{})
-    , narHash(other.narHash)
-    , references(cloneStorePathSet(other.references))
-    , registrationTime(other.registrationTime)
-    , narSize(other.narSize)
-    , id(other.id)
-    , ultimate(other.ultimate)
-    , sigs(other.sigs)
-    , ca(other.ca)
-{
-}
-
-
 std::optional<ValidPathInfo> decodeValidPathInfo(const Store & store, std::istream & str, bool hashGiven)
 {
     std::string path;
@@ -850,6 +832,18 @@ Strings ValidPathInfo::shortRefs() const
     return refs;
 }
 
+
+std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
+    switch (m) {
+    case FileIngestionMethod::Flat:
+        return "";
+    case FileIngestionMethod::Recursive:
+        return "r:";
+    case FileIngestionMethod::Git:
+        return "git:";
+    }
+    throw Error("impossible, caught both cases");
+}
 
 std::string makeFixedOutputCA(FileIngestionMethod method, const Hash & hash)
 {
