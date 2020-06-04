@@ -59,7 +59,7 @@ struct CmdAddToStore : MixDryRun, StoreCommand
         ValidPathInfo info(store->makeFixedOutputPath(ingestionMethod, hash, *namePart));
         info.narHash = narHash;
         info.narSize = sink.s->size();
-        info.ca = makeFixedOutputCA(ingestionMethod, hash);
+        info.ca = FileSystemHash { ingestionMethod, hash };
 
         if (!dryRun) {
             auto addedPath = store->addToStore(*namePart, path, ingestionMethod, git ? HashType::SHA1 : HashType::SHA256);

@@ -856,7 +856,7 @@ static void opServe(Strings opFlags, Strings opArgs)
                         out << info->narSize // downloadSize
                             << info->narSize;
                         if (GET_PROTOCOL_MINOR(clientVersion) >= 4)
-                            out << (info->narHash ? info->narHash.to_string() : "") << info->ca << info->sigs;
+                            out << (info->narHash ? info->narHash.to_string() : "") << renderContentAddress(info->ca) << info->sigs;
                     } catch (InvalidPath &) {
                     }
                 }
@@ -944,7 +944,7 @@ static void opServe(Strings opFlags, Strings opArgs)
                 info.references = readStorePaths<StorePathSet>(*store, in);
                 in >> info.registrationTime >> info.narSize >> info.ultimate;
                 info.sigs = readStrings<StringSet>(in);
-                in >> info.ca;
+                info.ca = parseContentAddressOpt(readString(in));
 
                 if (info.narSize == 0)
                     throw Error("narInfo is too old and missing the narSize field");

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "rust-ffi.hh"
+#include "content-address.hh"
 
 namespace nix {
 
@@ -86,24 +87,6 @@ const size_t storePathHashLen = 32; // i.e. 160 bits
 
 /* Extension of derivations in the Nix store. */
 const std::string drvExtension = ".drv";
-
-enum struct FileIngestionMethod : uint8_t {
-    Flat,
-    Recursive,
-    Git,
-};
-
-inline std::string ingestionMethodPrefix(FileIngestionMethod method) {
-    switch (method) {
-    case FileIngestionMethod::Flat:
-        return "";
-    case FileIngestionMethod::Recursive:
-        return "r:";
-    case FileIngestionMethod::Git:
-        return "git:";
-    }
-    throw;
-}
 
 struct StorePathWithOutputs
 {
