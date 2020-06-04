@@ -118,8 +118,8 @@ string storePathToHash(const Path & path)
        for paths copied by addToStore() or produced by fixed-output
        derivations:
          the string "fixed:out:<rec><algo>:<hash>:", where
-           <rec> = "r:" for recursive (path) hashes, or "" for flat
-             (file) hashes
+           <rec> = "r:" for recursive (path) hashes, "git:" for git
+             paths, or "" for flat (file) hashes
            <algo> = "md5", "sha1" or "sha256"
            <hash> = base-16 representation of the path or flat hash of
              the contents of the path (or expected contents of the
@@ -178,13 +178,19 @@ StorePath Store::makeFixedOutputPath(
     const StorePathSet & references,
     bool hasSelfReference) const
 {
+    if (method == FileIngestionMethod::Git && hash.type != HashType::SHA1)
+        throw Error("Git file ingestion must use sha1 hash");
+
     if (hash.type == HashType::SHA256 && method == FileIngestionMethod::Recursive) {
         return makeStorePath(makeType(*this, "source", references, hasSelfReference), hash, name);
     } else {
         assert(references.empty());
-        return makeStorePath("output:out", hashString(HashType::SHA256,
-                "fixed:out:" + makeFileIngestionPrefix(method) +
-                hash.to_string(Base::Base16) + ":"), name);
+        return makeStorePath("output:out",
+            hashString(HashType::SHA256,
+                "fixed:out:"
+                + makeFileIngestionPrefix(method)
+                + hash.to_string(Base::Base16) + ":"),
+            name);
     }
 }
 
@@ -203,9 +209,21 @@ StorePath Store::makeTextPath(std::string_view name, const Hash & hash,
 std::pair<StorePath, Hash> Store::computeStorePathForPath(std::string_view name,
     const Path & srcPath, FileIngestionMethod method, HashType hashAlgo, PathFilter & filter) const
 {
-    Hash h = method == FileIngestionMethod::Recursive
-        ? hashPath(hashAlgo, srcPath, filter).first
-        : hashFile(hashAlgo, srcPath);
+    Hash h;
+    switch (method) {
+    case FileIngestionMethod::Recursive: {
+        h = hashPath(hashAlgo, srcPath, filter).first;
+        break;
+    }
+    case FileIngestionMethod::Git: {
+        h = hashGit(hashAlgo, srcPath, filter).first;
+        break;
+    }
+    case FileIngestionMethod::Flat: {
+        h = hashFile(hashAlgo, srcPath);
+        break;
+    }
+    }
     return std::make_pair(makeFixedOutputPath(method, h, name), h);
 }
 

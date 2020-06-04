@@ -6,9 +6,11 @@
 namespace nix {
 
 enum struct FileIngestionMethod : uint8_t {
-    Flat = false,
-    Recursive = true
+    Flat,
+    Recursive,
+    Git,
 };
+
 
 struct TextHash {
     Hash hash;

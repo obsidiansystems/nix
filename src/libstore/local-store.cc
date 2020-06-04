@@ -1,5 +1,6 @@
 #include "local-store.hh"
 #include "globals.hh"
+#include "git.hh"
 #include "archive.hh"
 #include "pathlocks.hh"
 #include "worker-protocol.hh"
@@ -1018,7 +1019,12 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source,
                 return n;
             });
 
-            restorePath(realPath, wrapperSource);
+			auto p = info.ca ? std::get_if<FileSystemHash>(&*info.ca) : NULL;
+
+            if (p && p->method == FileIngestionMethod::Git)
+                restoreGit(realPath, wrapperSource, realStoreDir, storeDir);
+            else
+                restorePath(realPath, wrapperSource);
 
             auto hashResult = hashSink->finish();
 
@@ -1047,6 +1053,9 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source,
 StorePath LocalStore::addToStoreFromDump(const string & dump, const string & name,
     FileIngestionMethod method, HashType hashAlgo, RepairFlag repair)
 {
+    if (method == FileIngestionMethod::Git && hashAlgo != HashType::SHA1)
+        throw Error("git ingestion must use sha1 hash");
+
     Hash h = hashString(hashAlgo, dump);
 
     auto dstPath = makeFixedOutputPath(method, h, name);
@@ -1069,11 +1078,21 @@ StorePath LocalStore::addToStoreFromDump(const string & dump, const string & nam
 
             autoGC();
 
-            if (method == FileIngestionMethod::Recursive) {
+            switch (method) {
+            case FileIngestionMethod::Flat:
+                writeFile(realPath, dump);
+                break;
+            case FileIngestionMethod::Recursive: {
                 StringSource source(dump);
                 restorePath(realPath, source);
-            } else
-                writeFile(realPath, dump);
+                break;
+            }
+            case FileIngestionMethod::Git: {
+                StringSource source(dump);
+                restoreGit(realPath, source, realStoreDir, storeDir);
+                break;
+            }
+            }
 
             canonicalisePathMetaData(realPath, -1);
 
@@ -1109,14 +1128,35 @@ StorePath LocalStore::addToStore(const string & name, const Path & _srcPath,
 {
     Path srcPath(absPath(_srcPath));
 
+    if (method == FileIngestionMethod::Git && hashAlgo != HashType::SHA1)
+        throw Error("git ingestion must use sha1 hash");
+
     /* Read the whole path into memory. This is not a very scalable
        method for very large paths, but `copyPath' is mainly used for
        small files. */
     StringSink sink;
-    if (method == FileIngestionMethod::Recursive)
+    switch (method) {
+    case FileIngestionMethod::Recursive: {
         dumpPath(srcPath, sink, filter);
-    else
+        break;
+    }
+    case FileIngestionMethod::Git: {
+        // recursively add to store if path is a directory
+        struct stat st;
+        if (lstat(srcPath.c_str(), &st))
+            throw SysError(format("getting attributes of path '%1%'") % srcPath);
+        if (S_ISDIR(st.st_mode))
+            for (auto & i : readDirectory(srcPath))
+                addToStore("git", srcPath + "/" + i.name, method, hashAlgo, filter, repair);
+
+        dumpGit(hashAlgo, srcPath, sink, filter);
+        break;
+    }
+    case FileIngestionMethod::Flat: {
         sink.s = make_ref<std::string>(readFile(srcPath));
+        break;
+    }
+    }
 
     return addToStoreFromDump(*sink.s, name, method, hashAlgo, repair);
 }

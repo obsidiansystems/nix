@@ -12,9 +12,10 @@ std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
         return "";
     case FileIngestionMethod::Recursive:
         return "r:";
-    default:
-        throw Error("impossible, caught both cases");
+    case FileIngestionMethod::Git:
+        return "git:";
     }
+    abort();
 }
 
 std::string makeFixedOutputCA(FileIngestionMethod method, const Hash & hash)
@@ -53,9 +54,12 @@ ContentAddress parseContentAddress(std::string_view rawCa) {
         } else if (prefix == "fixed") {
             // This has to be an inverse of makeFixedOutputCA
             auto methodAndHash = rawCa.substr(prefixSeparator+1, string::npos);
-            if (methodAndHash.substr(0,2) == "r:") {
-                std::string_view hashRaw = methodAndHash.substr(2,string::npos);
+            if (methodAndHash.substr(0, 2) == "r:") {
+                std::string_view hashRaw = methodAndHash.substr(2, string::npos);
                 return FileSystemHash { FileIngestionMethod::Recursive, Hash(string(hashRaw)) };
+            } else if (methodAndHash.substr(0, 4) == "git:") {
+                std::string_view hashRaw = methodAndHash.substr(4, string::npos);
+                return FileSystemHash { FileIngestionMethod::Git, Hash(string(hashRaw)) };
             } else {
                 std::string_view hashRaw = methodAndHash;
                 return FileSystemHash { FileIngestionMethod::Flat, Hash(string(hashRaw)) };
