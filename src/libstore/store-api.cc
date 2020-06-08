@@ -341,10 +341,8 @@ void Store::queryPathInfo(const StorePath & storePath,
 
     } catch (...) { return callback.rethrow(); }
 
-    auto callbackPtr = std::make_shared<decltype(callback)>(std::move(callback));
-
     queryPathInfoUncached(storePath,
-        {[this, storePath{printStorePath(storePath)}, hashPart, callbackPtr](std::future<std::shared_ptr<const ValidPathInfo>> fut) {
+        {[this, storePath{printStorePath(storePath)}, hashPart, callback{ std::move(callback) }](std::future<std::shared_ptr<const ValidPathInfo>> fut) {
 
             try {
                 auto info = fut.get();
@@ -362,8 +360,8 @@ void Store::queryPathInfo(const StorePath & storePath,
                     throw InvalidPath("path '%s' is not valid", storePath);
                 }
 
-                (*callbackPtr)(ref<const ValidPathInfo>(info));
-            } catch (...) { callbackPtr->rethrow(); }
+                callback(ref<const ValidPathInfo>(info));
+            } catch (...) { callback.rethrow(); }
         }});
 }
 

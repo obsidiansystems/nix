@@ -488,7 +488,7 @@ public:
         if (prev) done.test_and_set();
     }
 
-    void operator()(T && t) noexcept
+    void operator()(T && t) && noexcept
     {
         auto prev = done.test_and_set();
         assert(!prev);
@@ -497,7 +497,7 @@ public:
         fun(promise.get_future());
     }
 
-    void rethrow(const std::exception_ptr & exc = std::current_exception()) noexcept
+    void rethrow(const std::exception_ptr & exc = std::current_exception()) && noexcept
     {
         auto prev = done.test_and_set();
         assert(!prev);

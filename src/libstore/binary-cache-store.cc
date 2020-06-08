@@ -308,23 +308,21 @@ void BinaryCacheStore::queryPathInfoUncached(const StorePath & storePath,
 
     auto narInfoFile = narInfoFileFor(storePath);
 
-    auto callbackPtr = std::make_shared<decltype(callback)>(std::move(callback));
-
     getFile(narInfoFile,
-        {[=](std::future<std::shared_ptr<std::string>> fut) {
+        {[=, callback{std::move(callback)}](std::future<std::shared_ptr<std::string>> fut) {
             try {
                 auto data = fut.get();
 
-                if (!data) return (*callbackPtr)(nullptr);
+                if (!data) return callback(nullptr);
 
                 stats.narInfoRead++;
 
-                (*callbackPtr)((std::shared_ptr<ValidPathInfo>)
+                callback((std::shared_ptr<ValidPathInfo>)
                     std::make_shared<NarInfo>(*this, *data, narInfoFile));
 
                 (void) act; // force Activity into this lambda to ensure it stays alive
             } catch (...) {
-                callbackPtr->rethrow();
+                callback.rethrow();
             }
         }});
 }

@@ -140,19 +140,17 @@ protected:
 
         auto request(makeRequest(path));
 
-        auto callbackPtr = std::make_shared<decltype(callback)>(std::move(callback));
-
         getFileTransfer()->enqueueFileTransfer(request,
-            {[callbackPtr, this](std::future<FileTransferResult> result) {
+            {[callback(std::move(callback)), this](std::future<FileTransferResult> result) mutable {
                 try {
-                    (*callbackPtr)(result.get().data);
+                    std::move(callback)(result.get().data);
                 } catch (FileTransferError & e) {
                     if (e.error == FileTransfer::NotFound || e.error == FileTransfer::Forbidden)
-                        return (*callbackPtr)(std::shared_ptr<std::string>());
+                        return std::move(callback)(std::shared_ptr<std::string>());
                     maybeDisable();
-                    callbackPtr->rethrow();
+                    std::move(callback).rethrow();
                 } catch (...) {
-                    callbackPtr->rethrow();
+                    std::move(callback).rethrow();
                 }
             }});
     }
