@@ -865,12 +865,10 @@ void LocalStore::querySubstitutablePathInfos(const StorePathSet & paths,
             auto ca_ = pathsCA.find(printStorePath(path));
             // recompute store path so that we can use a different store root
             if (ca_ != pathsCA.end()) {
-                auto ca(ca_->second);
+                auto ca { ca_->second };
                 if (!hasPrefix(ca, "fixed:"))
                     continue;
-                FileIngestionMethod ingestionMethod { ca.compare(6, 2, "r:") == 0 };
-                Hash hash(std::string(ca, ingestionMethod == FileIngestionMethod::Recursive ? 8 : 6));
-                subPath = makeFixedOutputPath(ingestionMethod, hash, path.name());
+                subPath = contentAddressToStorePath(*this, path.name(), ca, StorePathSet {}, false);
                 if (subPath != path)
                     debug("replaced path '%s' with '%s' for substituter '%s'", printStorePath(path), sub->printStorePath(subPath), sub->getUri());
             } else if (sub->storeDir != storeDir) continue;

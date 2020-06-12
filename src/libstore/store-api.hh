@@ -174,6 +174,10 @@ struct ValidPathInfo
 
     void sign(const Store & store, const SecretKey & secretKey);
 
+    /* Convert the content address, if present, to a store path. This should
+       coincide with the path field if the given store has the right prefix */
+    std::optional<StorePath> pathFromCA(const Store & store) const;
+
     /* Return true iff the path is verifiably content-addressed. */
     bool isContentAddressed(const Store & store) const;
 
@@ -851,4 +855,9 @@ std::string makeFixedOutputCA(FileIngestionMethod method, const Hash & hash);
 /* Split URI into protocol+hierarchy part and its parameter set. */
 std::pair<std::string, Store::Params> splitUriAndParams(const std::string & uri);
 
+/* Convert a content address (as used in ValidPathInfo) to a store path */
+StorePath contentAddressToStorePath(
+    const Store & store,
+    std::string_view name,
+    std::string_view ca, const StorePathSet & references, bool hasSelfReference);
 }
