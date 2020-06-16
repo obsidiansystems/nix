@@ -181,6 +181,24 @@ struct TeeSource : Source
     }
 };
 
+struct TeeSink : Sink
+{
+    Sink & orig;
+    ref<std::string> data;
+    TeeSink(Sink & orig)
+        : orig(orig), data(make_ref<std::string>()) { }
+    void operator () (const unsigned char * data, size_t len) {
+        this->data->append((const char *) data, len);
+        Sink::operator()(data, len);
+    }
+    void operator () (const std::string & s)
+    {
+        *data += s;
+        Sink::operator()(s);
+    }
+};
+
+
 /* A reader that consumes the original Source until 'size'. */
 struct SizedSource : Source
 {
