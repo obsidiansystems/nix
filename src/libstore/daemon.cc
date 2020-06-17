@@ -147,7 +147,7 @@ struct TunnelLogger : public Logger
     }
 };
 
-struct TunnelSink : Sink
+struct TunnelSink : public Sink
 {
     Sink & to;
     TunnelSink(Sink & to) : to(to) { }
@@ -175,7 +175,7 @@ struct TunnelSource : BufferedSource
 
 /* If the NAR archive contains a single file at top-level, then save
    the contents of the file to `s'.  Otherwise barf. */
-struct RetrieveRegularNARSink : ParseSink
+struct RetrieveRegularNARSink : public ParseSink
 {
     bool regular;
     string s;

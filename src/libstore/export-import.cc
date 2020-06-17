@@ -7,7 +7,7 @@
 
 namespace nix {
 
-struct HashAndWriteSink : Sink
+struct HashAndWriteSink : public Sink
 {
     Sink & writeSink;
     HashSink hashSink;

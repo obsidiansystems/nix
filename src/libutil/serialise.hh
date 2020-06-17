@@ -24,7 +24,7 @@ struct Sink
 
 
 /* A buffered abstract sink. */
-struct BufferedSink : virtual Sink
+struct BufferedSink : public virtual Sink
 {
     size_t bufSize, bufPos;
     std::unique_ptr<unsigned char[]> buffer;
@@ -86,7 +86,7 @@ protected:
 
 
 /* A sink that writes data to a file descriptor. */
-struct FdSink : BufferedSink
+struct FdSink : public BufferedSink
 {
     int fd;
     bool warn = false;
@@ -144,7 +144,7 @@ private:
 
 
 /* A sink that writes data to a string. */
-struct StringSink : Sink
+struct StringSink : public Sink
 {
     ref<std::string> s;
     StringSink() : s(make_ref<std::string>()) { };
@@ -181,10 +181,11 @@ struct TeeSource : Source
     }
 };
 
-struct TeeSink : Sink
+struct TeeSink : public Sink
 {
     Sink & orig;
     ref<std::string> data;
+    TeeSink(TeeSink &&) = default;
     TeeSink(Sink & orig)
         : orig(orig), data(make_ref<std::string>()) { }
     void operator () (const unsigned char * data, size_t len) {
@@ -231,7 +232,7 @@ struct SizedSource : Source
 };
 
 /* Convert a function into a sink. */
-struct LambdaSink : Sink
+struct LambdaSink : public Sink
 {
     typedef std::function<void(const unsigned char *, size_t)> lambda_t;
 

@@ -8,7 +8,7 @@
 
 namespace nix {
 
-struct CompressionSink : BufferedSink
+struct CompressionSink : public BufferedSink
 {
     virtual void finish() = 0;
 };

@@ -125,7 +125,7 @@ string printHashType(HashType ht);
 
 union Ctx;
 
-struct AbstractHashSink : virtual Sink
+struct AbstractHashSink : public virtual Sink
 {
     virtual HashResult finish() = 0;
 };

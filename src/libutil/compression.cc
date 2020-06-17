@@ -18,7 +18,7 @@
 namespace nix {
 
 // Don't feed brotli too much at once.
-struct ChunkedCompressionSink : CompressionSink
+struct ChunkedCompressionSink : public CompressionSink
 {
     uint8_t outbuf[32 * 1024];
 
@@ -36,7 +36,7 @@ struct ChunkedCompressionSink : CompressionSink
     virtual void writeInternal(const unsigned char * data, size_t len) = 0;
 };
 
-struct NoneSink : CompressionSink
+struct NoneSink : public CompressionSink
 {
     Sink & nextSink;
     NoneSink(Sink & nextSink) : nextSink(nextSink) { }
@@ -44,7 +44,7 @@ struct NoneSink : CompressionSink
     void write(const unsigned char * data, size_t len) override { nextSink(data, len); }
 };
 
-struct GzipDecompressionSink : CompressionSink
+struct GzipDecompressionSink : public CompressionSink
 {
     Sink & nextSink;
     z_stream strm;
@@ -104,7 +104,7 @@ struct GzipDecompressionSink : CompressionSink
     }
 };
 
-struct XzDecompressionSink : CompressionSink
+struct XzDecompressionSink : public CompressionSink
 {
     Sink & nextSink;
     uint8_t outbuf[BUFSIZ];
@@ -156,7 +156,7 @@ struct XzDecompressionSink : CompressionSink
     }
 };
 
-struct BzipDecompressionSink : ChunkedCompressionSink
+struct BzipDecompressionSink : public ChunkedCompressionSink
 {
     Sink & nextSink;
     bz_stream strm;
@@ -209,7 +209,7 @@ struct BzipDecompressionSink : ChunkedCompressionSink
     }
 };
 
-struct BrotliDecompressionSink : ChunkedCompressionSink
+struct BrotliDecompressionSink : public ChunkedCompressionSink
 {
     Sink & nextSink;
     BrotliDecoderState * state;
@@ -285,7 +285,7 @@ ref<CompressionSink> makeDecompressionSink(const std::string & method, Sink & ne
         throw UnknownCompressionMethod("unknown compression method '%s'", method);
 }
 
-struct XzCompressionSink : CompressionSink
+struct XzCompressionSink : public CompressionSink
 {
     Sink & nextSink;
     uint8_t outbuf[BUFSIZ];
@@ -364,7 +364,7 @@ struct XzCompressionSink : CompressionSink
     }
 };
 
-struct BzipCompressionSink : ChunkedCompressionSink
+struct BzipCompressionSink : public ChunkedCompressionSink
 {
     Sink & nextSink;
     bz_stream strm;
@@ -417,7 +417,7 @@ struct BzipCompressionSink : ChunkedCompressionSink
     }
 };
 
-struct BrotliCompressionSink : ChunkedCompressionSink
+struct BrotliCompressionSink : public ChunkedCompressionSink
 {
     Sink & nextSink;
     uint8_t outbuf[BUFSIZ];

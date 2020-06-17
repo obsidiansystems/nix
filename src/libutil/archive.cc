@@ -295,7 +295,7 @@ void parseDump(ParseSink & sink, Source & source)
 }
 
 
-struct RestoreSink : ParseSink
+struct RestoreSink : public ParseSink
 {
     Path dstPath;
     AutoCloseFD fd;

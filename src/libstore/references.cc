@@ -46,7 +46,7 @@ static void search(const unsigned char * s, size_t len,
 }
 
 
-struct RefScanSink : Sink
+struct RefScanSink : public Sink
 {
     HashSink hashSink;
     StringSet hashes;
