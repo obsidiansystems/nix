@@ -22,6 +22,7 @@
 #include <queue>
 #include <random>
 #include <thread>
+#include <variant>
 
 using namespace std::string_literals;
 
@@ -56,7 +57,6 @@ struct curlFileTransfer : public FileTransfer
         Callback<FileTransferResult> callback;
         CURL * req = 0;
         bool active = false; // whether the handle has been added to the multi object
-        std::string status;
 
         unsigned int attempt = 0;
 
@@ -124,7 +124,7 @@ struct curlFileTransfer : public FileTransfer
             if (requestHeaders) curl_slist_free_all(requestHeaders);
             try {
                 if (!done)
-                    fail(FileTransferError(Interrupted, "download of '%s' was interrupted", request.uri));
+                    fail(FileTransferError(Interrupted, nullptr, "download of '%s' was interrupted", request.uri));
             } catch (...) {
                 ignoreException();
             }
@@ -144,7 +144,9 @@ struct curlFileTransfer : public FileTransfer
         }
 
         LambdaSink finalSink;
-        std::shared_ptr<CompressionSink> decompressionSink;
+        // std::shared_ptr< std::variant<Sink, CompressionSink> > decompressionSink;
+        // std::variant< std::shared_ptr<Sink>, std::shared_ptr<CompressionSink> > decompressionSink;
+        std::shared_ptr<Sink> decompressionSink;
 
         std::exception_ptr writeException;
 
@@ -154,8 +156,13 @@ struct curlFileTransfer : public FileTransfer
                 size_t realSize = size * nmemb;
                 result.bodySize += realSize;
 
-                if (!decompressionSink)
-                    decompressionSink = makeDecompressionSink(encoding, finalSink);
+                // if (!decompressionSink)
+                //     // decompressionSink = makeDecompressionSink(encoding, finalSink);
+                //     decompressionSink.reset(*makeDecompressionSink(encoding, finalSink));
+
+                // Let's see some types:
+                // makeDecompressionSink(...) :: ref<CompressionSink>
+                //
 
                 (*decompressionSink)((unsigned char *) contents, realSize);
 
@@ -176,6 +183,7 @@ struct curlFileTransfer : public FileTransfer
             size_t realSize = size * nmemb;
             std::string line((char *) contents, realSize);
             printMsg(lvlVomit, format("got header for '%s': %s") % request.uri % trim(line));
+            std::string status;
             if (line.compare(0, 5, "HTTP/") == 0) { // new response starts
                 result.etag = "";
                 auto ss = tokenizeString<vector<string>>(line, " ");
@@ -184,6 +192,13 @@ struct curlFileTransfer : public FileTransfer
                 result.bodySize = 0;
                 acceptRanges = false;
                 encoding = "";
+                if (successfulStatuses.find(std::stoi(status)) != successfulStatuses.end()) {
+                    // Here we want to construct just the sink
+                    decompressionSink.reset(static_cast<Sink>(makeDecompressionSink(encoding, finalSink).get_ptr()));
+                } else {
+                    // In this case we want to construct a TeeSink, to keep the error around
+                    decompressionSink = std::make_shared<TeeSink>{*decompressionSink};
+                }
             } else {
                 auto i = line.find(':');
                 if (i != string::npos) {
@@ -411,14 +426,14 @@ struct curlFileTransfer : public FileTransfer
 
                 auto exc =
                     code == CURLE_ABORTED_BY_CALLBACK && _isInterrupted
-                    ? FileTransferError(Interrupted, fmt("%s of '%s' was interrupted", request.verb(), request.uri))
+                    ? FileTransferError(Interrupted, nullptr, fmt("%s of '%s' was interrupted", request.verb(), request.uri))
                     : httpStatus != 0
-                    ? FileTransferError(err,
+                    ? FileTransferError(err, nullptr,
                         fmt("unable to %s '%s': HTTP error %d",
                             request.verb(), request.uri, httpStatus)
                         + (code == CURLE_OK ? "" : fmt(" (curl error: %s)", curl_easy_strerror(code)))
                         )
-                    : FileTransferError(err,
+                    : FileTransferError(err, nullptr,
                         fmt("unable to %s '%s': %s (%d)",
                             request.verb(), request.uri, curl_easy_strerror(code), code));
 
@@ -676,7 +691,7 @@ struct curlFileTransfer : public FileTransfer
                 auto s3Res = s3Helper.getObject(bucketName, key);
                 FileTransferResult res;
                 if (!s3Res.data)
-                    throw FileTransferError(NotFound, fmt("S3 object '%s' does not exist", request.uri));
+                    throw FileTransferError(NotFound, nullptr, fmt("S3 object '%s' does not exist", request.uri));
                 res.data = s3Res.data;
                 callback(std::move(res));
 #else
