@@ -1005,7 +1005,7 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source,
                 return n;
             });
 
-            auto p = info.ca ? std::get_if<FileSystemHash>(&*info.ca) : NULL;
+            auto p = info.ca ? std::get_if<FixedOutputHash>(&*info.ca) : NULL;
             if (p && p->method == FileIngestionMethod::Git)
                 restoreGit(realPath, wrapperSource, realStoreDir, storeDir);
             else
@@ -1097,7 +1097,7 @@ StorePath LocalStore::addToStoreFromDump(const string & dump, const string & nam
             ValidPathInfo info(dstPath);
             info.narHash = hash.first;
             info.narSize = hash.second;
-            info.ca = FileSystemHash { method, h };
+            info.ca = FixedOutputHash { method, h };
             registerValidPath(info);
         }
 

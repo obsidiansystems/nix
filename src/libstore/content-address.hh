@@ -20,16 +20,16 @@ struct TextHash {
 };
 
 /// Pair of a hash, and how the file system was ingested
-struct FileSystemHash {
+struct FixedOutputHash {
     FileIngestionMethod method;
     Hash hash;
-    FileSystemHash(FileIngestionMethod method, Hash hash)
+    FixedOutputHash(FileIngestionMethod method, Hash hash)
         : method(std::move(method))
         , hash(std::move(hash))
     { }
-    FileSystemHash(const FileSystemHash &) = default;
-    FileSystemHash(FileSystemHash &&) = default;
-    FileSystemHash & operator = (const FileSystemHash &) = default;
+    FixedOutputHash(const FixedOutputHash &) = default;
+    FixedOutputHash(FixedOutputHash &&) = default;
+    FixedOutputHash & operator = (const FixedOutputHash &) = default;
     std::string printMethodAlgo() const;
 };
 
@@ -46,7 +46,7 @@ struct FileSystemHash {
 */
 typedef std::variant<
     TextHash, // for paths computed by makeTextPath() / addTextToStore
-    FileSystemHash // for path computed by makeFixedOutputPath
+    FixedOutputHash // for path computed by makeFixedOutputPath
 > ContentAddress;
 
 /* Compute the prefix to the hash algorithm which indicates how the files were
