@@ -192,18 +192,22 @@ StorePath Store::makeFixedOutputPath(
     }
 }
 
-StorePath Store::makeFixedOutputPathFromCA(std::string_view name, std::string ca,
+// FIXME Put this somewhere?
+template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
+template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
+StorePath Store::makeFixedOutputPathFromCA(std::string_view name, ContentAddress ca,
     const StorePathSet & references, bool hasSelfReference) const
 {
-    if (hasPrefix(ca, "fixed:")) {
-        FileIngestionMethod ingestionMethod { ca.compare(6, 2, "r:") == 0 };
-        Hash hash(std::string(ca, ingestionMethod == FileIngestionMethod::Recursive ? 8 : 6));
-        return makeFixedOutputPath(ingestionMethod, hash, name, references, hasSelfReference);
-    } else if (hasPrefix(ca, "text:")) {
-        Hash hash(std::string(ca, 5));
-        return makeTextPath(name, hash, references);
-    } else
-        throw Error("'%s' is not a valid ca", ca);
+    // New template
+    return std::visit(overloaded {
+        [=](TextHash th) {
+            return makeTextPath(name, th.hash, references);
+        },
+        [=](FixedOutputHash fsh) {
+            return makeFixedOutputPath(fsh.method, fsh.hash, name, references, hasSelfReference);
+        }
+    }, ca);
 }
 
 StorePath Store::makeTextPath(std::string_view name, const Hash & hash,
@@ -597,7 +601,7 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
     // recompute store path on the chance dstStore does it differently
     if (info->isContentAddressed(*srcStore) && info->references.empty()) {
         auto info2 = make_ref<ValidPathInfo>(*info);
-        info2->path = dstStore->makeFixedOutputPathFromCA(info->path.name(), info->ca);
+        info2->path = dstStore->makeFixedOutputPathFromCA(info->path.name(), *info->ca);
         if (dstStore->storeDir == srcStore->storeDir)
             assert(info->path == info2->path);
         info = info2;
@@ -671,7 +675,7 @@ void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & st
             auto info = srcStore->queryPathInfo(storePath);
             auto storePathForDst = storePath;
             if (info->isContentAddressed(*srcStore) && info->references.empty()) {
-                storePathForDst = dstStore->makeFixedOutputPathFromCA(storePath.name(), info->ca);
+                storePathForDst = dstStore->makeFixedOutputPathFromCA(storePath.name(), *info->ca);
                 if (dstStore->storeDir == srcStore->storeDir)
                     assert(storePathForDst == storePath);
                 if (storePathForDst != storePath)
@@ -698,7 +702,7 @@ void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & st
 
             auto storePathForDst = storePath;
             if (info->isContentAddressed(*srcStore) && info->references.empty()) {
-                storePathForDst = dstStore->makeFixedOutputPathFromCA(storePath.name(), info->ca);
+                storePathForDst = dstStore->makeFixedOutputPathFromCA(storePath.name(), *info->ca);
                 if (dstStore->storeDir == srcStore->storeDir)
                     assert(storePathForDst == storePath);
                 if (storePathForDst != storePath)
@@ -798,10 +802,6 @@ void ValidPathInfo::sign(const Store & store, const SecretKey & secretKey)
 {
     sigs.insert(secretKey.signDetached(fingerprint(store)));
 }
-
-// FIXME Put this somewhere?
-template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
-template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 bool ValidPathInfo::isContentAddressed(const Store & store) const
 {

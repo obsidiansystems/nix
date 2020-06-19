@@ -108,7 +108,7 @@ void Store::computeFSClosure(const StorePath & startPath,
 }
 
 
-std::optional<std::string> getDerivationCA(const BasicDerivation & drv)
+std::optional<FixedOutputHash> getDerivationCA(const BasicDerivation & drv)
 {
     auto outputHashMode = drv.env.find("outputHashMode");
     auto outputHashAlgo = drv.env.find("outputHashAlgo");
@@ -123,7 +123,7 @@ std::optional<std::string> getDerivationCA(const BasicDerivation & drv)
             ingestionMethod = FileIngestionMethod::Flat;
         else
             throw Error("unknown ingestion method: '%s'", outputHashMode->second);
-        return makeFixedOutputCA(ingestionMethod, h);
+        return FixedOutputHash{ingestionMethod, h};
     }
 
     return std::nullopt;

@@ -345,7 +345,7 @@ public:
     StorePath makeTextPath(std::string_view name, const Hash & hash,
         const StorePathSet & references = {}) const;
 
-    StorePath makeFixedOutputPathFromCA(std::string_view name, std::string ca,
+    StorePath makeFixedOutputPathFromCA(std::string_view name, ContentAddress ca,
         const StorePathSet & references = {},
         bool hasSelfReference = false) const;
 
@@ -835,6 +835,6 @@ std::optional<ValidPathInfo> decodeValidPathInfo(
 /* Split URI into protocol+hierarchy part and its parameter set. */
 std::pair<std::string, Store::Params> splitUriAndParams(const std::string & uri);
 
-std::optional<std::string> getDerivationCA(const BasicDerivation & drv);
+std::optional<FixedOutputHash> getDerivationCA(const BasicDerivation & drv);
 
 }

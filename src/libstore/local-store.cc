@@ -851,7 +851,7 @@ void LocalStore::querySubstitutablePathInfos(const StorePathCAMap & paths, Subst
             auto subPath(path.first);
 
             // recompute store path so that we can use a different store root
-            if (path.second && (hasPrefix(*path.second, "fixed:") || hasPrefix(*path.second, "text:"))) {
+            if (path.second) {
                 subPath = makeFixedOutputPathFromCA(path.first.name(), *path.second);
                 if (sub->storeDir == storeDir)
                     assert(subPath == path.first);
