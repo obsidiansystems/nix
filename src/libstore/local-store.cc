@@ -1017,11 +1017,7 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source,
                 return n;
             });
 
-            auto p = info.ca ? std::get_if<FixedOutputHash>(&*info.ca) : NULL;
-            if (p && p->method == FileIngestionMethod::Git)
-                restoreGit(realPath, wrapperSource, realStoreDir, storeDir);
-            else
-                restorePath(realPath, wrapperSource);
+            restorePath(realPath, wrapperSource);
 
             auto hashResult = hashSink->finish();
 
