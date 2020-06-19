@@ -3743,8 +3743,8 @@ void DerivationGoal::registerOutputs()
                 delayedException = std::make_exception_ptr(
                     BuildError("hash mismatch in fixed-output derivation '%s':\n  wanted: %s\n  got:    %s",
                         worker.store.printStorePath(dest),
-                        i.second.hash->hash.to_string(SRI, false),
-                        h2.to_string(SRI, false)));
+                        i.second.hash->hash.to_string(SRI, true),
+                        h2.to_string(SRI, true)));
 
                 Path actualDest = worker.store.Store::toRealPath(dest);
 
