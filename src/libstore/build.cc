@@ -4442,7 +4442,6 @@ void SubstitutionGoal::tryNext()
     }
 
     if (info->path != storePath) {
-        printError("Printing ca: %s", renderContentAddress(info->ca));
         if (info->isContentAddressed(*sub) && info->references.empty()) {
             auto info2 = std::make_shared<ValidPathInfo>(*info);
             info2->path = storePath;

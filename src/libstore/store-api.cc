@@ -824,11 +824,8 @@ bool ValidPathInfo::isContentAddressed(const Store & store) const
 
     bool res = caPath == path;
 
-    if (!res) {
-        std::string p1 = store.printStorePath(caPath);
-        std::string p2 = store.printStorePath(path);
-        printError("warning: path '%s' claims to be content-addressed but isn't\n  caPath: %s\n  path: %s\n", store.printStorePath(path), p1, p2);
-    }
+    if (!res)
+        printError("warning: path '%s' claims to be content-addressed but isn't", store.printStorePath(path));
 
     return res;
 }
