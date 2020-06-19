@@ -14,22 +14,12 @@ enum struct FileIngestionMethod : uint8_t {
 
 struct TextHash {
     Hash hash;
-    TextHash(const TextHash &) = default;
-    TextHash(TextHash &&) = default;
-    TextHash & operator = (const TextHash &) = default;
 };
 
 /// Pair of a hash, and how the file system was ingested
 struct FixedOutputHash {
     FileIngestionMethod method;
     Hash hash;
-    FixedOutputHash(FileIngestionMethod method, Hash hash)
-        : method(std::move(method))
-        , hash(std::move(hash))
-    { }
-    FixedOutputHash(const FixedOutputHash &) = default;
-    FixedOutputHash(FixedOutputHash &&) = default;
-    FixedOutputHash & operator = (const FixedOutputHash &) = default;
     std::string printMethodAlgo() const;
 };
 
