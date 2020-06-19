@@ -39,6 +39,7 @@ struct FileTransferRequest
     std::string expectedETag;
     bool verifyTLS = true;
     bool head = false;
+    bool post = false;
     size_t tries = fileTransferSettings.tries;
     unsigned int baseRetryTimeMs = 250;
     ActivityId parentAct;
@@ -89,6 +90,8 @@ struct FileTransfer
        invoked on the thread of the caller. */
     void download(FileTransferRequest && request, Sink & sink);
 
+    virtual std::string urlEncode(const std::string & param);
+
     enum Error { NotFound, Forbidden, Misc, Transient, Interrupted };
 };
 
@@ -103,10 +106,12 @@ class FileTransferError : public Error
 {
 public:
     FileTransfer::Error error;
+    std::shared_ptr<string> response; // intentionally optional
+
     template<typename... Args>
-    FileTransferError(FileTransfer::Error error, const Args & ... args)
-        : Error(args...), error(error)
-    { }
+    FileTransferError(FileTransfer::Error error, std::shared_ptr<string> response, const Args & ... args);
+
+    virtual const char* sname() const override { return "FileTransferError"; }
 };
 
 bool isUri(const string & s);

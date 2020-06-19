@@ -66,6 +66,7 @@ struct CmdAddToStore : MixDryRun, StoreCommand
             if (addedPath != info.path)
                 throw Error("Added path %s does not match calculated path %s; something has changed",
                         addedPath.to_string(), info.path.to_string());
+            store->sync();
         }
 
         logger->stdout("%s", store->printStorePath(info.path));

@@ -696,6 +696,8 @@ void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & st
             nrDone++;
             showProgress();
         });
+
+    dstStore->sync();
 }
 
 
