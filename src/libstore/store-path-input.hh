@@ -58,19 +58,33 @@ namespace nix {
 //   | TypeOutputFromNonFixedDerivation Id Derivation
 //   | TypeOutputFromFixedDerivation Id (FileIngestionMethod+HashType+Hash = FileSystemHash)
 
-
+// This matches the additional info that we need for makeTextPath
 struct StorePathTextInputs {
-    PathSet :: references, // References for the paths
-    std::string  // The resulting store path
-}
+    StorePathSet & references; // References for the paths
+    std::string resultingPath; // The resulting store path
+};
 
 struct StorePathSourceInputs {
-    PathSet :: references, // References for the paths
-    bool :: selfReference,
-     // Serialia
+    StorePathSet & references; // References for the paths
+    bool selfReference;
+    std::string resultingPath;
+};
 
+struct StorePathNonFixedInputs {
+    std::string id;
+    Derivation derivation;
+};
 
-}
+struct StorePathFixedInputs {
+    std::string id;
+    FileSystemHash fileSystemHash;
+};
+
+struct StorePathInputs {
+    StorePath storePath;
+    std::string name;
+    std::variant<StorePathTextInputs, StorePathSourceInputs, StorePathNonFixedInputs, StorePathFixedInputs> inputs;
+};
 
 
 }
