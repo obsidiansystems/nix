@@ -71,8 +71,8 @@ struct CmdAddToStore : MixDryRun, StoreCommand
         info.narHash = narHash;
         info.narSize = sink.s->size();
         info.ca = std::optional { FixedOutputHash {
-            FileIngestionMethod::Recursive,
-            info.narHash,
+            .method = FileIngestionMethod::Recursive,
+            .hash = info.narHash,
         } };
 
         if (!dryRun) {
