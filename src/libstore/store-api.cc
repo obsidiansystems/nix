@@ -201,10 +201,10 @@ StorePath Store::makeFixedOutputPathFromCA(std::string_view name, ContentAddress
 {
     // New template
     return std::visit(overloaded {
-        [=](TextHash th) {
+        [&](TextHash th) {
             return makeTextPath(name, th.hash, references);
         },
-        [=](FixedOutputHash fsh) {
+        [&](FixedOutputHash fsh) {
             return makeFixedOutputPath(fsh.method, fsh.hash, name, references, hasSelfReference);
         }
     }, ca);
