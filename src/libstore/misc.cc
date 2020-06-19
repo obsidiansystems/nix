@@ -108,6 +108,16 @@ void Store::computeFSClosure(const StorePath & startPath,
 }
 
 
+std::optional<FixedOutputHash> getDerivationCA(const BasicDerivation & drv)
+{
+    if (drv.outputs.count("out") > 0) {
+        auto res = drv.outputs.find("out");
+        return res->second.hash;
+    }
+
+    return std::nullopt;
+}
+
 void Store::queryMissing(const std::vector<StorePathWithOutputs> & targets,
     StorePathSet & willBuild_, StorePathSet & willSubstitute_, StorePathSet & unknown_,
     unsigned long long & downloadSize_, unsigned long long & narSize_)
@@ -157,7 +167,7 @@ void Store::queryMissing(const std::vector<StorePathWithOutputs> & targets,
         auto outPath = parseStorePath(outPathS);
 
         SubstitutablePathInfos infos;
-        querySubstitutablePathInfos({outPath}, infos);
+        querySubstitutablePathInfos({{outPath, getDerivationCA(*drv)}}, infos);
 
         if (infos.empty()) {
             drvState_->lock()->done = true;
@@ -214,7 +224,7 @@ void Store::queryMissing(const std::vector<StorePathWithOutputs> & targets,
             if (isValidPath(path.path)) return;
 
             SubstitutablePathInfos infos;
-            querySubstitutablePathInfos({path.path}, infos);
+            querySubstitutablePathInfos({{path.path, std::nullopt}}, infos);
 
             if (infos.empty()) {
                 auto state(state_.lock());

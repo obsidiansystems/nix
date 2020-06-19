@@ -10,7 +10,7 @@ struct CmdAddToStore : MixDryRun, StoreCommand
 {
     Path path;
     std::optional<std::string> namePart;
-    bool git = false;
+    FileIngestionMethod ingestionMethod = FileIngestionMethod::Recursive;
 
     CmdAddToStore()
     {
@@ -26,8 +26,16 @@ struct CmdAddToStore : MixDryRun, StoreCommand
 
         addFlag({
             .longName = "git",
+            .shortName = 0,
             .description = "treat path as a git object",
-            .handler = {&this->git, true},
+            .handler = {&ingestionMethod, FileIngestionMethod::Git},
+        });
+
+        addFlag({
+            .longName = "flat",
+            .shortName = 0,
+            .description = "add flat file to the Nix store",
+            .handler = {&ingestionMethod, FileIngestionMethod::Flat},
         });
     }
 
@@ -48,27 +56,40 @@ struct CmdAddToStore : MixDryRun, StoreCommand
     {
         if (!namePart) namePart = baseNameOf(path);
 
-        auto ingestionMethod = git ? FileIngestionMethod::Git : FileIngestionMethod::Recursive;
-
         StringSink sink;
         dumpPath(path, sink);
 
         auto narHash = hashString(htSHA256, *sink.s);
-        auto hash = git ? dumpGitHash(htSHA1, path) : narHash;
+
+        Hash hash;
+        switch (ingestionMethod) {
+        case FileIngestionMethod::Recursive: {
+            hash = narHash;
+            break;
+        }
+        case FileIngestionMethod::Flat: {
+            HashSink hsink(htSHA256);
+            readFile(path, hsink);
+            hash = hsink.finish().first;
+            break;
+        }
+        case FileIngestionMethod::Git: {
+            hash = dumpGitHash(htSHA1, path);
+            break;
+        }
+        }
 
         ValidPathInfo info(store->makeFixedOutputPath(ingestionMethod, hash, *namePart));
         info.narHash = narHash;
         info.narSize = sink.s->size();
         info.ca = std::optional { FixedOutputHash {
             .method = ingestionMethod,
-            .hash = info.narHash,
+            .hash = hash,
         } };
 
         if (!dryRun) {
-            auto addedPath = store->addToStore(*namePart, path, ingestionMethod, git ? htSHA1 : htSHA256);
-            if (addedPath != info.path)
-                throw Error("Added path %s does not match calculated path %s; something has changed",
-                        addedPath.to_string(), info.path.to_string());
+            auto source = StringSource { *sink.s };
+            store->addToStore(info, source);
             store->sync();
         }
 
