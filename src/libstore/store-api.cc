@@ -195,6 +195,23 @@ StorePath Store::makeFixedOutputPath(
     }
 }
 
+// FIXME Put this somewhere?
+template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
+template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
+StorePath Store::makeFixedOutputPathFromCA(std::string_view name, ContentAddress ca,
+    const StorePathSet & references, bool hasSelfReference) const
+{
+    // New template
+    return std::visit(overloaded {
+        [&](TextHash th) {
+            return makeTextPath(name, th.hash, references);
+        },
+        [&](FixedOutputHash fsh) {
+            return makeFixedOutputPath(fsh.method, fsh.hash, name, references, hasSelfReference);
+        }
+    }, ca);
+}
 
 StorePath Store::makeTextPath(std::string_view name, const Hash & hash,
     const StorePathSet & references) const
@@ -596,6 +613,15 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
 
     uint64_t total = 0;
 
+    // recompute store path on the chance dstStore does it differently
+    if (info->isContentAddressed(*srcStore) && info->references.empty()) {
+        auto info2 = make_ref<ValidPathInfo>(*info);
+        info2->path = dstStore->makeFixedOutputPathFromCA(info->path.name(), *info->ca);
+        if (dstStore->storeDir == srcStore->storeDir)
+            assert(info->path == info2->path);
+        info = info2;
+    }
+
     if (!info->narHash) {
         StringSink sink;
         srcStore->narFromPath({storePath}, sink);
@@ -658,14 +684,24 @@ void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & st
     processGraph<Path>(pool,
         PathSet(missing.begin(), missing.end()),
 
-        [&](const Path & storePath) {
-            if (dstStore->isValidPath(dstStore->parseStorePath(storePath))) {
+        [&](const Path & storePathS) {
+            auto storePath = srcStore->parseStorePath(storePathS);
+
+            auto info = srcStore->queryPathInfo(storePath);
+            auto storePathForDst = storePath;
+            if (info->isContentAddressed(*srcStore) && info->references.empty()) {
+                storePathForDst = dstStore->makeFixedOutputPathFromCA(storePath.name(), *info->ca);
+                if (dstStore->storeDir == srcStore->storeDir)
+                    assert(storePathForDst == storePath);
+                if (storePathForDst != storePath)
+                    debug("replaced path '%s' to '%s' for substituter '%s'", srcStore->printStorePath(storePath), dstStore->printStorePath(storePathForDst), dstStore->getUri());
+            }
+
+            if (dstStore->isValidPath(storePathForDst)) {
                 nrDone++;
                 showProgress();
                 return PathSet();
             }
-
-            auto info = srcStore->queryPathInfo(srcStore->parseStorePath(storePath));
 
             bytesExpected += info->narSize;
             act.setExpected(actCopyPath, bytesExpected);
@@ -676,9 +712,19 @@ void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & st
         [&](const Path & storePathS) {
             checkInterrupt();
 
-            auto storePath = dstStore->parseStorePath(storePathS);
+            auto storePath = srcStore->parseStorePath(storePathS);
+            auto info = srcStore->queryPathInfo(storePath);
 
-            if (!dstStore->isValidPath(storePath)) {
+            auto storePathForDst = storePath;
+            if (info->isContentAddressed(*srcStore) && info->references.empty()) {
+                storePathForDst = dstStore->makeFixedOutputPathFromCA(storePath.name(), *info->ca);
+                if (dstStore->storeDir == srcStore->storeDir)
+                    assert(storePathForDst == storePath);
+                if (storePathForDst != storePath)
+                    debug("replaced path '%s' to '%s' for substituter '%s'", srcStore->printStorePath(storePath), dstStore->printStorePath(storePathForDst), dstStore->getUri());
+            }
+
+            if (!dstStore->isValidPath(storePathForDst)) {
                 MaintainCount<decltype(nrRunning)> mc(nrRunning);
                 showProgress();
                 try {
@@ -773,10 +819,6 @@ void ValidPathInfo::sign(const Store & store, const SecretKey & secretKey)
 {
     sigs.insert(secretKey.signDetached(fingerprint(store)));
 }
-
-// FIXME Put this somewhere?
-template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
-template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 bool ValidPathInfo::isContentAddressed(const Store & store) const
 {
