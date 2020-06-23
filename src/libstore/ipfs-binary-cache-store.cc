@@ -495,6 +495,22 @@ private:
         } else throw Error("file '%1%' has an unsupported type", path);
     }
 
+    void getGitEntry(ParseSink & sink, const Path & path,
+        const Path & realStoreDir, const Path & storeDir,
+        int perm, std::string name, Hash hash)
+    {
+        auto url = "ipfs://f01781114" + hash.to_string(Base16, false);
+        auto source = sinkToSource([&](Sink & sink) {
+            getFile(url, sink);
+        });
+        parseGitInternal(sink, *source, path + "/" + name, realStoreDir, storeDir,
+            [this] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
+                int perm, std::string name, Hash hash) {
+                this->getGitEntry(sink, path, realStoreDir, storeDir, perm, name, hash);
+            });
+    }
+
+
 public:
 
     void addToStore(const ValidPathInfo & info, Source & narSource,
@@ -594,6 +610,21 @@ public:
             sink(data, len);
             narSize += len;
         });
+
+        // ugh... we have to convert git data to nar.
+        if (hasPrefix(info->url, "ipfs://f01781114")) {
+            AutoDelete tmpDir(createTempDir(), true);
+            auto source = sinkToSource([&](Sink & sink) {
+                getFile(info->url, sink);
+            });
+            restoreGit((Path) tmpDir + "/tmp", *source, storeDir, storeDir,
+                [this] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
+                    int perm, std::string name, Hash hash) {
+                    this->getGitEntry(sink, path, realStoreDir, storeDir, perm, name, hash);
+                });
+            dumpPath((Path) tmpDir + "/tmp", wrapperSink);
+            return;
+        }
 
         auto decompressor = makeDecompressionSink(info->compression, wrapperSink);
 
