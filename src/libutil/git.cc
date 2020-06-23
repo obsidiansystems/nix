@@ -22,21 +22,18 @@ using namespace std::string_literals;
 
 namespace nix {
 
-static void parse(ParseSink & sink, Source & source, const Path & path, const Path & realStoreDir, const Path & storeDir,
-    std::function<void (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir, int perm, std::string name, Hash hash)> addEntry);
-
 // Converts a Path to a ParseSink
 void restoreGit(const Path & path, Source & source, const Path & realStoreDir, const Path & storeDir,
     std::function<void (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir, int perm, std::string name, Hash hash)> addEntry) {
     RestoreSink sink;
     sink.dstPath = path;
-    parseGit(sink, source, realStoreDir, storeDir);
+    parseGit(sink, source, realStoreDir, storeDir, addEntry);
 }
 
 void parseGit(ParseSink & sink, Source & source, const Path & realStoreDir, const Path & storeDir,
     std::function<void (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir, int perm, std::string name, Hash hash)> addEntry)
 {
-    parse(sink, source, "", realStoreDir, storeDir, addEntry);
+    parseGitInternal(sink, source, "", realStoreDir, storeDir, addEntry);
 }
 
 static string getStringUntil(Source & source, char byte)
@@ -97,7 +94,7 @@ void addGitEntry(ParseSink & sink, const Path & path,
     } else throw Error("file '%1%' has an unsupported type", entry);
 }
 
-static void parse(ParseSink & sink, Source & source, const Path & path,
+void parseGitInternal(ParseSink & sink, Source & source, const Path & path,
     const Path & realStoreDir, const Path & storeDir,
     std::function<void (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir, int perm, std::string name, Hash hash)> addEntry)
 {
