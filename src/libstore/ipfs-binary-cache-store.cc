@@ -589,6 +589,8 @@ public:
                     narInfo.url = "ipfs://" + *cid;
                     narInfo.narHash = std::get<FixedOutputHash>(*ca).hash;
                     narInfo.narSize = *size;
+                    (*callbackPtr)((std::shared_ptr<ValidPathInfo>)
+                        std::make_shared<NarInfo>(narInfo));
                     return;
                 }
             }
@@ -657,13 +659,13 @@ public:
            small files. */
         StringSink sink;
         Hash h;
-        if (method == FileIngestionMethod::Recursive) {
-            dumpPath(srcPath, sink, filter);
-            h = hashString(hashAlgo, *sink.s);
-        } else {
+        if (method == FileIngestionMethod::Flat) {
             auto s = readFile(srcPath);
             dumpString(s, sink);
             h = hashString(hashAlgo, s);
+        } else {
+            dumpPath(srcPath, sink, filter);
+            h = hashString(hashAlgo, *sink.s);
         }
 
         ValidPathInfo info(makeFixedOutputPath(method, h, name));
