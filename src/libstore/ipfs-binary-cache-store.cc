@@ -44,6 +44,9 @@ private:
     };
     Sync<State> _state;
 
+    // only enable trustless operations
+    bool trustless = false;
+
 public:
 
     IPFSBinaryCacheStore(
@@ -60,12 +63,16 @@ public:
         sink << narVersionMagic1;
         narMagic = *sink.s;
 
-        if (cacheUri.back() == '/')
+        if (cacheUri.back() == '/' && cacheUri != "ipfs://")
             cacheUri.pop_back();
 
         if (hasPrefix(cacheUri, "ipfs://")) {
-            initialIpfsPath = "/ipfs/" + std::string(cacheUri, 7);
-            state->ipfsPath = initialIpfsPath;
+            if (cacheUri == "ipfs://")
+                trustless = true;
+            else {
+                initialIpfsPath = "/ipfs/" + std::string(cacheUri, 7);
+                state->ipfsPath = initialIpfsPath;
+            }
         } else if (hasPrefix(cacheUri, "ipns://"))
             optIpnsPath = "/ipns/" + std::string(cacheUri, 7);
         else
@@ -93,6 +100,9 @@ public:
             initialIpfsPath = resolveIPNSName(ipnsPath);
             state->ipfsPath = initialIpfsPath;
         }
+
+        if (trustless)
+            return;
 
         auto json = getIpfsDag(state->ipfsPath);
 
@@ -217,6 +227,9 @@ public:
     void sync() override
     {
         auto state(_state.lock());
+
+        if (trustless)
+            return;
 
         if (!optIpnsPath) {
             throw Error("We don't have an ipns path and the current ipfs address doesn't match the initial one.\n  current: %s\n  initial: %s",
@@ -532,6 +545,9 @@ public:
             }
         }
 
+        if (trustless)
+            throw Error("cannot add '%s' to store because of trustless mode", printStorePath(info.path));
+
         // FIXME: See if we can use the original source to reduce memory usage.
         auto nar = make_ref<std::string>(narSource.drain());
 
@@ -593,6 +609,9 @@ public:
             if (cid && ipfsBlockStat("/ipfs/" + *cid))
                 return true;
         }
+
+        if (trustless)
+            return false;
 
         auto json = getIpfsDag(getIpfsPath());
         if (!json.contains("nar"))
@@ -668,6 +687,11 @@ public:
                     return;
                 }
             }
+        }
+
+        if (trustless) {
+            (*callbackPtr)(nullptr);
+            return;
         }
 
         auto json = getIpfsDag(getIpfsPath());
@@ -768,6 +792,9 @@ public:
 
     void addSignatures(const StorePath & storePath, const StringSet & sigs) override
     {
+        if (trustless)
+            throw Error("cannot add signatures available for '%s' because of trustless mode", printStorePath(storePath));
+
         /* Note: this is inherently racy since there is no locking on
            binary caches. In particular, with S3 this unreliable, even
            when addSignatures() is called sequentially on a path, because
