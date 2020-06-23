@@ -487,7 +487,8 @@ public:
     /* Ensure that a path is valid.  If it is not currently valid, it
        may be made valid by running a substitute (if defined for the
        path). */
-    virtual void ensurePath(const StorePath & path) = 0;
+    virtual void ensurePath(const StorePath & path,
+        std::optional<ContentAddress> ca = std::nullopt) = 0;
 
     /* Add a store path as a temporary root of the garbage collector.
        The root disappears as soon as we exit. */
@@ -732,7 +733,8 @@ public:
 
 /* Copy a path from one store to another. */
 void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
-    const StorePath & storePath, RepairFlag repair = NoRepair, CheckSigsFlag checkSigs = CheckSigs);
+    const StorePath & storePath, RepairFlag repair = NoRepair, CheckSigsFlag checkSigs = CheckSigs,
+    std::optional<ContentAddress> ca = std::nullopt);
 
 
 /* Copy store paths from one store to another. The paths may be copied

@@ -78,7 +78,11 @@ std::optional<StorePath> trySubstitute(ref<Store> store, FileIngestionMethod ing
     auto substitutablePath = store->makeFixedOutputPath(ingestionMethod, hash, name);
 
     try {
-        store->ensurePath(substitutablePath);
+        auto ca = FixedOutputHash {
+            .method = ingestionMethod,
+            .hash = hash
+        };
+        store->ensurePath(substitutablePath, ca);
 
         debug("using substituted path '%s'", store->printStorePath(substitutablePath));
 

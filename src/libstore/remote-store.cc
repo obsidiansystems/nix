@@ -581,7 +581,7 @@ BuildResult RemoteStore::buildDerivation(const StorePath & drvPath, const BasicD
 }
 
 
-void RemoteStore::ensurePath(const StorePath & path)
+void RemoteStore::ensurePath(const StorePath & path, std::optional<ContentAddress> ca)
 {
     auto conn(getConnection());
     conn->to << wopEnsurePath << printStorePath(path);

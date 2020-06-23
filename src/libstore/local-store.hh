@@ -167,7 +167,7 @@ public:
     BuildResult buildDerivation(const StorePath & drvPath, const BasicDerivation & drv,
         BuildMode buildMode) override;
 
-    void ensurePath(const StorePath & path) override;
+    void ensurePath(const StorePath & path, std::optional<ContentAddress> ca) override;
 
     void addTempRoot(const StorePath & path) override;
 

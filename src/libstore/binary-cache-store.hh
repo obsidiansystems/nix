@@ -91,7 +91,7 @@ public:
         BuildMode buildMode) override
     { unsupported("buildDerivation"); }
 
-    void ensurePath(const StorePath & path) override
+    void ensurePath(const StorePath & path, std::optional<ContentAddress> ca) override
     { unsupported("ensurePath"); }
 
     ref<FSAccessor> getFSAccessor() override;

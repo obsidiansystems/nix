@@ -236,7 +236,7 @@ struct LegacySSHStore : public Store
         return status;
     }
 
-    void ensurePath(const StorePath & path) override
+    void ensurePath(const StorePath & path, std::optional<ContentAddress> ca) override
     { unsupported("ensurePath"); }
 
     void computeFSClosure(const StorePathSet & paths,
