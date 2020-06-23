@@ -170,6 +170,27 @@ private:
         }
     }
 
+    std::optional<uint64_t> ipfsBlockStat(std::string ipfsPath)
+    {
+        auto uri = daemonUri + "/api/v0/block/stat?arg=" + getFileTransfer()->urlEncode(ipfsPath);
+
+        FileTransferRequest request(uri);
+        request.post = true;
+        request.tries = 1;
+        try {
+            auto res = getFileTransfer()->download(request);
+            auto json = nlohmann::json::parse(*res.data);
+
+            if (json.find("Size") != json.end())
+                return (uint64_t) json["Size"];
+        } catch (FileTransferError & e) {
+            // probably should verify this is a not found error but
+            // ipfs gives us a 500
+        }
+
+        return std::nullopt;
+    }
+
     bool fileExists(const std::string & path)
     {
         return ipfsObjectExists(getIpfsPath() + "/" + path);
@@ -426,6 +447,23 @@ private:
         }
     }
 
+    // <cidv1> ::= <multibase-prefix><cid-version><multicodec-packed-content-type><multihash-content-address>
+    // f = base16
+    // cid-version = 01
+    // multicodec-packed-content-type = 1114
+    std::optional<std::string> getCidFromCA(ContentAddress ca)
+    {
+        if (std::holds_alternative<FixedOutputHash>(ca)) {
+            auto ca_ = std::get<FixedOutputHash>(ca);
+            if (ca_.method == FileIngestionMethod::Git) {
+                assert(ca_.hash.type == htSHA1);
+                return "f01781114" + ca_.hash.to_string(Base16, false);
+            }
+        }
+
+        return std::nullopt;
+    }
+
 public:
 
     void addToStore(const ValidPathInfo & info, Source & narSource,
@@ -489,6 +527,12 @@ public:
 
     bool isValidPathUncached(const StorePath & storePath, std::optional<ContentAddress> ca) override
     {
+        if (ca) {
+            auto cid = getCidFromCA(*ca);
+            if (cid && ipfsBlockStat("/ipfs/" + *cid))
+                return true;
+        }
+
         auto json = getIpfsDag(getIpfsPath());
         if (!json.contains("nar"))
             return false;
@@ -533,6 +577,22 @@ public:
         auto act = std::make_shared<Activity>(*logger, lvlTalkative, actQueryPathInfo,
             fmt("querying info about '%s' on '%s'", storePathS, uri), Logger::Fields{storePathS, uri});
         PushActivity pact(act->id);
+
+        if (ca) {
+            auto cid = getCidFromCA(*ca);
+            if (cid) {
+                auto size = ipfsBlockStat("/ipfs/" + *cid);
+                if (size) {
+                    assert(storePath == makeFixedOutputPathFromCA(storePath.name(), *ca));
+                    NarInfo narInfo { storePath };
+                    narInfo.ca = ca;
+                    narInfo.url = "ipfs://" + *cid;
+                    narInfo.narHash = std::get<FixedOutputHash>(*ca).hash;
+                    narInfo.narSize = *size;
+                    return;
+                }
+            }
+        }
 
         auto json = getIpfsDag(getIpfsPath());
 
