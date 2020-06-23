@@ -1046,9 +1046,6 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source,
 StorePath LocalStore::addToStoreFromDump(const string & dump, const string & name,
     FileIngestionMethod method, HashType hashAlgo, RepairFlag repair)
 {
-    if (method == FileIngestionMethod::Git && hashAlgo != htSHA1)
-        throw Error("git ingestion must use sha1 hash");
-
     Hash h = hashString(hashAlgo, dump);
 
     // ugh... we need to calculate the hash just to get what path we
@@ -1057,7 +1054,7 @@ StorePath LocalStore::addToStoreFromDump(const string & dump, const string & nam
         AutoDelete tmpDir(createTempDir(), true);
         StringSource source(dump);
         restorePath((Path) tmpDir + "/tmp", source);
-        h = dumpGitHash(hashAlgo, (Path) tmpDir + "/tmp");
+        h = dumpGitHash(htSHA1, (Path) tmpDir + "/tmp");
     }
 
     auto dstPath = makeFixedOutputPath(method, h, name);
@@ -1120,9 +1117,6 @@ StorePath LocalStore::addToStore(const string & name, const Path & _srcPath,
     FileIngestionMethod method, HashType hashAlgo, PathFilter & filter, RepairFlag repair)
 {
     Path srcPath(absPath(_srcPath));
-
-    if (method == FileIngestionMethod::Git && hashAlgo != htSHA1)
-        throw Error("git ingestion must use sha1 hash");
 
     if (method == FileIngestionMethod::Git) {
         // recursively add to store if path is a directory
