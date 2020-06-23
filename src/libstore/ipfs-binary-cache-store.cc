@@ -361,7 +361,7 @@ private:
     void getIpfsObject(const std::string & ipfsPath,
         Callback<std::shared_ptr<std::string>> callback) noexcept
     {
-        auto uri = daemonUri + "/api/v0/cat?arg=" + getFileTransfer()->urlEncode(ipfsPath);
+        auto uri = daemonUri + "/api/v0/block/get?arg=" + getFileTransfer()->urlEncode(ipfsPath);
 
         FileTransferRequest request(uri);
         request.post = true;
