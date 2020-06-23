@@ -140,3 +140,51 @@ nix copy $outPath --to ipns://$IPNS_ID --experimental-features nix-command
 
 # and copy back
 nix copy $outPath --store file://$IPFS_DST_IPNS_STORE --from ipns://$IPNS_ID --experimental-features nix-command
+
+# Verify git objects can be substituted correctly
+
+if [[ -n $(type -p git) ]]; then
+    repo=$TEST_ROOT/git
+
+    rm -rf $repo $TEST_HOME/.cache/nix
+
+    git init $repo
+    git -C $repo config user.email "foobar@example.com"
+    git -C $repo config user.name "Foobar"
+
+    echo hello > $repo/hello
+    git -C $repo add hello
+    git -C $repo commit -m 'Bla1'
+
+    treeHash=$(git -C $repo rev-parse HEAD:)
+
+    path=$(nix eval --raw "(builtins.fetchTree { type = \"git\"; url = file://$repo; treeHash = \"$treeHash\"; }).outPath")
+
+    # copy to ipfs in trustless mode, doesn’t require syncing
+    nix copy $path --to ipfs:// --experimental-features nix-command
+
+    helloBlob=$(git -C $repo rev-parse HEAD:hello)
+
+    ipfs block stat f01781114$treeHash
+    ipfs block get f01781114$treeHash > tree1
+    (printf "tree %s\0" $(git -C $repo cat-file tree HEAD: | wc -c); git -C $repo cat-file tree HEAD:) > tree2
+    diff tree1 tree2
+
+    ipfs block stat f01781114$helloBlob
+    ipfs block get f01781114$helloBlob > blob1
+    (printf "blob %s\0" $(git -C $repo cat-file blob HEAD:hello | wc -c); git -C $repo cat-file blob HEAD:hello) > blob2
+    diff blob1 blob2
+
+    clearStore
+
+    # verify we can substitute from global ipfs store
+    path2=$(nix eval --raw "(builtins.fetchTree { type = \"git\"; url = file:///no-such-repo; treeHash = \"$helloBlob\"; }).outPath" --substituters ipfs:// --option substitute true)
+    [[ "$(cat $path2)" = hello ]]
+
+    path3=$(nix eval --raw "(builtins.fetchTree { type = \"git\"; url = file:///no-such-repo; treeHash = \"$treeHash\"; }).outPath" --substituters ipfs:// --option substitute true)
+
+    [[ "$(ls $path3)" = hello ]]
+    diff $path2 $path3/hello
+else
+    echo "Git not installed; skipping IPFS/Git tests"
+fi
