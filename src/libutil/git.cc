@@ -217,6 +217,7 @@ static GitMode dumpGitInternal(HashType ht, const Path & path, Sink & sink, Path
 
 static std::pair<GitMode, Hash> dumpGitHashInternal(HashType ht, const Path & path, PathFilter & filter)
 {
+    assert(ht == htSHA1);
     auto hashSink = new HashSink(ht);
     auto perm = dumpGitInternal(ht, path, *hashSink, filter);
     auto hash = hashSink->finish().first;

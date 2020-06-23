@@ -1051,6 +1051,15 @@ StorePath LocalStore::addToStoreFromDump(const string & dump, const string & nam
 
     Hash h = hashString(hashAlgo, dump);
 
+    // ugh... we need to calculate the hash just to get what path we
+    // have. dump is still just a NAR, so we make our own dump.
+    if (method == FileIngestionMethod::Git) {
+        AutoDelete tmpDir(createTempDir(), true);
+        StringSource source(dump);
+        restorePath((Path) tmpDir + "/tmp", source);
+        h = dumpGitHash(hashAlgo, (Path) tmpDir + "/tmp");
+    }
+
     auto dstPath = makeFixedOutputPath(method, h, name);
 
     addTempRoot(dstPath);
@@ -1071,20 +1080,11 @@ StorePath LocalStore::addToStoreFromDump(const string & dump, const string & nam
 
             autoGC();
 
-            switch (method) {
-            case FileIngestionMethod::Flat:
+            if (method == FileIngestionMethod::Flat)
                 writeFile(realPath, dump);
-                break;
-            case FileIngestionMethod::Recursive: {
+            else {
                 StringSource source(dump);
                 restorePath(realPath, source);
-                break;
-            }
-            case FileIngestionMethod::Git: {
-                StringSource source(dump);
-                restoreGit(realPath, source, realStoreDir, storeDir);
-                break;
-            }
             }
 
             canonicalisePathMetaData(realPath, -1);
@@ -1124,16 +1124,7 @@ StorePath LocalStore::addToStore(const string & name, const Path & _srcPath,
     if (method == FileIngestionMethod::Git && hashAlgo != htSHA1)
         throw Error("git ingestion must use sha1 hash");
 
-    /* Read the whole path into memory. This is not a very scalable
-       method for very large paths, but `copyPath' is mainly used for
-       small files. */
-    StringSink sink;
-    switch (method) {
-    case FileIngestionMethod::Recursive: {
-        dumpPath(srcPath, sink, filter);
-        break;
-    }
-    case FileIngestionMethod::Git: {
+    if (method == FileIngestionMethod::Git) {
         // recursively add to store if path is a directory
         struct stat st;
         if (lstat(srcPath.c_str(), &st))
@@ -1141,15 +1132,16 @@ StorePath LocalStore::addToStore(const string & name, const Path & _srcPath,
         if (S_ISDIR(st.st_mode))
             for (auto & i : readDirectory(srcPath))
                 addToStore("git", srcPath + "/" + i.name, method, hashAlgo, filter, repair);
+    }
 
-        dumpGit(hashAlgo, srcPath, sink, filter);
-        break;
-    }
-    case FileIngestionMethod::Flat: {
+    /* Read the whole path into memory. This is not a very scalable
+       method for very large paths, but `copyPath' is mainly used for
+       small files. */
+    StringSink sink;
+    if (method == FileIngestionMethod::Flat)
         sink.s = make_ref<std::string>(readFile(srcPath));
-        break;
-    }
-    }
+    else
+        dumpPath(srcPath, sink, filter);
 
     return addToStoreFromDump(*sink.s, name, method, hashAlgo, repair);
 }

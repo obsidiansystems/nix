@@ -512,10 +512,7 @@ StorePath RemoteStore::addToStore(const string & name, const Path & _srcPath,
         connections->incCapacity();
         {
             Finally cleanup([&]() { connections->decCapacity(); });
-            if (method == FileIngestionMethod::Git)
-                dumpGit(hashAlgo, srcPath, conn->to, filter);
-            else
-                dumpPath(srcPath, conn->to, filter);
+            dumpPath(srcPath, conn->to, filter);
         }
         conn->to.warn = false;
         conn.processStderr();
