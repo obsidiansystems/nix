@@ -631,7 +631,7 @@ uint64_t LocalStore::addValidPath(State & state,
 
 
 void LocalStore::queryPathInfoUncached(const StorePath & path,
-    Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept
+    Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept
 {
     try {
         auto info = std::make_shared<ValidPathInfo>(path);
@@ -711,7 +711,7 @@ bool LocalStore::isValidPath_(State & state, const StorePath & path)
 }
 
 
-bool LocalStore::isValidPathUncached(const StorePath & path)
+bool LocalStore::isValidPathUncached(const StorePath & path, std::optional<ContentAddress> ca)
 {
     return retrySQLite<bool>([&]() {
         auto state(_state.lock());
@@ -862,7 +862,7 @@ void LocalStore::querySubstitutablePathInfos(const StorePathCAMap & paths, Subst
 
             debug("checking substituter '%s' for path '%s'", sub->getUri(), sub->printStorePath(subPath));
             try {
-                auto info = sub->queryPathInfo(subPath);
+                auto info = sub->queryPathInfo(subPath, path.second);
 
                 if (sub->storeDir != storeDir && !(info->isContentAddressed(*sub) && info->references.empty()))
                     continue;

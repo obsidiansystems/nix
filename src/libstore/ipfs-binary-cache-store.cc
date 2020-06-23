@@ -487,7 +487,7 @@ public:
         stats.narInfoWrite++;
     }
 
-    bool isValidPathUncached(const StorePath & storePath) override
+    bool isValidPathUncached(const StorePath & storePath, std::optional<ContentAddress> ca) override
     {
         auto json = getIpfsDag(getIpfsPath());
         if (!json.contains("nar"))
@@ -495,9 +495,9 @@ public:
         return json["nar"].contains(storePath.to_string());
     }
 
-    void narFromPath(const StorePath & storePath, Sink & sink) override
+    void narFromPath(const StorePath & storePath, Sink & sink, std::optional<ContentAddress> ca) override
     {
-        auto info = queryPathInfo(storePath).cast<const NarInfo>();
+        auto info = queryPathInfo(storePath, ca).cast<const NarInfo>();
 
         uint64_t narSize = 0;
 
@@ -522,7 +522,7 @@ public:
     }
 
     void queryPathInfoUncached(const StorePath & storePath,
-        Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override
+        Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept override
     {
         // TODO: properly use callbacks
 

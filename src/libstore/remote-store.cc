@@ -254,7 +254,7 @@ ConnectionHandle RemoteStore::getConnection()
 }
 
 
-bool RemoteStore::isValidPathUncached(const StorePath & path)
+bool RemoteStore::isValidPathUncached(const StorePath & path, std::optional<ContentAddress> ca)
 {
     auto conn(getConnection());
     conn->to << wopIsValidPath << printStorePath(path);
@@ -356,7 +356,7 @@ void RemoteStore::querySubstitutablePathInfos(const StorePathCAMap & pathsMap, S
 
 
 void RemoteStore::queryPathInfoUncached(const StorePath & path,
-    Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept
+    Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept
 {
     try {
         std::shared_ptr<ValidPathInfo> info;

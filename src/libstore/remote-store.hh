@@ -35,7 +35,7 @@ public:
 
     /* Implementations of abstract store API methods. */
 
-    bool isValidPathUncached(const StorePath & path) override;
+    bool isValidPathUncached(const StorePath & path, std::optional<ContentAddress> ca) override;
 
     StorePathSet queryValidPaths(const StorePathSet & paths,
         SubstituteFlag maybeSubstitute = NoSubstitute) override;
@@ -43,7 +43,7 @@ public:
     StorePathSet queryAllValidPaths() override;
 
     void queryPathInfoUncached(const StorePath & path,
-        Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override;
+        Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept override;
 
     void queryReferrers(const StorePath & path, StorePathSet & referrers) override;
 

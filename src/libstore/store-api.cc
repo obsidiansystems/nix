@@ -274,7 +274,7 @@ bool Store::PathInfoCacheValue::isKnownNow()
     return std::chrono::steady_clock::now() < time_point + ttl;
 }
 
-bool Store::isValidPath(const StorePath & storePath)
+bool Store::isValidPath(const StorePath & storePath, std::optional<ContentAddress> ca)
 {
     std::string hashPart(storePath.hashPart());
 
@@ -298,7 +298,7 @@ bool Store::isValidPath(const StorePath & storePath)
         }
     }
 
-    bool valid = isValidPathUncached(storePath);
+    bool valid = isValidPathUncached(storePath, ca);
 
     if (diskCache && !valid)
         // FIXME: handle valid = true case.
@@ -310,7 +310,7 @@ bool Store::isValidPath(const StorePath & storePath)
 
 /* Default implementation for stores that only implement
    queryPathInfoUncached(). */
-bool Store::isValidPathUncached(const StorePath & path)
+bool Store::isValidPathUncached(const StorePath & path, std::optional<ContentAddress> ca)
 {
     try {
         queryPathInfo(path);
@@ -321,7 +321,7 @@ bool Store::isValidPathUncached(const StorePath & path)
 }
 
 
-ref<const ValidPathInfo> Store::queryPathInfo(const StorePath & storePath)
+ref<const ValidPathInfo> Store::queryPathInfo(const StorePath & storePath, std::optional<ContentAddress> ca)
 {
     std::promise<ref<const ValidPathInfo>> promise;
 
@@ -332,14 +332,14 @@ ref<const ValidPathInfo> Store::queryPathInfo(const StorePath & storePath)
             } catch (...) {
                 promise.set_exception(std::current_exception());
             }
-        }});
+        }}, ca);
 
     return promise.get_future().get();
 }
 
 
 void Store::queryPathInfo(const StorePath & storePath,
-    Callback<ref<const ValidPathInfo>> callback) noexcept
+    Callback<ref<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept
 {
     std::string hashPart;
 
@@ -397,7 +397,7 @@ void Store::queryPathInfo(const StorePath & storePath,
 
                 (*callbackPtr)(ref<const ValidPathInfo>(info));
             } catch (...) { callbackPtr->rethrow(); }
-        }});
+        }}, ca);
 }
 
 
