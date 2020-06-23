@@ -632,8 +632,6 @@ public:
                     NarInfo narInfo { storePath };
                     narInfo.ca = ca;
                     narInfo.url = "ipfs://" + *cid;
-                    narInfo.narHash = std::get<FixedOutputHash>(*ca).hash;
-                    narInfo.narSize = *size;
                     (*callbackPtr)((std::shared_ptr<ValidPathInfo>)
                         std::make_shared<NarInfo>(narInfo));
                     return;
