@@ -375,6 +375,56 @@ private:
     void getIpfsObject(const std::string & ipfsPath,
         Callback<std::shared_ptr<std::string>> callback) noexcept
     {
+        auto uri = daemonUri + "/api/v0/cat?arg=" + getFileTransfer()->urlEncode(ipfsPath);
+
+        FileTransferRequest request(uri);
+        request.post = true;
+        request.tries = 1;
+
+        auto callbackPtr = std::make_shared<decltype(callback)>(std::move(callback));
+
+        getFileTransfer()->enqueueFileTransfer(request,
+            {[callbackPtr](std::future<FileTransferResult> result){
+                try {
+                    (*callbackPtr)(result.get().data);
+                } catch (FileTransferError & e) {
+                    return (*callbackPtr)(std::shared_ptr<std::string>());
+                } catch (...) {
+                    callbackPtr->rethrow();
+                }
+            }}
+        );
+    }
+
+    void getIpfsBlock(const std::string & path, Sink & sink)
+    {
+        std::promise<std::shared_ptr<std::string>> promise;
+        getIpfsBlock(path,
+            {[&](std::future<std::shared_ptr<std::string>> result) {
+                try {
+                    promise.set_value(result.get());
+                } catch (...) {
+                    promise.set_exception(std::current_exception());
+                }
+            }});
+        auto data = promise.get_future().get();
+        sink((unsigned char *) data->data(), data->size());
+    }
+
+    std::shared_ptr<std::string> getIpfsBlock(const std::string & path)
+    {
+        StringSink sink;
+        try {
+            getIpfsBlock(path, sink);
+        } catch (NoSuchBinaryCacheFile &) {
+            return nullptr;
+        }
+        return sink.s;
+    }
+
+    void getIpfsBlock(const std::string & ipfsPath,
+        Callback<std::shared_ptr<std::string>> callback) noexcept
+    {
         auto uri = daemonUri + "/api/v0/block/get?arg=" + getFileTransfer()->urlEncode(ipfsPath);
 
         FileTransferRequest request(uri);
@@ -514,7 +564,7 @@ private:
     {
         auto url = "ipfs://f01781114" + hash.to_string(Base16, false);
         auto source = sinkToSource([&](Sink & sink) {
-            getFile(url, sink);
+            getIpfsBlock("/ipfs/" + std::string(url, 7), sink);
         });
         parseGitInternal(sink, *source, path + "/" + name, realStoreDir, storeDir,
             [this] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
@@ -634,7 +684,7 @@ public:
         if (hasPrefix(info->url, "ipfs://f01781114")) {
             AutoDelete tmpDir(createTempDir(), true);
             auto source = sinkToSource([&](Sink & sink) {
-                getFile(info->url, sink);
+                getIpfsBlock("/ipfs/" + std::string(info->url, 7), sink);
             });
             restoreGit((Path) tmpDir + "/tmp", *source, storeDir, storeDir,
                 [this] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
