@@ -6,6 +6,7 @@
 #include "nar-info-disk-cache.hh"
 #include "archive.hh"
 #include "compression.hh"
+#include "git.hh"
 #include "names.hh"
 
 namespace nix {
@@ -464,15 +465,59 @@ private:
         return std::nullopt;
     }
 
+    void putIpfsGitBlock(std::string s)
+    {
+        auto uri = daemonUri + "/api/v0/block/put?format=git-raw&mhtype=sha1";
+
+        auto req = FileTransferRequest(uri);
+        req.data = std::make_shared<string>(s);
+        req.post = true;
+        req.tries = 1;
+        getFileTransfer()->upload(req);
+    }
+
+    void addGit(Path path)
+    {
+        struct stat st;
+        if (lstat(path.c_str(), &st))
+            throw SysError("getting attributes of path '%1%'", path);
+
+        if (S_ISREG(st.st_mode)) {
+            StringSink sink;
+            dumpGitBlob(path, st, sink);
+            putIpfsGitBlock(*sink.s);
+        } else if (S_ISDIR(st.st_mode)) {
+            for (auto & i : readDirectory(path))
+                addGit(path + "/" + i.name);
+            StringSink sink;
+            dumpGit(htSHA1, path, sink);
+            putIpfsGitBlock(*sink.s);
+        } else throw Error("file '%1%' has an unsupported type", path);
+    }
+
 public:
 
     void addToStore(const ValidPathInfo & info, Source & narSource,
         RepairFlag repair, CheckSigsFlag checkSigs, std::shared_ptr<FSAccessor> accessor) override
     {
-        // FIXME: See if we can use the original source to reduce memory usage.
-        auto nar = make_ref<std::string>(narSource.drain());
 
         if (!repair && isValidPath(info.path)) return;
+
+        // Note this doesn’t require a IPFS store, it just goes in the
+        // global namespace.
+        if (info.ca && std::holds_alternative<FixedOutputHash>(*info.ca)) {
+            auto ca_ = std::get<FixedOutputHash>(*info.ca);
+            if (ca_.method == FileIngestionMethod::Git) {
+                AutoDelete tmpDir(createTempDir(), true);
+                TeeSource savedNAR(narSource);
+                restorePath((Path) tmpDir + "/tmp", savedNAR);
+                addGit((Path) tmpDir + "/tmp");
+                return;
+            }
+        }
+
+        // FIXME: See if we can use the original source to reduce memory usage.
+        auto nar = make_ref<std::string>(narSource.drain());
 
         /* Verify that all references are valid. This may do some .narinfo
            reads, but typically they'll already be cached. */
