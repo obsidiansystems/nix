@@ -104,7 +104,7 @@ struct GitInput : Input
         assert(!rev || rev->type == htSHA1);
         assert(!treeHash || treeHash->type == htSHA1);
 
-        auto ingestionMethod = treeHash ? FileIngestionMethod::Git : FileIngestionMethod::Recursive;
+        auto ingestionMethod = FileIngestionMethod::Git;
 
         // try to substitute
         if (settings.useSubstitutes && treeHash && !submodules) {
