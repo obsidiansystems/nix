@@ -615,7 +615,7 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
     uint64_t total = 0;
 
     // recompute store path on the chance dstStore does it differently
-    if (info->isContentAddressed(*srcStore) && info->references.empty()) {
+    if (info->ca && info->references.empty()) {
         auto info2 = make_ref<ValidPathInfo>(*info);
         info2->path = dstStore->makeFixedOutputPathFromCA(info->path.name(), *info->ca);
         if (dstStore->storeDir == srcStore->storeDir)
@@ -658,7 +658,7 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
 }
 
 
-void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & storePaths,
+std::map<StorePath, StorePath> copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & storePaths,
     RepairFlag repair, CheckSigsFlag checkSigs, SubstituteFlag substitute)
 {
     auto valid = dstStore->queryValidPaths(storePaths, substitute);
@@ -667,7 +667,11 @@ void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & st
     for (auto & path : storePaths)
         if (!valid.count(path)) missing.insert(srcStore->printStorePath(path));
 
-    if (missing.empty()) return;
+    std::map<StorePath, StorePath> pathsMap;
+    for (auto & path : storePaths)
+        pathsMap.insert_or_assign(path, path);
+
+    if (missing.empty()) return pathsMap;
 
     Activity act(*logger, lvlInfo, actCopyPaths, fmt("copying %d paths", missing.size()));
 
@@ -690,13 +694,14 @@ void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & st
 
             auto info = srcStore->queryPathInfo(storePath);
             auto storePathForDst = storePath;
-            if (info->isContentAddressed(*srcStore) && info->references.empty()) {
+            if (info->ca && info->references.empty()) {
                 storePathForDst = dstStore->makeFixedOutputPathFromCA(storePath.name(), *info->ca);
                 if (dstStore->storeDir == srcStore->storeDir)
                     assert(storePathForDst == storePath);
                 if (storePathForDst != storePath)
                     debug("replaced path '%s' to '%s' for substituter '%s'", srcStore->printStorePath(storePath), dstStore->printStorePath(storePathForDst), dstStore->getUri());
             }
+            pathsMap.insert_or_assign(storePath, storePathForDst);
 
             if (dstStore->isValidPath(storePathForDst)) {
                 nrDone++;
@@ -717,13 +722,14 @@ void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & st
             auto info = srcStore->queryPathInfo(storePath);
 
             auto storePathForDst = storePath;
-            if (info->isContentAddressed(*srcStore) && info->references.empty()) {
+            if (info->ca && info->references.empty()) {
                 storePathForDst = dstStore->makeFixedOutputPathFromCA(storePath.name(), *info->ca);
                 if (dstStore->storeDir == srcStore->storeDir)
                     assert(storePathForDst == storePath);
                 if (storePathForDst != storePath)
                     debug("replaced path '%s' to '%s' for substituter '%s'", srcStore->printStorePath(storePath), dstStore->printStorePath(storePathForDst), dstStore->getUri());
             }
+            pathsMap.insert_or_assign(storePath, storePathForDst);
 
             if (!dstStore->isValidPath(storePathForDst)) {
                 MaintainCount<decltype(nrRunning)> mc(nrRunning);
@@ -745,6 +751,8 @@ void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & st
         });
 
     dstStore->sync();
+
+    return pathsMap;
 }
 
 
