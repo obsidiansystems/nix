@@ -814,16 +814,26 @@ public:
            small files. */
         StringSink sink;
         Hash h;
-        if (method == FileIngestionMethod::Flat) {
+        switch (method) {
+        case FileIngestionMethod::Recursive:
+            dumpPath(srcPath, sink, filter);
+            h = hashString(hashAlgo, *sink.s);
+            break;
+        case FileIngestionMethod::Flat: {
             auto s = readFile(srcPath);
             dumpString(s, sink);
             h = hashString(hashAlgo, s);
-        } else {
+            break;
+        }
+        case FileIngestionMethod::Git: {
             dumpPath(srcPath, sink, filter);
-            h = hashString(hashAlgo, *sink.s);
+            h = dumpGitHash(htSHA1, srcPath);
+            break;
+        }
         }
 
         ValidPathInfo info(makeFixedOutputPath(method, h, name));
+        info.ca = FixedOutputHash { .method = method, .hash = h };
 
         auto source = StringSource { *sink.s };
         addToStore(info, source, repair, CheckSigs, nullptr);
@@ -876,6 +886,8 @@ public:
 
     std::optional<StorePath> queryPathFromHashPart(const std::string & hashPart) override
     { unsupported("queryPathFromHashPart"); }
+
+    void addTempRoot(const StorePath & path) override { };
 
 };
 
