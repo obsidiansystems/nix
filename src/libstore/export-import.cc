@@ -109,6 +109,8 @@ StorePaths Store::importPaths(Source & source, std::shared_ptr<FSAccessor> acces
         res.push_back(info.path);
     }
 
+    sync();
+
     return res;
 }
 

@@ -402,6 +402,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
             baseName,
             method,
             hashAlgo);
+        store->sync();
         logger->stopWork();
 
         to << store->printStorePath(path);
@@ -734,6 +735,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         // FIXME: race if addToStore doesn't read source?
         store->addToStore(info, *source, (RepairFlag) repair,
             dontCheckSigs ? NoCheckSigs : CheckSigs, nullptr);
+        store->sync();
 
         logger->stopWork();
         break;

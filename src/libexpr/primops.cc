@@ -1161,6 +1161,7 @@ static void addPath(EvalState & state, const Pos & pos, const string & name, con
             : state.store->addToStore(name, path, method, htSHA256, filter, state.repair));
         if (expectedHash && expectedStorePath != state.store->parseStorePath(dstPath))
             throw Error("store path mismatch in (possibly filtered) path added from '%s'", path);
+        state.store->sync();
     } else
         dstPath = state.store->printStorePath(*expectedStorePath);
 

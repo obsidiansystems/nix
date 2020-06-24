@@ -56,6 +56,8 @@ std::pair<Tree, std::shared_ptr<const Input>> Input::fetchTree(ref<Store> store)
 {
     auto [tree, input] = fetchTreeInternal(store);
 
+    store->sync();
+
     if (tree.actualPath == "")
         tree.actualPath = store->toRealPath(tree.storePath);
 

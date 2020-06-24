@@ -4571,6 +4571,8 @@ void SubstitutionGoal::finished()
 
     printMsg(lvlChatty, "substitution of path '%s' succeeded", worker.store.printStorePath(storePath));
 
+    worker.store.sync();
+
     maintainRunningSubstitutions.reset();
 
     maintainExpectedSubstitutions.reset();
