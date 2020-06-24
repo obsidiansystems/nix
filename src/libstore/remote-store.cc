@@ -254,7 +254,7 @@ ConnectionHandle RemoteStore::getConnection()
 }
 
 
-bool RemoteStore::isValidPathUncached(const StorePath & path)
+bool RemoteStore::isValidPathUncached(const StorePath & path, std::optional<ContentAddress> ca)
 {
     auto conn(getConnection());
     conn->to << wopIsValidPath << printStorePath(path);
@@ -356,7 +356,7 @@ void RemoteStore::querySubstitutablePathInfos(const StorePathCAMap & pathsMap, S
 
 
 void RemoteStore::queryPathInfoUncached(const StorePath & path,
-    Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept
+    Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept
 {
     try {
         std::shared_ptr<ValidPathInfo> info;
@@ -482,9 +482,6 @@ StorePath RemoteStore::addToStore(const string & name, const Path & _srcPath,
 {
     if (repair) throw Error("repairing is not supported when building through the Nix daemon");
 
-    if (method == FileIngestionMethod::Git && hashAlgo != htSHA1)
-        throw Error("git ingestion must use sha1 hash");
-
     Path srcPath(absPath(_srcPath));
 
     // recursively add to store if path is a directory
@@ -512,10 +509,7 @@ StorePath RemoteStore::addToStore(const string & name, const Path & _srcPath,
         connections->incCapacity();
         {
             Finally cleanup([&]() { connections->decCapacity(); });
-            if (method == FileIngestionMethod::Git)
-                dumpGit(hashAlgo, srcPath, conn->to, filter);
-            else
-                dumpPath(srcPath, conn->to, filter);
+            dumpPath(srcPath, conn->to, filter);
         }
         conn->to.warn = false;
         conn.processStderr();
@@ -584,7 +578,7 @@ BuildResult RemoteStore::buildDerivation(const StorePath & drvPath, const BasicD
 }
 
 
-void RemoteStore::ensurePath(const StorePath & path)
+void RemoteStore::ensurePath(const StorePath & path, std::optional<ContentAddress> ca)
 {
     auto conn(getConnection());
     conn->to << wopEnsurePath << printStorePath(path);

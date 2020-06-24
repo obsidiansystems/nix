@@ -6,6 +6,7 @@
 #include "nar-info-disk-cache.hh"
 #include "archive.hh"
 #include "compression.hh"
+#include "git.hh"
 #include "names.hh"
 
 namespace nix {
@@ -43,6 +44,9 @@ private:
     };
     Sync<State> _state;
 
+    // only enable trustless operations
+    bool trustless = false;
+
 public:
 
     IPFSBinaryCacheStore(
@@ -59,12 +63,16 @@ public:
         sink << narVersionMagic1;
         narMagic = *sink.s;
 
-        if (cacheUri.back() == '/')
+        if (cacheUri.back() == '/' && cacheUri != "ipfs://")
             cacheUri.pop_back();
 
         if (hasPrefix(cacheUri, "ipfs://")) {
-            initialIpfsPath = "/ipfs/" + std::string(cacheUri, 7);
-            state->ipfsPath = initialIpfsPath;
+            if (cacheUri == "ipfs://")
+                trustless = true;
+            else {
+                initialIpfsPath = "/ipfs/" + std::string(cacheUri, 7);
+                state->ipfsPath = initialIpfsPath;
+            }
         } else if (hasPrefix(cacheUri, "ipns://"))
             optIpnsPath = "/ipns/" + std::string(cacheUri, 7);
         else
@@ -92,6 +100,9 @@ public:
             initialIpfsPath = resolveIPNSName(ipnsPath);
             state->ipfsPath = initialIpfsPath;
         }
+
+        if (trustless)
+            return;
 
         auto json = getIpfsDag(state->ipfsPath);
 
@@ -170,6 +181,27 @@ private:
         }
     }
 
+    std::optional<uint64_t> ipfsBlockStat(std::string ipfsPath)
+    {
+        auto uri = daemonUri + "/api/v0/block/stat?arg=" + getFileTransfer()->urlEncode(ipfsPath);
+
+        FileTransferRequest request(uri);
+        request.post = true;
+        request.tries = 1;
+        try {
+            auto res = getFileTransfer()->download(request);
+            auto json = nlohmann::json::parse(*res.data);
+
+            if (json.find("Size") != json.end())
+                return (uint64_t) json["Size"];
+        } catch (FileTransferError & e) {
+            // probably should verify this is a not found error but
+            // ipfs gives us a 500
+        }
+
+        return std::nullopt;
+    }
+
     bool fileExists(const std::string & path)
     {
         return ipfsObjectExists(getIpfsPath() + "/" + path);
@@ -202,6 +234,9 @@ public:
     void sync() override
     {
         auto state(_state.lock());
+
+        if (trustless)
+            return;
 
         if (!optIpnsPath) {
             throw Error("The current IPFS address doesn't match the configured one. \n  initial: %s\n  current: %s",
@@ -368,6 +403,56 @@ private:
         );
     }
 
+    void getIpfsBlock(const std::string & path, Sink & sink)
+    {
+        std::promise<std::shared_ptr<std::string>> promise;
+        getIpfsBlock(path,
+            {[&](std::future<std::shared_ptr<std::string>> result) {
+                try {
+                    promise.set_value(result.get());
+                } catch (...) {
+                    promise.set_exception(std::current_exception());
+                }
+            }});
+        auto data = promise.get_future().get();
+        sink((unsigned char *) data->data(), data->size());
+    }
+
+    std::shared_ptr<std::string> getIpfsBlock(const std::string & path)
+    {
+        StringSink sink;
+        try {
+            getIpfsBlock(path, sink);
+        } catch (NoSuchBinaryCacheFile &) {
+            return nullptr;
+        }
+        return sink.s;
+    }
+
+    void getIpfsBlock(const std::string & ipfsPath,
+        Callback<std::shared_ptr<std::string>> callback) noexcept
+    {
+        auto uri = daemonUri + "/api/v0/block/get?arg=" + getFileTransfer()->urlEncode(ipfsPath);
+
+        FileTransferRequest request(uri);
+        request.post = true;
+        request.tries = 1;
+
+        auto callbackPtr = std::make_shared<decltype(callback)>(std::move(callback));
+
+        getFileTransfer()->enqueueFileTransfer(request,
+            {[callbackPtr](std::future<FileTransferResult> result){
+                try {
+                    (*callbackPtr)(result.get().data);
+                } catch (FileTransferError & e) {
+                    return (*callbackPtr)(std::shared_ptr<std::string>());
+                } catch (...) {
+                    callbackPtr->rethrow();
+                }
+            }}
+        );
+    }
+
     void writeNarInfo(ref<NarInfo> narInfo)
     {
         auto json = nlohmann::json::object();
@@ -433,15 +518,95 @@ private:
         }
     }
 
+    // <cidv1> ::= <multibase-prefix><cid-version><multicodec-packed-content-type><multihash-content-address>
+    // f = base16
+    // cid-version = 01
+    // multicodec-packed-content-type = 1114
+    std::optional<std::string> getCidFromCA(ContentAddress ca)
+    {
+        if (std::holds_alternative<FixedOutputHash>(ca)) {
+            auto ca_ = std::get<FixedOutputHash>(ca);
+            if (ca_.method == FileIngestionMethod::Git) {
+                assert(ca_.hash.type == htSHA1);
+                return "f01781114" + ca_.hash.to_string(Base16, false);
+            }
+        }
+
+        return std::nullopt;
+    }
+
+    void putIpfsGitBlock(std::string s)
+    {
+        auto uri = daemonUri + "/api/v0/block/put?format=git-raw&mhtype=sha1";
+
+        auto req = FileTransferRequest(uri);
+        req.data = std::make_shared<string>(s);
+        req.post = true;
+        req.tries = 1;
+        getFileTransfer()->upload(req);
+    }
+
+    void addGit(Path path)
+    {
+        struct stat st;
+        if (lstat(path.c_str(), &st))
+            throw SysError("getting attributes of path '%1%'", path);
+
+        if (S_ISREG(st.st_mode)) {
+            StringSink sink;
+            dumpGitBlob(path, st, sink);
+            putIpfsGitBlock(*sink.s);
+        } else if (S_ISDIR(st.st_mode)) {
+            for (auto & i : readDirectory(path))
+                addGit(path + "/" + i.name);
+            StringSink sink;
+            dumpGit(htSHA1, path, sink);
+            putIpfsGitBlock(*sink.s);
+        } else throw Error("file '%1%' has an unsupported type", path);
+    }
+
+    void getGitEntry(ParseSink & sink, const Path & path,
+        const Path & realStoreDir, const Path & storeDir,
+        int perm, std::string name, Hash hash)
+    {
+        auto url = "ipfs://f01781114" + hash.to_string(Base16, false);
+        auto source = sinkToSource([&](Sink & sink) {
+            getIpfsBlock("/ipfs/" + std::string(url, 7), sink);
+        });
+        parseGitInternal(sink, *source, path + "/" + name, realStoreDir, storeDir,
+            [this] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
+                int perm, std::string name, Hash hash) {
+                this->getGitEntry(sink, path, realStoreDir, storeDir, perm, name, hash);
+            });
+    }
+
+
 public:
 
     void addToStore(const ValidPathInfo & info, Source & narSource,
         RepairFlag repair, CheckSigsFlag checkSigs, std::shared_ptr<FSAccessor> accessor) override
     {
-        // FIXME: See if we can use the original source to reduce memory usage.
-        auto nar = make_ref<std::string>(narSource.drain());
 
         if (!repair && isValidPath(info.path)) return;
+
+        // Note this doesn’t require a IPFS store, it just goes in the
+        // global namespace.
+        if (info.ca && std::holds_alternative<FixedOutputHash>(*info.ca)) {
+            auto ca_ = std::get<FixedOutputHash>(*info.ca);
+            if (ca_.method == FileIngestionMethod::Git) {
+                AutoDelete tmpDir(createTempDir(), true);
+                TeeSource savedNAR(narSource);
+                restorePath((Path) tmpDir + "/tmp", savedNAR);
+                addGit((Path) tmpDir + "/tmp");
+                return;
+            }
+        }
+
+        if (trustless)
+            throw Error("cannot add '%s' to store because of trustless mode", printStorePath(info.path));
+
+        // FIXME: See if we can use the original source to reduce memory usage.
+        auto nar = make_ref<std::string>(narSource.drain());
 
         /* Verify that all references are valid. This may do some .narinfo
            reads, but typically they'll already be cached. */
@@ -494,17 +659,26 @@ public:
         stats.narInfoWrite++;
     }
 
-    bool isValidPathUncached(const StorePath & storePath) override
+    bool isValidPathUncached(const StorePath & storePath, std::optional<ContentAddress> ca) override
     {
+        if (ca) {
+            auto cid = getCidFromCA(*ca);
+            if (cid && ipfsBlockStat("/ipfs/" + *cid))
+                return true;
+        }
+
+        if (trustless)
+            return false;
+
         auto json = getIpfsDag(getIpfsPath());
         if (!json.contains("nar"))
             return false;
         return json["nar"].contains(storePath.to_string());
     }
 
-    void narFromPath(const StorePath & storePath, Sink & sink) override
+    void narFromPath(const StorePath & storePath, Sink & sink, std::optional<ContentAddress> ca) override
     {
-        auto info = queryPathInfo(storePath).cast<const NarInfo>();
+        auto info = queryPathInfo(storePath, ca).cast<const NarInfo>();
 
         uint64_t narSize = 0;
 
@@ -512,6 +686,21 @@ public:
             sink(data, len);
             narSize += len;
         });
+
+        // ugh... we have to convert git data to nar.
+        if (hasPrefix(info->url, "ipfs://f01781114")) {
+            AutoDelete tmpDir(createTempDir(), true);
+            auto source = sinkToSource([&](Sink & sink) {
+                getIpfsBlock("/ipfs/" + std::string(info->url, 7), sink);
+            });
+            restoreGit((Path) tmpDir + "/tmp", *source, storeDir, storeDir,
+                [this] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
+                    int perm, std::string name, Hash hash) {
+                    this->getGitEntry(sink, path, realStoreDir, storeDir, perm, name, hash);
+                });
+            dumpPath((Path) tmpDir + "/tmp", wrapperSink);
+            return;
+        }
 
         auto decompressor = makeDecompressionSink(info->compression, wrapperSink);
 
@@ -529,7 +718,7 @@ public:
     }
 
     void queryPathInfoUncached(const StorePath & storePath,
-        Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override
+        Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept override
     {
         // TODO: properly use callbacks
 
@@ -540,6 +729,27 @@ public:
         auto act = std::make_shared<Activity>(*logger, lvlTalkative, actQueryPathInfo,
             fmt("querying info about '%s' on '%s'", storePathS, uri), Logger::Fields{storePathS, uri});
         PushActivity pact(act->id);
+
+        if (ca) {
+            auto cid = getCidFromCA(*ca);
+            if (cid) {
+                auto size = ipfsBlockStat("/ipfs/" + *cid);
+                if (size) {
+                    assert(storePath == makeFixedOutputPathFromCA(storePath.name(), *ca));
+                    NarInfo narInfo { storePath };
+                    narInfo.ca = ca;
+                    narInfo.url = "ipfs://" + *cid;
+                    (*callbackPtr)((std::shared_ptr<ValidPathInfo>)
+                        std::make_shared<NarInfo>(narInfo));
+                    return;
+                }
+            }
+        }
+
+        if (trustless) {
+            (*callbackPtr)(nullptr);
+            return;
+        }
 
         auto json = getIpfsDag(getIpfsPath());
 
@@ -604,13 +814,13 @@ public:
            small files. */
         StringSink sink;
         Hash h;
-        if (method == FileIngestionMethod::Recursive) {
-            dumpPath(srcPath, sink, filter);
-            h = hashString(hashAlgo, *sink.s);
-        } else {
+        if (method == FileIngestionMethod::Flat) {
             auto s = readFile(srcPath);
             dumpString(s, sink);
             h = hashString(hashAlgo, s);
+        } else {
+            dumpPath(srcPath, sink, filter);
+            h = hashString(hashAlgo, *sink.s);
         }
 
         ValidPathInfo info(makeFixedOutputPath(method, h, name));
@@ -639,6 +849,9 @@ public:
 
     void addSignatures(const StorePath & storePath, const StringSet & sigs) override
     {
+        if (trustless)
+            throw Error("cannot add signatures available for '%s' because of trustless mode", printStorePath(storePath));
+
         /* Note: this is inherently racy since there is no locking on
            binary caches. In particular, with S3 this unreliable, even
            when addSignatures() is called sequentially on a path, because
@@ -658,7 +871,7 @@ public:
         BuildMode buildMode) override
     { unsupported("buildDerivation"); }
 
-    void ensurePath(const StorePath & path) override
+    void ensurePath(const StorePath & path, std::optional<ContentAddress> ca) override
     { unsupported("ensurePath"); }
 
     std::optional<StorePath> queryPathFromHashPart(const std::string & hashPart) override

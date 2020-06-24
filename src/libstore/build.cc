@@ -2729,12 +2729,12 @@ struct RestrictedStore : public LocalFSStore
     }
 
     void queryPathInfoUncached(const StorePath & path,
-        Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override
+        Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept override
     {
         if (goal.isAllowed(path)) {
             try {
                 /* Censor impure information. */
-                auto info = std::make_shared<ValidPathInfo>(*next->queryPathInfo(path));
+                auto info = std::make_shared<ValidPathInfo>(*next->queryPathInfo(path, ca));
                 info->deriver.reset();
                 info->registrationTime = 0;
                 info->ultimate = false;
@@ -2785,14 +2785,14 @@ struct RestrictedStore : public LocalFSStore
         return path;
     }
 
-    void narFromPath(const StorePath & path, Sink & sink) override
+    void narFromPath(const StorePath & path, Sink & sink, std::optional<ContentAddress> ca) override
     {
         if (!goal.isAllowed(path))
             throw InvalidPath("cannot dump unknown path '%s' in recursive Nix", printStorePath(path));
-        LocalFSStore::narFromPath(path, sink);
+        LocalFSStore::narFromPath(path, sink, ca);
     }
 
-    void ensurePath(const StorePath & path) override
+    void ensurePath(const StorePath & path, std::optional<ContentAddress> ca) override
     {
         if (!goal.isAllowed(path))
             throw InvalidPath("cannot substitute unknown path '%s' in recursive Nix", printStorePath(path));
@@ -4422,7 +4422,7 @@ void SubstitutionGoal::tryNext()
 
     try {
         // FIXME: make async
-        info = sub->queryPathInfo(subPath);
+        info = sub->queryPathInfo(subPath, ca);
     } catch (InvalidPath &) {
         tryNext();
         return;
@@ -4550,7 +4550,7 @@ void SubstitutionGoal::tryToRun()
             }
 
             copyStorePath(ref<Store>(sub), ref<Store>(worker.store.shared_from_this()),
-                subPath, repair, sub->isTrusted ? NoCheckSigs : CheckSigs);
+                subPath, repair, sub->isTrusted ? NoCheckSigs : CheckSigs, ca);
 
             promise.set_value();
         } catch (...) {
@@ -5126,15 +5126,15 @@ BuildResult LocalStore::buildDerivation(const StorePath & drvPath, const BasicDe
 }
 
 
-void LocalStore::ensurePath(const StorePath & path)
+void LocalStore::ensurePath(const StorePath & path, std::optional<ContentAddress> ca)
 {
     /* If the path is already valid, we're done. */
-    if (isValidPath(path)) return;
+    if (isValidPath(path, ca)) return;
 
-    primeCache(*this, {{path}});
+    // primeCache(*this, {{path}});
 
     Worker worker(*this);
-    GoalPtr goal = worker.makeSubstitutionGoal(path);
+    GoalPtr goal = worker.makeSubstitutionGoal(path, NoRepair, ca);
     Goals goals = {goal};
 
     worker.run(goals);
