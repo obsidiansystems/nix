@@ -32,6 +32,16 @@ struct GitInput : Input
     bool shallow = false;
     bool submodules = false;
 
+    bool isFixedTreeHash() const {
+        if (!treeHash)
+            return false;
+        for (const uint8_t b : treeHash->hash) {
+            if (b != 0)
+                return true;
+        }
+        return false;
+    }
+
     GitInput(const ParsedURL & url) : url(url)
     { }
 
@@ -62,7 +72,7 @@ struct GitInput : Input
         ParsedURL url2(url);
         if (url2.scheme != "git") url2.scheme = "git+" + url2.scheme;
         if (rev) url2.query.insert_or_assign("rev", rev->gitRev());
-        if (treeHash) url2.query.insert_or_assign("treeHash", treeHash->gitRev());
+        if (isFixedTreeHash()) url2.query.insert_or_assign("treeHash", treeHash->gitRev());
         if (ref) url2.query.insert_or_assign("ref", *ref);
         if (shallow) url2.query.insert_or_assign("shallow", "1");
         return url2;
@@ -76,7 +86,7 @@ struct GitInput : Input
             attrs.emplace("ref", *ref);
         if (rev)
             attrs.emplace("rev", rev->gitRev());
-        if (treeHash)
+        if (isFixedTreeHash())
             attrs.emplace("treeHash", treeHash->gitRev());
         if (shallow)
             attrs.emplace("shallow", true);
@@ -107,14 +117,14 @@ struct GitInput : Input
         auto ingestionMethod = treeHash ? FileIngestionMethod::Git : FileIngestionMethod::Recursive;
 
         std::optional<ContentAddress> ca;
-        if (treeHash)
+        if (isFixedTreeHash())
             ca = FixedOutputHash {
                 .method = ingestionMethod,
                 .hash = *treeHash,
             };
 
         // try to substitute
-        if (settings.useSubstitutes && treeHash && !submodules) {
+        if (settings.useSubstitutes && !isFixedTreeHash() && !submodules) {
             auto storePath = fetchers::trySubstitute(store, ingestionMethod, *treeHash, name);
             if (storePath) {
                 return {
@@ -142,7 +152,7 @@ struct GitInput : Input
                 {"type", cacheType},
                 {"name", name},
             });
-            if (input->treeHash)
+            if (input->isFixedTreeHash())
                 attrs.insert_or_assign("treeHash", input->treeHash->gitRev());
             else
                 attrs.insert_or_assign("rev", input->rev->gitRev());
@@ -152,7 +162,7 @@ struct GitInput : Input
         auto makeResult = [&](const Attrs & infoAttrs, StorePath && storePath)
             -> std::pair<Tree, std::shared_ptr<const Input>>
         {
-            assert(input->rev || input->treeHash);
+            assert(input->rev || input->isFixedTreeHash());
             assert(!rev || rev == input->rev);
             assert(!treeHash || treeHash == input->treeHash);
             return {
@@ -179,7 +189,7 @@ struct GitInput : Input
 
         // If this is a local directory and no ref or revision is
         // given, then allow the use of an unclean working tree.
-        if (!input->ref && !input->rev && !input->treeHash && isLocal) {
+        if (!input->ref && !input->rev && !input->isFixedTreeHash() && isLocal) {
             bool clean = false;
 
             /* Check whether this repo has any commits. There are
@@ -283,7 +293,7 @@ struct GitInput : Input
 
             if (auto res = getCache()->lookup(store, mutableAttrs)) {
                 auto treeHash2 = Hash(getStrAttr(res->first, "treeHash"), htSHA1);
-                if (!input->treeHash || treeHash == treeHash2) {
+                if (!input->isFixedTreeHash() || treeHash == treeHash2) {
                     input->treeHash = treeHash2;
                     return makeResult(res->first, std::move(res->second));
                 }
@@ -307,9 +317,9 @@ struct GitInput : Input
 
             /* If a rev or treeHash is specified, we need to fetch if
                it's not in the repo. */
-            if (input->rev || input->treeHash) {
+            if (input->rev || input->isFixedTreeHash()) {
                 try {
-                    auto gitHash = input->treeHash ? input->treeHash : input->rev;
+                    auto gitHash = input->isFixedTreeHash() ? input->treeHash : input->rev;
                     runProgram("git", true, { "-C", repoDir, "cat-file", "-e", gitHash->gitRev() });
                     doFetch = false;
                 } catch (ExecError & e) {
@@ -351,11 +361,11 @@ struct GitInput : Input
                 utimes(localRefFile.c_str(), times);
             }
 
-            if (!input->rev && !input->treeHash)
+            if (!input->rev && !input->isFixedTreeHash())
                 input->rev = Hash(chomp(readFile(localRefFile)), htSHA1);
         }
 
-        if (input->treeHash) {
+        if (input->isFixedTreeHash()) {
             auto type = chomp(runProgram("git", true, { "-C", repoDir, "cat-file", "-t", input->treeHash->gitRev() }));
             if (type != "tree")
                 throw Error("Need a tree object, found '%s' object in %s", type, input->treeHash->gitRev());
@@ -370,7 +380,7 @@ struct GitInput : Input
 
         if (input->rev)
             printTalkative("using revision %s of repo '%s'", input->rev->gitRev(), actualUrl);
-        else if (input->treeHash)
+        else if (input->isFixedTreeHash())
             printTalkative("using tree %s of repo '%s'", input->treeHash->gitRev(), actualUrl);
 
         /* Now that we know the ref, check again whether we have it in
@@ -396,7 +406,7 @@ struct GitInput : Input
             runProgram("git", true, { "-C", tmpDir, "fetch", "--quiet", "--force",
                                       "--update-head-ok", "--", repoDir, "refs/*:refs/*" });
 
-            runProgram("git", true, { "-C", tmpDir, "checkout", "--quiet", input->treeHash ? input->treeHash->gitRev() : input->rev->gitRev() });
+            runProgram("git", true, { "-C", tmpDir, "checkout", "--quiet", input->isFixedTreeHash() ? input->treeHash->gitRev() : input->rev->gitRev() });
             runProgram("git", true, { "-C", tmpDir, "remote", "add", "origin", actualUrl });
             runProgram("git", true, { "-C", tmpDir, "submodule", "--quiet", "update", "--init", "--recursive" });
 
@@ -405,7 +415,7 @@ struct GitInput : Input
             // FIXME: should pipe this, or find some better way to extract a
             // revision.
             auto source = sinkToSource([&](Sink & sink) {
-                RunOptions gitOptions("git", { "-C", repoDir, "archive", input->treeHash ? input->treeHash->gitRev() : input->rev->gitRev() });
+                RunOptions gitOptions("git", { "-C", repoDir, "archive", input->isFixedTreeHash() ? input->treeHash->gitRev() : input->rev->gitRev() });
                 gitOptions.standardOut = &sink;
                 runProgram2(gitOptions);
             });
@@ -416,7 +426,7 @@ struct GitInput : Input
         auto storePath = store->addToStore(name, tmpDir, ingestionMethod, ingestionMethod == FileIngestionMethod::Git ? htSHA1 : htSHA256, filter);
 
         // verify treeHash is what we actually obtained in the nix store
-        if (input->treeHash) {
+        if (input->isFixedTreeHash()) {
             auto path = store->toRealPath(store->printStorePath(storePath));
             auto gotHash = dumpGitHash(htSHA1, path);
             if (gotHash != input->treeHash)
@@ -439,7 +449,7 @@ struct GitInput : Input
                     std::stoull(runProgram("git", true, { "-C", repoDir, "rev-list", "--count", input->rev->gitRev() })));
         }
 
-        if (!this->rev && !this->treeHash)
+        if (!this->rev && !this->isFixedTreeHash())
             getCache()->add(
                 store,
                 mutableAttrs,
@@ -505,7 +515,7 @@ struct GitInputScheme : InputScheme
             input->rev = Hash(*rev, htSHA1);
 
         if (auto treeHash = maybeGetStrAttr(attrs, "treeHash"))
-            input->treeHash = Hash(*treeHash, htSHA1);
+            input->treeHash = newHashAllowEmpty(*treeHash, htSHA1);
 
         input->shallow = maybeGetBoolAttr(attrs, "shallow").value_or(false);
 
