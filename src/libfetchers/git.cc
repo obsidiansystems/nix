@@ -423,7 +423,7 @@ struct GitInput : Input
             unpackTarfile(*source, tmpDir);
         }
 
-        auto storePath = store->addToStore(name, tmpDir, ingestionMethod, ingestionMethod == FileIngestionMethod::Git ? htSHA1 : htSHA256, filter);
+        auto storePath = store->addToStore(name, tmpDir, ingestionMethod, htSHA256, filter);
 
         // verify treeHash is what we actually obtained in the nix store
         if (input->isFixedTreeHash()) {

@@ -387,24 +387,14 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         TeeSource savedNAR(from);
         RetrieveRegularNARSink savedRegular;
 
-        switch (method) {
-        case FileIngestionMethod::Recursive: {
+        if (method == FileIngestionMethod::Flat)
+            parseDump(savedRegular, from);
+        else {
             /* Get the entire NAR dump from the client and save it to
                a string so that we can pass it to
                addToStoreFromDump(). */
             ParseSink sink; /* null sink; just parse the NAR */
             parseDump(sink, savedNAR);
-            break;
-        }
-        case FileIngestionMethod::Git: {
-            ParseSink sink;
-            parseGit(sink, savedNAR, store->storeDir, store->storeDir);
-            break;
-        }
-        case FileIngestionMethod::Flat: {
-            parseDump(savedRegular, from);
-            break;
-        }
         }
 
         logger->startWork();
@@ -606,7 +596,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         auto path = store->parseStorePath(readString(from));
         logger->startWork();
         SubstitutablePathInfos infos;
-        store->querySubstitutablePathInfos({path}, infos);
+        store->querySubstitutablePathInfos({{path, std::nullopt}}, infos);
         logger->stopWork();
         auto i = infos.find(path);
         if (i == infos.end())
@@ -622,10 +612,16 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
     }
 
     case wopQuerySubstitutablePathInfos: {
-        auto paths = readStorePaths<StorePathSet>(*store, from);
-        logger->startWork();
         SubstitutablePathInfos infos;
-        store->querySubstitutablePathInfos(paths, infos);
+        StorePathCAMap pathsMap = {};
+        if (GET_PROTOCOL_MINOR(clientVersion) < 22) {
+            auto paths = readStorePaths<StorePathSet>(*store, from);
+            for (auto & path : paths)
+                pathsMap.emplace(path, std::nullopt);
+        } else
+            pathsMap = readStorePathCAMap(*store, from);
+        logger->startWork();
+        store->querySubstitutablePathInfos(pathsMap, infos);
         logger->stopWork();
         to << infos.size();
         for (auto & i : infos) {
@@ -735,9 +731,10 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         if (GET_PROTOCOL_MINOR(clientVersion) >= 21)
             source = std::make_unique<TunnelSource>(from, to);
         else {
-            TeeSink tee(from);
-            parseDump(tee, tee.source);
-            saved = std::move(*tee.source.data);
+            TeeSource tee(from);
+            ParseSink sink;
+            parseDump(sink, tee);
+            saved = std::move(*tee.data);
             source = std::make_unique<StringSource>(saved);
         }
 

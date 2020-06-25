@@ -30,6 +30,13 @@ struct CmdAddToStore : MixDryRun, StoreCommand
             .description = "treat path as a git object",
             .handler = {&ingestionMethod, FileIngestionMethod::Git},
         });
+
+        addFlag({
+            .longName = "flat",
+            .shortName = 0,
+            .description = "add flat file to the Nix store",
+            .handler = {&ingestionMethod, FileIngestionMethod::Flat},
+        });
     }
 
     std::string description() override
@@ -61,7 +68,10 @@ struct CmdAddToStore : MixDryRun, StoreCommand
             break;
         }
         case FileIngestionMethod::Flat: {
-            abort(); // not yet supported above
+            HashSink hsink(htSHA256);
+            readFile(path, hsink);
+            hash = hsink.finish().first;
+            break;
         }
         case FileIngestionMethod::Git: {
             hash = dumpGitHash(htSHA1, path);
@@ -80,6 +90,7 @@ struct CmdAddToStore : MixDryRun, StoreCommand
         if (!dryRun) {
             auto source = StringSource { *sink.s };
             store->addToStore(info, source);
+            store->sync();
         }
 
         logger->stdout("%s", store->printStorePath(info.path));

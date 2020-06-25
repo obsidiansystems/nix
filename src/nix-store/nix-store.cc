@@ -167,6 +167,8 @@ static void opAdd(Strings opFlags, Strings opArgs)
 
     for (auto & i : opArgs)
         cout << fmt("%s\n", store->printStorePath(store->addToStore(std::string(baseNameOf(i)), i)));
+
+    store->sync();
 }
 
 
@@ -188,6 +190,8 @@ static void opAddFixed(Strings opFlags, Strings opArgs)
 
     for (auto & i : opArgs)
         cout << fmt("%s\n", store->printStorePath(store->addToStore(std::string(baseNameOf(i)), i, method, hashAlgo)));
+
+    store->sync();
 }
 
 
@@ -960,6 +964,7 @@ static void opServe(Strings opFlags, Strings opArgs)
                 SizedSource sizedSource(in, info.narSize);
 
                 store->addToStore(info, sizedSource, NoRepair, NoCheckSigs);
+                store->sync();
 
                 // consume all the data that has been sent before continuing.
                 sizedSource.drainAll();

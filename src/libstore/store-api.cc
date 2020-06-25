@@ -195,6 +195,23 @@ StorePath Store::makeFixedOutputPath(
     }
 }
 
+// FIXME Put this somewhere?
+template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
+template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
+StorePath Store::makeFixedOutputPathFromCA(std::string_view name, ContentAddress ca,
+    const StorePathSet & references, bool hasSelfReference) const
+{
+    // New template
+    return std::visit(overloaded {
+        [&](TextHash th) {
+            return makeTextPath(name, th.hash, references);
+        },
+        [&](FixedOutputHash fsh) {
+            return makeFixedOutputPath(fsh.method, fsh.hash, name, references, hasSelfReference);
+        }
+    }, ca);
+}
 
 StorePath Store::makeTextPath(std::string_view name, const Hash & hash,
     const StorePathSet & references) const
@@ -257,7 +274,7 @@ bool Store::PathInfoCacheValue::isKnownNow()
     return std::chrono::steady_clock::now() < time_point + ttl;
 }
 
-bool Store::isValidPath(const StorePath & storePath)
+bool Store::isValidPath(const StorePath & storePath, std::optional<ContentAddress> ca)
 {
     std::string hashPart(storePath.hashPart());
 
@@ -281,7 +298,7 @@ bool Store::isValidPath(const StorePath & storePath)
         }
     }
 
-    bool valid = isValidPathUncached(storePath);
+    bool valid = isValidPathUncached(storePath, ca);
 
     if (diskCache && !valid)
         // FIXME: handle valid = true case.
@@ -293,7 +310,7 @@ bool Store::isValidPath(const StorePath & storePath)
 
 /* Default implementation for stores that only implement
    queryPathInfoUncached(). */
-bool Store::isValidPathUncached(const StorePath & path)
+bool Store::isValidPathUncached(const StorePath & path, std::optional<ContentAddress> ca)
 {
     try {
         queryPathInfo(path);
@@ -304,7 +321,7 @@ bool Store::isValidPathUncached(const StorePath & path)
 }
 
 
-ref<const ValidPathInfo> Store::queryPathInfo(const StorePath & storePath)
+ref<const ValidPathInfo> Store::queryPathInfo(const StorePath & storePath, std::optional<ContentAddress> ca)
 {
     std::promise<ref<const ValidPathInfo>> promise;
 
@@ -315,14 +332,14 @@ ref<const ValidPathInfo> Store::queryPathInfo(const StorePath & storePath)
             } catch (...) {
                 promise.set_exception(std::current_exception());
             }
-        }});
+        }}, ca);
 
     return promise.get_future().get();
 }
 
 
 void Store::queryPathInfo(const StorePath & storePath,
-    Callback<ref<const ValidPathInfo>> callback) noexcept
+    Callback<ref<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept
 {
     std::string hashPart;
 
@@ -380,7 +397,7 @@ void Store::queryPathInfo(const StorePath & storePath,
 
                 (*callbackPtr)(ref<const ValidPathInfo>(info));
             } catch (...) { callbackPtr->rethrow(); }
-        }});
+        }}, ca);
 }
 
 
@@ -578,7 +595,8 @@ void Store::buildPaths(const std::vector<StorePathWithOutputs> & paths, BuildMod
 
 
 void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
-    const StorePath & storePath, RepairFlag repair, CheckSigsFlag checkSigs)
+    const StorePath & storePath, RepairFlag repair, CheckSigsFlag checkSigs,
+    std::optional<ContentAddress> ca)
 {
     auto srcUri = srcStore->getUri();
     auto dstUri = dstStore->getUri();
@@ -592,13 +610,22 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
         {srcStore->printStorePath(storePath), srcUri, dstUri});
     PushActivity pact(act.id);
 
-    auto info = srcStore->queryPathInfo(storePath);
+    auto info = srcStore->queryPathInfo(storePath, ca);
 
     uint64_t total = 0;
 
+    // recompute store path on the chance dstStore does it differently
+    if (info->ca && info->references.empty()) {
+        auto info2 = make_ref<ValidPathInfo>(*info);
+        info2->path = dstStore->makeFixedOutputPathFromCA(info->path.name(), *info->ca);
+        if (dstStore->storeDir == srcStore->storeDir)
+            assert(info->path == info2->path);
+        info = info2;
+    }
+
     if (!info->narHash) {
         StringSink sink;
-        srcStore->narFromPath({storePath}, sink);
+        srcStore->narFromPath({storePath}, sink, ca);
         auto info2 = make_ref<ValidPathInfo>(*info);
         info2->narHash = hashString(htSHA256, *sink.s);
         if (!info->narSize) info2->narSize = sink.s->size();
@@ -622,7 +649,7 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
             total += len;
             act.progress(total, info->narSize);
         });
-        srcStore->narFromPath(storePath, wrapperSink);
+        srcStore->narFromPath(storePath, wrapperSink, ca);
     }, [&]() {
            throw EndOfFile("NAR for '%s' fetched from '%s' is incomplete", srcStore->printStorePath(storePath), srcStore->getUri());
     });
@@ -631,7 +658,7 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
 }
 
 
-void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & storePaths,
+std::map<StorePath, StorePath> copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & storePaths,
     RepairFlag repair, CheckSigsFlag checkSigs, SubstituteFlag substitute)
 {
     auto valid = dstStore->queryValidPaths(storePaths, substitute);
@@ -640,7 +667,11 @@ void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & st
     for (auto & path : storePaths)
         if (!valid.count(path)) missing.insert(srcStore->printStorePath(path));
 
-    if (missing.empty()) return;
+    std::map<StorePath, StorePath> pathsMap;
+    for (auto & path : storePaths)
+        pathsMap.insert_or_assign(path, path);
+
+    if (missing.empty()) return pathsMap;
 
     Activity act(*logger, lvlInfo, actCopyPaths, fmt("copying %d paths", missing.size()));
 
@@ -658,14 +689,25 @@ void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & st
     processGraph<Path>(pool,
         PathSet(missing.begin(), missing.end()),
 
-        [&](const Path & storePath) {
-            if (dstStore->isValidPath(dstStore->parseStorePath(storePath))) {
+        [&](const Path & storePathS) {
+            auto storePath = srcStore->parseStorePath(storePathS);
+
+            auto info = srcStore->queryPathInfo(storePath);
+            auto storePathForDst = storePath;
+            if (info->ca && info->references.empty()) {
+                storePathForDst = dstStore->makeFixedOutputPathFromCA(storePath.name(), *info->ca);
+                if (dstStore->storeDir == srcStore->storeDir)
+                    assert(storePathForDst == storePath);
+                if (storePathForDst != storePath)
+                    debug("replaced path '%s' to '%s' for substituter '%s'", srcStore->printStorePath(storePath), dstStore->printStorePath(storePathForDst), dstStore->getUri());
+            }
+            pathsMap.insert_or_assign(storePath, storePathForDst);
+
+            if (dstStore->isValidPath(storePathForDst)) {
                 nrDone++;
                 showProgress();
                 return PathSet();
             }
-
-            auto info = srcStore->queryPathInfo(srcStore->parseStorePath(storePath));
 
             bytesExpected += info->narSize;
             act.setExpected(actCopyPath, bytesExpected);
@@ -676,9 +718,20 @@ void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & st
         [&](const Path & storePathS) {
             checkInterrupt();
 
-            auto storePath = dstStore->parseStorePath(storePathS);
+            auto storePath = srcStore->parseStorePath(storePathS);
+            auto info = srcStore->queryPathInfo(storePath);
 
-            if (!dstStore->isValidPath(storePath)) {
+            auto storePathForDst = storePath;
+            if (info->ca && info->references.empty()) {
+                storePathForDst = dstStore->makeFixedOutputPathFromCA(storePath.name(), *info->ca);
+                if (dstStore->storeDir == srcStore->storeDir)
+                    assert(storePathForDst == storePath);
+                if (storePathForDst != storePath)
+                    debug("replaced path '%s' to '%s' for substituter '%s'", srcStore->printStorePath(storePath), dstStore->printStorePath(storePathForDst), dstStore->getUri());
+            }
+            pathsMap.insert_or_assign(storePath, storePathForDst);
+
+            if (!dstStore->isValidPath(storePathForDst)) {
                 MaintainCount<decltype(nrRunning)> mc(nrRunning);
                 showProgress();
                 try {
@@ -696,6 +749,10 @@ void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & st
             nrDone++;
             showProgress();
         });
+
+    dstStore->sync();
+
+    return pathsMap;
 }
 
 
@@ -771,10 +828,6 @@ void ValidPathInfo::sign(const Store & store, const SecretKey & secretKey)
 {
     sigs.insert(secretKey.signDetached(fingerprint(store)));
 }
-
-// FIXME Put this somewhere?
-template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
-template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 bool ValidPathInfo::isContentAddressed(const Store & store) const
 {
@@ -879,7 +932,7 @@ StoreType getStoreType(const std::string & uri, const std::string & stateDir)
 {
     if (uri == "daemon") {
         return tDaemon;
-    } else if (uri == "local" || hasPrefix(uri, "/")) {
+    } else if (uri == "local" || hasPrefix(uri, "/") || hasPrefix(uri, "./")) {
         return tLocal;
     } else if (uri == "" || uri == "auto") {
         if (access(stateDir.c_str(), R_OK | W_OK) == 0)
@@ -903,8 +956,11 @@ static RegisterStoreImplementation regStore([](
             return std::shared_ptr<Store>(std::make_shared<UDSRemoteStore>(params));
         case tLocal: {
             Store::Params params2 = params;
-            if (hasPrefix(uri, "/"))
+            if (hasPrefix(uri, "/")) {
                 params2["root"] = uri;
+            } else if (hasPrefix(uri, "./")) {
+                params2["root"] = absPath(uri);
+            }
             return std::shared_ptr<Store>(std::make_shared<LocalStore>(params2));
         }
         default:

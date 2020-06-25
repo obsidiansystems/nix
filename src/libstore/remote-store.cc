@@ -39,6 +39,24 @@ void writeStorePaths(const Store & store, Sink & out, const StorePathSet & paths
         out << store.printStorePath(i);
 }
 
+StorePathCAMap readStorePathCAMap(const Store & store, Source & from)
+{
+    StorePathCAMap paths;
+    auto count = readNum<size_t>(from);
+    while (count--)
+        paths.insert_or_assign(store.parseStorePath(readString(from)), parseContentAddressOpt(readString(from)));
+    return paths;
+}
+
+void writeStorePathCAMap(const Store & store, Sink & out, const StorePathCAMap & paths)
+{
+    out << paths.size();
+    for (auto & i : paths) {
+        out << store.printStorePath(i.first);
+        out << renderContentAddress(i.second);
+    }
+}
+
 
 /* TODO: Separate these store impls into different files, give them better names */
 RemoteStore::RemoteStore(const Params & params)
@@ -254,7 +272,7 @@ ConnectionHandle RemoteStore::getConnection()
 }
 
 
-bool RemoteStore::isValidPathUncached(const StorePath & path)
+bool RemoteStore::isValidPathUncached(const StorePath & path, std::optional<ContentAddress> ca)
 {
     auto conn(getConnection());
     conn->to << wopIsValidPath << printStorePath(path);
@@ -309,18 +327,17 @@ StorePathSet RemoteStore::querySubstitutablePaths(const StorePathSet & paths)
 }
 
 
-void RemoteStore::querySubstitutablePathInfos(const StorePathSet & paths,
-    SubstitutablePathInfos & infos)
+void RemoteStore::querySubstitutablePathInfos(const StorePathCAMap & pathsMap, SubstitutablePathInfos & infos)
 {
-    if (paths.empty()) return;
+    if (pathsMap.empty()) return;
 
     auto conn(getConnection());
 
     if (GET_PROTOCOL_MINOR(conn->daemonVersion) < 12) {
 
-        for (auto & i : paths) {
+        for (auto & i : pathsMap) {
             SubstitutablePathInfo info;
-            conn->to << wopQuerySubstitutablePathInfo << printStorePath(i);
+            conn->to << wopQuerySubstitutablePathInfo << printStorePath(i.first);
             conn.processStderr();
             unsigned int reply = readInt(conn->from);
             if (reply == 0) continue;
@@ -330,13 +347,19 @@ void RemoteStore::querySubstitutablePathInfos(const StorePathSet & paths,
             info.references = readStorePaths<StorePathSet>(*this, conn->from);
             info.downloadSize = readLongLong(conn->from);
             info.narSize = readLongLong(conn->from);
-            infos.insert_or_assign(i, std::move(info));
+            infos.insert_or_assign(i.first, std::move(info));
         }
 
     } else {
 
         conn->to << wopQuerySubstitutablePathInfos;
-        writeStorePaths(*this, conn->to, paths);
+        if (GET_PROTOCOL_MINOR(conn->daemonVersion) < 22) {
+            StorePathSet paths;
+            for (auto & path : pathsMap)
+                paths.insert(path.first);
+            writeStorePaths(*this, conn->to, paths);
+        } else
+            writeStorePathCAMap(*this, conn->to, pathsMap);
         conn.processStderr();
         size_t count = readNum<size_t>(conn->from);
         for (size_t n = 0; n < count; n++) {
@@ -354,7 +377,7 @@ void RemoteStore::querySubstitutablePathInfos(const StorePathSet & paths,
 
 
 void RemoteStore::queryPathInfoUncached(const StorePath & path,
-    Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept
+    Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept
 {
     try {
         std::shared_ptr<ValidPathInfo> info;
@@ -480,9 +503,6 @@ StorePath RemoteStore::addToStore(const string & name, const Path & _srcPath,
 {
     if (repair) throw Error("repairing is not supported when building through the Nix daemon");
 
-    if (method == FileIngestionMethod::Git && hashAlgo != htSHA1)
-        throw Error("git ingestion must use sha1 hash");
-
     Path srcPath(absPath(_srcPath));
 
     // recursively add to store if path is a directory
@@ -510,10 +530,7 @@ StorePath RemoteStore::addToStore(const string & name, const Path & _srcPath,
         connections->incCapacity();
         {
             Finally cleanup([&]() { connections->decCapacity(); });
-            if (method == FileIngestionMethod::Git)
-                dumpGit(hashAlgo, srcPath, conn->to, filter);
-            else
-                dumpPath(srcPath, conn->to, filter);
+            dumpPath(srcPath, conn->to, filter);
         }
         conn->to.warn = false;
         conn.processStderr();
@@ -582,7 +599,7 @@ BuildResult RemoteStore::buildDerivation(const StorePath & drvPath, const BasicD
 }
 
 
-void RemoteStore::ensurePath(const StorePath & path)
+void RemoteStore::ensurePath(const StorePath & path, std::optional<ContentAddress> ca)
 {
     auto conn(getConnection());
     conn->to << wopEnsurePath << printStorePath(path);

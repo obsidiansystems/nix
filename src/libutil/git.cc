@@ -22,18 +22,18 @@ using namespace std::string_literals;
 
 namespace nix {
 
-static void parse(ParseSink & sink, Source & source, const Path & path, const Path & realStoreDir, const Path & storeDir);
-
 // Converts a Path to a ParseSink
-void restoreGit(const Path & path, Source & source, const Path & realStoreDir, const Path & storeDir) {
+void restoreGit(const Path & path, Source & source, const Path & realStoreDir, const Path & storeDir,
+    std::function<void (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir, int perm, std::string name, Hash hash)> addEntry) {
     RestoreSink sink;
     sink.dstPath = path;
-    parseGit(sink, source, realStoreDir, storeDir);
+    parseGit(sink, source, realStoreDir, storeDir, addEntry);
 }
 
-void parseGit(ParseSink & sink, Source & source, const Path & realStoreDir, const Path & storeDir)
+void parseGit(ParseSink & sink, Source & source, const Path & realStoreDir, const Path & storeDir,
+    std::function<void (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir, int perm, std::string name, Hash hash)> addEntry)
 {
-    parse(sink, source, "", realStoreDir, storeDir);
+    parseGitInternal(sink, source, "", realStoreDir, storeDir, addEntry);
 }
 
 static string getStringUntil(Source & source, char byte)
@@ -65,7 +65,38 @@ static string getStoreEntry(const Path & storeDir, Hash hash, string name)
     return hash3.to_string(Base::Base32, false) + "-" + name;
 }
 
-static void parse(ParseSink & sink, Source & source, const Path & path, const Path & realStoreDir, const Path & storeDir)
+void addGitEntry(ParseSink & sink, const Path & path,
+    const Path & realStoreDir, const Path & storeDir,
+    int perm, std::string name, Hash hash)
+{
+    string entryName = getStoreEntry(storeDir, hash, "git");
+    Path entry = absPath(realStoreDir + "/" + entryName);
+
+    struct stat st;
+    if (lstat(entry.c_str(), &st))
+        throw SysError("getting attributes of path '%1%'", entry);
+
+    if (S_ISREG(st.st_mode)) {
+        if (perm == 40000)
+            throw SysError("file is a file but expected to be a directory '%1%'", entry);
+
+        if (perm == 100755 || perm == 755)
+            sink.createExecutableFile(path + "/" + name);
+        else
+            sink.createRegularFile(path + "/" + name);
+
+        sink.copyFile(entry);
+    } else if (S_ISDIR(st.st_mode)) {
+        if (perm != 40000)
+            throw SysError("file is a directory but expected to be a file '%1%'", entry);
+
+        sink.copyDirectory(realStoreDir + "/" + entryName, path + "/" + name);
+    } else throw Error("file '%1%' has an unsupported type", entry);
+}
+
+void parseGitInternal(ParseSink & sink, Source & source, const Path & path,
+    const Path & realStoreDir, const Path & storeDir,
+    std::function<void (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir, int perm, std::string name, Hash hash)> addEntry)
 {
     auto type = getString(source, 5);
 
@@ -112,29 +143,7 @@ static void parse(ParseSink & sink, Source & source, const Path & path, const Pa
             Hash hash(htSHA1);
             std::copy(hashs.begin(), hashs.end(), hash.hash);
 
-            string entryName = getStoreEntry(storeDir, hash, "git");
-            Path entry = absPath(realStoreDir + "/" + entryName);
-
-            struct stat st;
-            if (lstat(entry.c_str(), &st))
-                throw SysError("getting attributes of path '%1%'", entry);
-
-            if (S_ISREG(st.st_mode)) {
-                if (perm == 40000)
-                    throw SysError("file is a file but expected to be a directory '%1%'", entry);
-
-                if (perm == 100755 || perm == 755)
-                    sink.createExecutableFile(path + "/" + name);
-                else
-                    sink.createRegularFile(path + "/" + name);
-
-                sink.copyFile(entry);
-            } else if (S_ISDIR(st.st_mode)) {
-                if (perm != 40000)
-                    throw SysError("file is a directory but expected to be a file '%1%'", entry);
-
-                sink.copyDirectory(realStoreDir + "/" + entryName, path + "/" + name);
-            } else throw Error("file '%1%' has an unsupported type", entry);
+            addEntry(sink, path, realStoreDir, storeDir, perm, name, hash);
         }
     } else throw Error("input doesn't look like a Git object");
 }
@@ -217,6 +226,7 @@ static GitMode dumpGitInternal(HashType ht, const Path & path, Sink & sink, Path
 
 static std::pair<GitMode, Hash> dumpGitHashInternal(HashType ht, const Path & path, PathFilter & filter)
 {
+    assert(ht == htSHA1);
     auto hashSink = new HashSink(ht);
     auto perm = dumpGitInternal(ht, path, *hashSink, filter);
     auto hash = hashSink->finish().first;
