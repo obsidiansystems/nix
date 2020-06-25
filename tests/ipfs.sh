@@ -206,6 +206,10 @@ if [[ -n $(type -p git) ]]; then
 
     [[ "$(ls $path3)" = hello ]]
     diff $path2 $path3/hello
+
+    path4=$(nix eval --store ipfs:// --raw "(builtins.fetchTree { type = \"git\"; url = file://$repo; treeHash = \"$treeHash\"; }).outPath")
+    [[ "$(ls $path4)" = hello ]]
+    diff $path2 $path4/hello
 else
     echo "Git not installed; skipping IPFS/Git tests"
 fi
