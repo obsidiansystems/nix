@@ -58,7 +58,6 @@ void builtinFetchurl(const BasicDerivation & drv, const std::string & netrcData)
         }
     };
 
-    /* Otherwise try the specified URL. */
     fetch(mainUrl);
 }
 

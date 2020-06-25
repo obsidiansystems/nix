@@ -110,11 +110,9 @@ void Store::computeFSClosure(const StorePath & startPath,
 
 std::optional<FixedOutputHash> getDerivationCA(const BasicDerivation & drv)
 {
-    if (drv.outputs.count("out") > 0) {
-        auto res = drv.outputs.find("out");
-        return res->second.hash;
-    }
-
+    auto out = drv.outputs.find("out");
+    if (out != drv.outputs.end())
+        return out->second.hash;
     return std::nullopt;
 }
 
