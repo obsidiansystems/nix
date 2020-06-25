@@ -9,7 +9,7 @@
 #include <thread>
 #include <dlfcn.h>
 #include <sys/utsname.h>
-
+#include <unordered_set>
 
 namespace nix {
 
