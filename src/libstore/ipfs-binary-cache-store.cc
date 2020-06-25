@@ -879,6 +879,10 @@ public:
 
     void addTempRoot(const StorePath & path) override
     {
+        if (trustless)
+            // No trust root to pin
+            return;
+
         // TODO make temporary pin/addToStore, see
         // https://github.com/ipfs/go-ipfs/issues/4559 and
         // https://github.com/ipfs/go-ipfs/issues/4328 for some ideas.
