@@ -345,7 +345,7 @@ public:
     StorePath makeTextPath(std::string_view name, const Hash & hash,
         const StorePathSet & references = {}) const;
 
-    StorePath makeFixedOutputPathFromCA(std::string_view name, ContentAddress ca) const;
+    std::optional<StorePath> makeFixedOutputPathFromCA(std::string_view name, ContentAddress ca) const;
 
     /* This is the preparatory part of addToStore(); it computes the
        store path to which srcPath is to be copied.  Returns the store

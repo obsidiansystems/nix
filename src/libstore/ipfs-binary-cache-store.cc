@@ -735,7 +735,8 @@ public:
             if (cid) {
                 auto size = ipfsBlockStat("/ipfs/" + *cid);
                 if (size) {
-                    assert(storePath == makeFixedOutputPathFromCA(storePath.name(), *ca));
+                    auto storePath_ = makeFixedOutputPathFromCA(storePath.name(), *ca);
+                    assert(storePath_ && storePath == *storePath_);
                     NarInfo narInfo { storePath };
                     narInfo.ca = ca;
                     narInfo.url = "ipfs://" + *cid;

@@ -199,21 +199,24 @@ StorePath Store::makeFixedOutputPath(
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-StorePath Store::makeFixedOutputPathFromCA(std::string_view name, ContentAddress ca) const
+std::optional<StorePath> Store::makeFixedOutputPathFromCA(std::string_view name, ContentAddress ca) const
 {
     // New template
-    return std::visit(overloaded {
+    std::optional<StorePath> ret;
+
+    std::visit(overloaded {
         [&](TextHash th) {
-            throw Error("can't determine path from ca '%s' without references", renderContentAddress(ca));
-            return makeTextPath(name, th.hash);
+            ret = std::nullopt;
         },
         [&](FixedOutputHash fsh) {
             if (fsh.hash.type == htSHA256 && fsh.method == FileIngestionMethod::Recursive)
-                throw Error("can't determine path from ca '%s' without references", renderContentAddress(ca));
-
-            return makeFixedOutputPath(fsh.method, fsh.hash, name);
+                ret = std::nullopt;
+            else
+                ret = std::optional { makeFixedOutputPath(fsh.method, fsh.hash, name) };
         }
     }, ca);
+
+    return ret;
 }
 
 StorePath Store::makeTextPath(std::string_view name, const Hash & hash,
@@ -620,7 +623,9 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
     // recompute store path on the chance dstStore does it differently
     if (info->isContentAddressed(*srcStore) && info->references.empty()) {
         auto info2 = make_ref<ValidPathInfo>(*info);
-        info2->path = dstStore->makeFixedOutputPathFromCA(info->path.name(), *info->ca);
+        auto path_ = dstStore->makeFixedOutputPathFromCA(info->path.name(), *info->ca);
+        if (path_)
+            info2->path = *path_;
         if (dstStore->storeDir == srcStore->storeDir)
             assert(info->path == info2->path);
         info = info2;
@@ -694,7 +699,9 @@ void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & st
             auto info = srcStore->queryPathInfo(storePath);
             auto storePathForDst = storePath;
             if (info->isContentAddressed(*srcStore) && info->references.empty()) {
-                storePathForDst = dstStore->makeFixedOutputPathFromCA(storePath.name(), *info->ca);
+                auto storePathForDst_ = dstStore->makeFixedOutputPathFromCA(storePath.name(), *info->ca);
+                if (storePathForDst_)
+                    storePathForDst = *storePathForDst_;
                 if (dstStore->storeDir == srcStore->storeDir)
                     assert(storePathForDst == storePath);
                 if (storePathForDst != storePath)
@@ -721,7 +728,9 @@ void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & st
 
             auto storePathForDst = storePath;
             if (info->isContentAddressed(*srcStore) && info->references.empty()) {
-                storePathForDst = dstStore->makeFixedOutputPathFromCA(storePath.name(), *info->ca);
+                auto storePathForDst_ = dstStore->makeFixedOutputPathFromCA(storePath.name(), *info->ca);
+                if (storePathForDst_)
+                    storePathForDst = *storePathForDst_;
                 if (dstStore->storeDir == srcStore->storeDir)
                     assert(storePathForDst == storePath);
                 if (storePathForDst != storePath)

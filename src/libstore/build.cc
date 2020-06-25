@@ -4415,7 +4415,9 @@ void SubstitutionGoal::tryNext()
 
     auto subPath = storePath;
     if (ca) {
-        subPath = sub->makeFixedOutputPathFromCA(storePath.name(), *ca);
+        auto subPath_ = sub->makeFixedOutputPathFromCA(storePath.name(), *ca);
+        if (subPath_)
+            subPath = *subPath_;
         if (sub->storeDir == worker.store.storeDir)
             assert(subPath == storePath);
     }
@@ -4544,7 +4546,9 @@ void SubstitutionGoal::tryToRun()
 
             auto subPath = storePath;
             if (ca) {
-                subPath = sub->makeFixedOutputPathFromCA(storePath.name(), *ca);
+                auto subPath_ = sub->makeFixedOutputPathFromCA(storePath.name(), *ca);
+                if (subPath_)
+                    subPath = *subPath_;
                 if (sub->storeDir == worker.store.storeDir)
                     assert(subPath == storePath);
             }
