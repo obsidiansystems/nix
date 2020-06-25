@@ -877,7 +877,7 @@ public:
         writeNarInfo(narInfo);
     }
 
-    virtual void addTempRoot(const StorePath & path) override
+    void addTempRoot(const StorePath & path) override
     {
         // TODO make temporary pin/addToStore, see
         // https://github.com/ipfs/go-ipfs/issues/4559 and
@@ -902,8 +902,6 @@ public:
 
     std::optional<StorePath> queryPathFromHashPart(const std::string & hashPart) override
     { unsupported("queryPathFromHashPart"); }
-
-    void addTempRoot(const StorePath & path) override { };
 
 };
 
