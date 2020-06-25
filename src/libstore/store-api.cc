@@ -199,16 +199,19 @@ StorePath Store::makeFixedOutputPath(
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-StorePath Store::makeFixedOutputPathFromCA(std::string_view name, ContentAddress ca,
-    const StorePathSet & references, bool hasSelfReference) const
+StorePath Store::makeFixedOutputPathFromCA(std::string_view name, ContentAddress ca) const
 {
     // New template
     return std::visit(overloaded {
         [&](TextHash th) {
-            return makeTextPath(name, th.hash, references);
+            throw Error("can't determine path from ca '%s' without references", renderContentAddress(ca));
+            return makeTextPath(name, th.hash);
         },
         [&](FixedOutputHash fsh) {
-            return makeFixedOutputPath(fsh.method, fsh.hash, name, references, hasSelfReference);
+            if (fsh.hash.type == htSHA256 && fsh.method == FileIngestionMethod::Recursive)
+                throw Error("can't determine path from ca '%s' without references", renderContentAddress(ca));
+
+            return makeFixedOutputPath(fsh.method, fsh.hash, name);
         }
     }, ca);
 }
