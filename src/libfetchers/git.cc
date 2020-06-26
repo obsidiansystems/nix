@@ -109,8 +109,11 @@ struct GitInput : Input
         assert(!rev || rev->type == htSHA1);
         assert(!treeHash || treeHash->type == htSHA1);
 
-        if (submodules && treeHash)
-            throw Error("Cannot combine tree hashes with git submodules");
+        if (submodules) {
+            if (treeHash)
+                throw Error("Cannot fetch specific tree hashes if there are submodules");
+            warn("Nix's computed git tree hash will be different when submodules are converted to regular directories");
+        }
 
         // try to substitute
         if (settings.useSubstitutes && treeHash && !submodules) {
