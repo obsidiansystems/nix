@@ -35,7 +35,8 @@ struct GitInput : Input
     bool isFixedTreeHash() const {
         if (!treeHash)
             return false;
-        for (const uint8_t b : treeHash->hash) {
+        for (size_t i = 0; i < treeHash->hashSize; i++) {
+            uint8_t b = treeHash->hash[i];
             if (b != 0)
                 return true;
         }
@@ -124,7 +125,7 @@ struct GitInput : Input
             };
 
         // try to substitute
-        if (settings.useSubstitutes && !isFixedTreeHash() && !submodules) {
+        if (settings.useSubstitutes && isFixedTreeHash() && !submodules) {
             auto storePath = fetchers::trySubstitute(store, ingestionMethod, *treeHash, name);
             if (storePath) {
                 return {
@@ -275,10 +276,12 @@ struct GitInput : Input
         Path repoDir;
 
         if (isLocal) {
-
-            if (!input->rev && !input->treeHash)
+            if (!input->rev && !input->isFixedTreeHash()) {
                 input->rev = Hash(chomp(runProgram("git", true, { "-C", actualUrl, "rev-parse", *input->ref })), htSHA1);
-
+                if (input->treeHash) {
+                    input->treeHash = Hash(chomp(runProgram("git", true, { "-C", actualUrl, "rev-parse", *input->ref + ":" })), htSHA1);
+                }
+            }
             repoDir = actualUrl;
 
         } else {
@@ -289,9 +292,7 @@ struct GitInput : Input
                     input->rev = rev2;
                     return makeResult(res->first, std::move(res->second));
                 }
-            }
 
-            if (auto res = getCache()->lookup(store, mutableAttrs)) {
                 auto treeHash2 = Hash(getStrAttr(res->first, "treeHash"), htSHA1);
                 if (!input->isFixedTreeHash() || treeHash == treeHash2) {
                     input->treeHash = treeHash2;
