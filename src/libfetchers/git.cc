@@ -29,6 +29,7 @@ struct GitInput : Input
     std::optional<std::string> ref;
     std::optional<Hash> rev;
     std::optional<Hash> treeHash;
+    FileIngestionMethod ingestionMethod = FileIngestionMethod::Recursive;
     bool shallow = false;
     bool submodules = false;
 
@@ -45,6 +46,7 @@ struct GitInput : Input
             && url == other2->url
             && rev == other2->rev
             && treeHash == other2->treeHash
+            && ingestionMethod == other2->ingestionMethod
             && ref == other2->ref;
     }
 
@@ -65,6 +67,7 @@ struct GitInput : Input
         if (treeHash) url2.query.insert_or_assign("treeHash", treeHash->gitRev());
         if (ref) url2.query.insert_or_assign("ref", *ref);
         if (shallow) url2.query.insert_or_assign("shallow", "1");
+        if (ingestionMethod == FileIngestionMethod::Git) url2.query.insert_or_assign("gitIngestion", "1");
         return url2;
     }
 
@@ -82,6 +85,8 @@ struct GitInput : Input
             attrs.emplace("shallow", true);
         if (submodules)
             attrs.emplace("submodules", true);
+        if (ingestionMethod == FileIngestionMethod::Git)
+            attrs.emplace("gitIngestion", true);
         return attrs;
     }
 
@@ -104,7 +109,11 @@ struct GitInput : Input
         assert(!rev || rev->type == htSHA1);
         assert(!treeHash || treeHash->type == htSHA1);
 
-        auto ingestionMethod = treeHash ? FileIngestionMethod::Git : FileIngestionMethod::Recursive;
+        if (submodules) {
+            if (treeHash)
+                throw Error("Cannot fetch specific tree hashes if there are submodules");
+            warn("Nix's computed git tree hash will be different when submodules are converted to regular directories");
+        }
 
         std::optional<ContentAddress> ca;
         if (treeHash)
@@ -144,7 +153,7 @@ struct GitInput : Input
             });
             if (input->treeHash)
                 attrs.insert_or_assign("treeHash", input->treeHash->gitRev());
-            else
+            if (input->rev)
                 attrs.insert_or_assign("rev", input->rev->gitRev());
             return attrs;
         };
@@ -266,7 +275,7 @@ struct GitInput : Input
 
         if (isLocal) {
 
-            if (!input->rev && !input->treeHash)
+            if (!input->rev)
                 input->rev = Hash(chomp(runProgram("git", true, { "-C", actualUrl, "rev-parse", *input->ref })), htSHA1);
 
             repoDir = actualUrl;
@@ -351,7 +360,7 @@ struct GitInput : Input
                 utimes(localRefFile.c_str(), times);
             }
 
-            if (!input->rev && !input->treeHash)
+            if (!input->rev)
                 input->rev = Hash(chomp(readFile(localRefFile)), htSHA1);
         }
 
@@ -381,9 +390,6 @@ struct GitInput : Input
         Path tmpDir = createTempDir();
         AutoDelete delTmpDir(tmpDir, true);
         PathFilter filter = defaultPathFilter;
-
-        if (submodules && treeHash)
-            throw Error("Cannot combine tree hashes with git submodules");
 
         if (submodules) {
             Path tmpGitDir = createTempDir();
@@ -416,7 +422,7 @@ struct GitInput : Input
         auto storePath = store->addToStore(name, tmpDir, ingestionMethod, htSHA256, filter);
 
         // verify treeHash is what we actually obtained in the nix store
-        if (input->treeHash) {
+        if (ingestionMethod == FileIngestionMethod::Git && input->treeHash) {
             auto path = store->toRealPath(store->printStorePath(storePath));
             auto gotHash = dumpGitHash(htSHA1, path);
             if (gotHash != input->treeHash)
@@ -492,7 +498,7 @@ struct GitInputScheme : InputScheme
         if (maybeGetStrAttr(attrs, "type") != "git") return {};
 
         for (auto & [name, value] : attrs)
-            if (name != "type" && name != "url" && name != "ref" && name != "rev" && name != "shallow" && name != "submodules" && name != "treeHash")
+            if (name != "type" && name != "url" && name != "ref" && name != "rev" && name != "shallow" && name != "submodules" && name != "treeHash" && name != "gitIngestion")
                 throw Error("unsupported Git input attribute '%s'", name);
 
         auto input = std::make_unique<GitInput>(parseURL(getStrAttr(attrs, "url")));
@@ -510,6 +516,9 @@ struct GitInputScheme : InputScheme
         input->shallow = maybeGetBoolAttr(attrs, "shallow").value_or(false);
 
         input->submodules = maybeGetBoolAttr(attrs, "submodules").value_or(false);
+
+        if (maybeGetBoolAttr(attrs, "gitIngestion").value_or((bool) input->treeHash))
+            input->ingestionMethod = FileIngestionMethod::Git;
 
         return input;
     }
