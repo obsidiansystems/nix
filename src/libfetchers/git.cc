@@ -504,7 +504,7 @@ struct GitInputScheme : InputScheme
 
         input->submodules = maybeGetBoolAttr(attrs, "submodules").value_or(false);
 
-        if (maybeGetBoolAttr(attrs, "gitIngestion").value_or(false) || input->treeHash)
+        if (maybeGetBoolAttr(attrs, "gitIngestion").value_or((bool) input->treeHash))
             input->ingestionMethod = FileIngestionMethod::Git;
 
         return input;
