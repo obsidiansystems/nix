@@ -412,7 +412,7 @@ struct GitInput : Input
         auto storePath = store->addToStore(name, tmpDir, ingestionMethod, htSHA256, filter);
 
         // verify treeHash is what we actually obtained in the nix store
-        if (input->treeHash) {
+        if (ingestionMethod == FileIngestionMethod::Git && input->treeHash) {
             auto path = store->toRealPath(store->printStorePath(storePath));
             auto gotHash = dumpGitHash(htSHA1, path);
             if (gotHash != input->treeHash)
