@@ -29,6 +29,7 @@ struct GitInput : Input
     std::optional<std::string> ref;
     std::optional<Hash> rev;
     std::optional<Hash> treeHash;
+    FileIngestionMethod ingestionMethod = FileIngestionMethod::Recursive;
     bool shallow = false;
     bool submodules = false;
 
@@ -45,6 +46,7 @@ struct GitInput : Input
             && url == other2->url
             && rev == other2->rev
             && treeHash == other2->treeHash
+            && ingestionMethod == other2->ingestionMethod
             && ref == other2->ref;
     }
 
@@ -65,6 +67,7 @@ struct GitInput : Input
         if (treeHash) url2.query.insert_or_assign("treeHash", treeHash->gitRev());
         if (ref) url2.query.insert_or_assign("ref", *ref);
         if (shallow) url2.query.insert_or_assign("shallow", "1");
+        if (ingestionMethod == FileIngestionMethod::Git) url2.query.insert_or_assign("gitIngestion", "1");
         return url2;
     }
 
@@ -82,6 +85,8 @@ struct GitInput : Input
             attrs.emplace("shallow", true);
         if (submodules)
             attrs.emplace("submodules", true);
+        if (ingestionMethod == FileIngestionMethod::Git)
+            attrs.emplace("gitIngestion", true);
         return attrs;
     }
 
@@ -103,8 +108,6 @@ struct GitInput : Input
 
         assert(!rev || rev->type == htSHA1);
         assert(!treeHash || treeHash->type == htSHA1);
-
-        auto ingestionMethod = FileIngestionMethod::Git;
 
         // try to substitute
         if (settings.useSubstitutes && treeHash && !submodules) {
@@ -482,7 +485,7 @@ struct GitInputScheme : InputScheme
         if (maybeGetStrAttr(attrs, "type") != "git") return {};
 
         for (auto & [name, value] : attrs)
-            if (name != "type" && name != "url" && name != "ref" && name != "rev" && name != "shallow" && name != "submodules" && name != "treeHash")
+            if (name != "type" && name != "url" && name != "ref" && name != "rev" && name != "shallow" && name != "submodules" && name != "treeHash" && name != "gitIngestion")
                 throw Error("unsupported Git input attribute '%s'", name);
 
         auto input = std::make_unique<GitInput>(parseURL(getStrAttr(attrs, "url")));
@@ -500,6 +503,9 @@ struct GitInputScheme : InputScheme
         input->shallow = maybeGetBoolAttr(attrs, "shallow").value_or(false);
 
         input->submodules = maybeGetBoolAttr(attrs, "submodules").value_or(false);
+
+        if (maybeGetBoolAttr(attrs, "gitIngestion").value_or(false) || input->treeHash)
+            input->ingestionMethod = FileIngestionMethod::Git;
 
         return input;
     }
