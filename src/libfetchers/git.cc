@@ -109,6 +109,9 @@ struct GitInput : Input
         assert(!rev || rev->type == htSHA1);
         assert(!treeHash || treeHash->type == htSHA1);
 
+        if (submodules && treeHash)
+            throw Error("Cannot combine tree hashes with git submodules");
+
         // try to substitute
         if (settings.useSubstitutes && treeHash && !submodules) {
             auto storePath = fetchers::trySubstitute(store, ingestionMethod, *treeHash, name);
@@ -139,7 +142,7 @@ struct GitInput : Input
             });
             if (input->treeHash)
                 attrs.insert_or_assign("treeHash", input->treeHash->gitRev());
-            else
+            if (input->rev)
                 attrs.insert_or_assign("rev", input->rev->gitRev());
             return attrs;
         };
@@ -259,8 +262,11 @@ struct GitInput : Input
 
         if (isLocal) {
 
-            if (!input->rev && !input->treeHash)
+            if (!input->rev)
                 input->rev = Hash(chomp(runProgram("git", true, { "-C", actualUrl, "rev-parse", *input->ref })), htSHA1);
+
+            if (!input->treeHash)
+                input->treeHash = Hash(chomp(runProgram("git", true, { "-C", actualUrl, "rev-parse", *input->ref + ":" })), htSHA1);
 
             repoDir = actualUrl;
 
@@ -344,7 +350,7 @@ struct GitInput : Input
                 utimes(localRefFile.c_str(), times);
             }
 
-            if (!input->rev && !input->treeHash)
+            if (!input->rev)
                 input->rev = Hash(chomp(readFile(localRefFile)), htSHA1);
         }
 
@@ -374,9 +380,6 @@ struct GitInput : Input
         Path tmpDir = createTempDir();
         AutoDelete delTmpDir(tmpDir, true);
         PathFilter filter = defaultPathFilter;
-
-        if (submodules && treeHash)
-            throw Error("Cannot combine tree hashes with git submodules");
 
         if (submodules) {
             Path tmpGitDir = createTempDir();
