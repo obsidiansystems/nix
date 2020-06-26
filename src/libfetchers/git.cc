@@ -265,9 +265,6 @@ struct GitInput : Input
             if (!input->rev)
                 input->rev = Hash(chomp(runProgram("git", true, { "-C", actualUrl, "rev-parse", *input->ref })), htSHA1);
 
-            if (!input->treeHash)
-                input->treeHash = Hash(chomp(runProgram("git", true, { "-C", actualUrl, "rev-parse", *input->ref + ":" })), htSHA1);
-
             repoDir = actualUrl;
 
         } else {
