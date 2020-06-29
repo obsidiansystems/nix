@@ -130,4 +130,8 @@ struct FullContentAddress {
 
 };
 
+std::string renderFullContentAddress(FullContentAddress ca);
+
+FullContentAddress parseFullContentAddress(std::string_view rawCa);
+
 }
