@@ -21,7 +21,7 @@ std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-std::string renderMiniContentAddress(MiniContentAddress ca) {
+std::string renderContentAddress(ContentAddress ca) {
     return std::visit(overloaded {
         [](TextHash th) {
             return "text:"
@@ -35,7 +35,7 @@ std::string renderMiniContentAddress(MiniContentAddress ca) {
     }, ca);
 }
 
-MiniContentAddress parseMiniContentAddress(std::string_view rawCa) {
+ContentAddress parseContentAddress(std::string_view rawCa) {
     auto prefixSeparator = rawCa.find(':');
     if (prefixSeparator != string::npos) {
         auto prefix = string(rawCa, 0, prefixSeparator);
@@ -43,7 +43,7 @@ MiniContentAddress parseMiniContentAddress(std::string_view rawCa) {
             auto hashTypeAndHash = rawCa.substr(prefixSeparator+1, string::npos);
             Hash hash = Hash(string(hashTypeAndHash));
             if (*hash.type != htSHA256) {
-                throw Error("parseMiniContentAddress: the text hash should have type SHA256");
+                throw Error("the text hash should have type SHA256");
             }
             return TextHash { hash };
         } else if (prefix == "fixed") {
@@ -62,22 +62,22 @@ MiniContentAddress parseMiniContentAddress(std::string_view rawCa) {
                 };
             }
         } else {
-            throw Error("parseMiniContentAddress: format not recognized; has to be text or fixed");
+            throw Error("format not recognized; has to be text or fixed");
         }
     } else {
         throw Error("Not a content address because it lacks an appropriate prefix");
     }
 };
 
-std::optional<MiniContentAddress> parseMiniContentAddressOpt(std::string_view rawCaOpt) {
-    return rawCaOpt == "" ? std::optional<MiniContentAddress> {} : parseMiniContentAddress(rawCaOpt);
+std::optional<ContentAddress> parseContentAddressOpt(std::string_view rawCaOpt) {
+    return rawCaOpt == "" ? std::optional<ContentAddress> {} : parseContentAddress(rawCaOpt);
 };
 
-std::string renderMiniContentAddress(std::optional<MiniContentAddress> ca) {
-    return ca ? renderMiniContentAddress(*ca) : "";
+std::string renderContentAddress(std::optional<ContentAddress> ca) {
+    return ca ? renderContentAddress(*ca) : "";
 }
 
-std::string renderFullContentAddress(FullContentAddress ca)
+std::string renderContentAddressWithNameAndReferences(ContentAddressWithNameAndReferences ca)
 {
     return "full:" + ca.name + ":" + std::visit(overloaded {
         [](TextInfo th) {
@@ -86,7 +86,7 @@ std::string renderFullContentAddress(FullContentAddress ca)
                 result += ":";
                 result += i.to_string();
             }
-            result += ":" + renderMiniContentAddress(std::variant<TextHash, FixedOutputHash> {TextHash {
+            result += ":" + renderContentAddress(std::variant<TextHash, FixedOutputHash> {TextHash {
                     .hash = th.hash,
                 }});
             return result;
@@ -98,7 +98,7 @@ std::string renderFullContentAddress(FullContentAddress ca)
                 result += i.to_string();
             }
             if (fsh.references.hasSelfReference) result += ":self";
-            result += ":" + renderMiniContentAddress(std::variant<TextHash, FixedOutputHash> {FixedOutputHash {
+            result += ":" + renderContentAddress(std::variant<TextHash, FixedOutputHash> {FixedOutputHash {
                     .method = fsh.method,
                     .hash = fsh.hash
                 }});
@@ -108,7 +108,7 @@ std::string renderFullContentAddress(FullContentAddress ca)
 
 }
 
-FullContentAddress parseFullContentAddress(std::string_view rawCa)
+ContentAddressWithNameAndReferences parseContentAddressWithNameAndReferences(std::string_view rawCa)
 {
     auto prefixSeparator = rawCa.find(':');
     if (prefixSeparator != string::npos)
@@ -141,12 +141,12 @@ FullContentAddress parseFullContentAddress(std::string_view rawCa)
                 references.insert(StorePath(s));
             rest = rest.substr(prefixSeparator + 1);
         }
-        MiniContentAddress ca = parseMiniContentAddress(rest);
+        ContentAddress ca = parseContentAddress(rest);
         if (std::holds_alternative<TextHash>(ca)) {
             auto ca_ = std::get<TextHash>(ca);
             if (hasSelfReference)
                 throw Error("text content address cannot have self reference");
-            return FullContentAddress {
+            return ContentAddressWithNameAndReferences {
                 .name = name,
                 .info = TextInfo {
                     {.hash = ca_.hash,},
@@ -155,7 +155,7 @@ FullContentAddress parseFullContentAddress(std::string_view rawCa)
             };
         } else if (std::holds_alternative<FixedOutputHash>(ca)) {
             auto ca_ = std::get<FixedOutputHash>(ca);
-            return FullContentAddress {
+            return ContentAddressWithNameAndReferences {
                 .name = name,
                 .info = FixedOutputInfo {
                     {.method = ca_.method,

@@ -69,7 +69,7 @@ struct CmdAddToStore : MixDryRun, StoreCommand
 
         ValidPathInfo info {
             *store,
-            FullContentAddress {
+            ContentAddressWithNameAndReferences {
                 .name = *namePart,
                 .info = FixedOutputInfo {
                     std::move(ingestionMethod),

@@ -38,23 +38,23 @@ void writeStorePaths(const Store & store, Sink & out, const StorePathSet & paths
         out << store.printStorePath(i);
 }
 
-std::set<FullContentAddress> readFullCaSet(const Store & store, Source & from)
+std::set<ContentAddressWithNameAndReferences> readFullCaSet(const Store & store, Source & from)
 {
-    std::set<FullContentAddress> paths;
+    std::set<ContentAddressWithNameAndReferences> paths;
     // TODO
     // auto count = readNum<size_t>(from);
     // while (count--)
-    //     paths.insert_or_assign(store.parseStorePath(readString(from)), parseMiniContentAddressOpt(readString(from)));
+    //     paths.insert_or_assign(store.parseStorePath(readString(from)), parseContentAddressOpt(readString(from)));
     return paths;
 }
 
-void writeFullCaSet(const Store & store, Sink & out, const std::set<FullContentAddress> & paths)
+void writeFullCaSet(const Store & store, Sink & out, const std::set<ContentAddressWithNameAndReferences> & paths)
 {
     // TODO
     //out << paths.size();
     //for (auto & i : paths) {
     //    out << store.printStorePath(i.first);
-    //    out << renderMiniContentAddress(i.second);
+    //    out << renderContentAddress(i.second);
     //}
 }
 
@@ -328,7 +328,7 @@ StorePathSet RemoteStore::querySubstitutablePaths(const StorePathSet & paths)
 }
 
 
-void RemoteStore::querySubstitutablePathInfos(const StorePathSet & paths, const std::set<FullContentAddress> & caPaths, SubstitutablePathInfos & infos)
+void RemoteStore::querySubstitutablePathInfos(const StorePathSet & paths, const std::set<ContentAddressWithNameAndReferences> & caPaths, SubstitutablePathInfos & infos)
 {
     if (paths.empty() && caPaths.empty()) return;
 
@@ -412,7 +412,7 @@ void RemoteStore::queryPathInfoUncached(const StorePath & path,
             if (GET_PROTOCOL_MINOR(conn->daemonVersion) >= 16) {
                 conn->from >> info->ultimate;
                 info->sigs = readStrings<StringSet>(conn->from);
-                info->ca = parseMiniContentAddressOpt(readString(conn->from));
+                info->ca = parseContentAddressOpt(readString(conn->from));
             }
         }
         callback(std::move(info));
@@ -496,7 +496,7 @@ void RemoteStore::addToStore(const ValidPathInfo & info, Source & source,
                  << info.narHash.to_string(Base16, false);
         writeStorePaths(*this, conn->to, info.referencesPossiblyToSelf());
         conn->to << info.registrationTime << info.narSize
-                 << info.ultimate << info.sigs << renderMiniContentAddress(info.ca)
+                 << info.ultimate << info.sigs << renderContentAddress(info.ca)
                  << repair << !checkSigs;
         bool tunnel = GET_PROTOCOL_MINOR(conn->daemonVersion) >= 21;
         if (!tunnel) copyNAR(source, conn->to);

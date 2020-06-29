@@ -40,19 +40,19 @@ struct FixedOutputHash {
 typedef std::variant<
     TextHash, // for paths computed by makeTextPath() / addTextToStore
     FixedOutputHash // for path computed by makeFixedOutputPath
-> MiniContentAddress;
+> ContentAddress;
 
 /* Compute the prefix to the hash algorithm which indicates how the files were
    ingested. */
 std::string makeFileIngestionPrefix(const FileIngestionMethod m);
 
-std::string renderMiniContentAddress(MiniContentAddress ca);
+std::string renderContentAddress(ContentAddress ca);
 
-std::string renderMiniContentAddress(std::optional<MiniContentAddress> ca);
+std::string renderContentAddress(std::optional<ContentAddress> ca);
 
-MiniContentAddress parseMiniContentAddress(std::string_view rawCa);
+ContentAddress parseContentAddress(std::string_view rawCa);
 
-std::optional<MiniContentAddress> parseMiniContentAddressOpt(std::string_view rawCaOpt);
+std::optional<ContentAddress> parseContentAddressOpt(std::string_view rawCaOpt);
 
 /*
  * References set
@@ -116,22 +116,22 @@ struct FixedOutputInfo : FixedOutputHash {
     PathReferences<StorePath> references;
 };
 
-struct FullContentAddress {
+struct ContentAddressWithNameAndReferences {
     std::string name;
     std::variant<
         TextInfo,
         FixedOutputInfo
     > info;
 
-    bool operator < (const FullContentAddress & other) const
+    bool operator < (const ContentAddressWithNameAndReferences & other) const
     {
         return name < other.name;
     }
 
 };
 
-std::string renderFullContentAddress(FullContentAddress ca);
+std::string renderContentAddressWithNameAndReferences(ContentAddressWithNameAndReferences ca);
 
-FullContentAddress parseFullContentAddress(std::string_view rawCa);
+ContentAddressWithNameAndReferences parseContentAddressWithNameAndReferences(std::string_view rawCa);
 
 }
