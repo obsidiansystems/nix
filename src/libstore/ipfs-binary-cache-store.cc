@@ -742,7 +742,7 @@ public:
                     NarInfo narInfo (ValidPathInfo { *this, ContentAddressWithNameAndReferences { *ca } });;
                     narInfo.url = "ipfs://" + *cid;
                     (*callbackPtr)((std::shared_ptr<ValidPathInfo>)
-                        std::make_shared<ValidPathInfo>(narInfo));
+                        std::make_shared<NarInfo>(narInfo));
                     return;
                 }
             }
@@ -834,11 +834,13 @@ public:
         }
         }
 
-        ValidPathInfo info(makeFixedOutputPath(name, FixedOutputInfo {
-            method,
-            h,
-            {},
-        }));
+        ValidPathInfo info{*this, ContentAddressWithNameAndReferences {
+            .name = name,
+            .info = FixedOutputInfo {
+                method,
+                h,
+                {},
+            }}};
 
         auto source = StringSource { *sink.s };
         addToStore(info, source, repair, CheckSigs, nullptr);
