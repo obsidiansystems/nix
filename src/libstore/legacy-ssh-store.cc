@@ -88,7 +88,8 @@ struct LegacySSHStore : public Store
     }
 
     void queryPathInfoUncached(const StorePath & path,
-        Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override
+        Callback<std::shared_ptr<const ValidPathInfo>> callback,
+        std::optional<ContentAddressWithNameAndReferences> ca) noexcept override
     {
         try {
             auto conn(connections->get());
@@ -181,7 +182,7 @@ struct LegacySSHStore : public Store
             throw Error("failed to add path '%s' to remote host '%s'", printStorePath(info.path), host);
     }
 
-    void narFromPath(const StorePath & path, Sink & sink) override
+    void narFromPath(const StorePath & path, Sink & sink, std::optional<ContentAddressWithNameAndReferences> ca) override
     {
         auto conn(connections->get());
 
@@ -234,7 +235,7 @@ struct LegacySSHStore : public Store
         return status;
     }
 
-    void ensurePath(const StorePath & path) override
+    void ensurePath(const StorePath & path, std::optional<ContentAddressWithNameAndReferences> ca) override
     { unsupported("ensurePath"); }
 
     void computeFSClosure(const StorePathSet & paths,

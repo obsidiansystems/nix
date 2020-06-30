@@ -262,7 +262,7 @@ void BinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSource
     stats.narInfoWrite++;
 }
 
-bool BinaryCacheStore::isValidPathUncached(const StorePath & storePath)
+bool BinaryCacheStore::isValidPathUncached(const StorePath & storePath, std::optional<ContentAddressWithNameAndReferences> ca)
 {
     // FIXME: this only checks whether a .narinfo with a matching hash
     // part exists. So ‘f4kb...-foo’ matches ‘f4kb...-bar’, even
@@ -270,7 +270,7 @@ bool BinaryCacheStore::isValidPathUncached(const StorePath & storePath)
     return fileExists(narInfoFileFor(storePath));
 }
 
-void BinaryCacheStore::narFromPath(const StorePath & storePath, Sink & sink)
+void BinaryCacheStore::narFromPath(const StorePath & storePath, Sink & sink, std::optional<ContentAddressWithNameAndReferences> ca)
 {
     auto info = queryPathInfo(storePath).cast<const NarInfo>();
 
@@ -297,7 +297,7 @@ void BinaryCacheStore::narFromPath(const StorePath & storePath, Sink & sink)
 }
 
 void BinaryCacheStore::queryPathInfoUncached(const StorePath & storePath,
-    Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept
+    Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddressWithNameAndReferences> ca) noexcept
 {
     auto uri = getUri();
     auto storePathS = printStorePath(storePath);
@@ -338,13 +338,19 @@ StorePath BinaryCacheStore::addToStore(const string & name, const Path & srcPath
        small files. */
     StringSink sink;
     Hash h;
-    if (method == FileIngestionMethod::Recursive) {
+    switch (method) {
+    case FileIngestionMethod::Recursive:
         dumpPath(srcPath, sink, filter);
         h = hashString(hashAlgo, *sink.s);
-    } else {
+        break;
+    case FileIngestionMethod::Flat: {
         auto s = readFile(srcPath);
         dumpString(s, sink);
         h = hashString(hashAlgo, s);
+        break;
+    }
+    case FileIngestionMethod::Git:
+        throw Error("cannot add to binary cache store using the git file ingestion method");
     }
 
     ValidPathInfo info(makeFixedOutputPath(name, FixedOutputInfo {

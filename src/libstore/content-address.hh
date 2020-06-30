@@ -1,6 +1,8 @@
 #pragma once
 
+#include <nlohmann/json.hpp>
 #include <variant>
+
 #include "hash.hh"
 #include "path.hh"
 
@@ -11,9 +13,11 @@ namespace nix {
  */
 
 enum struct FileIngestionMethod : uint8_t {
-    Flat = false,
-    Recursive = true
+    Flat,
+    Recursive,
+    Git,
 };
+
 
 struct TextHash {
     Hash hash;
@@ -127,11 +131,17 @@ struct ContentAddressWithNameAndReferences {
     {
         return name < other.name;
     }
-
 };
 
 std::string renderContentAddressWithNameAndReferences(ContentAddressWithNameAndReferences ca);
 
 ContentAddressWithNameAndReferences parseContentAddressWithNameAndReferences(std::string_view rawCa);
 
+void to_json(nlohmann::json& j, const ContentAddress & c);
+void from_json(const nlohmann::json& j, ContentAddress & c);
+
+// Needed until https://github.com/nlohmann/json/pull/211
+
+void to_json(nlohmann::json& j, const std::optional<ContentAddress> & c);
+void from_json(const nlohmann::json& j, std::optional<ContentAddress> & c);
 }

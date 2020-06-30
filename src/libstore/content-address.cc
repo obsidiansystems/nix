@@ -1,3 +1,5 @@
+#include <nlohmann/json.hpp>
+
 #include "content-address.hh"
 
 namespace nix {
@@ -12,9 +14,10 @@ std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
         return "";
     case FileIngestionMethod::Recursive:
         return "r:";
-    default:
-        throw Error("impossible, caught both cases");
+    case FileIngestionMethod::Git:
+        return "git:";
     }
+    abort();
 }
 
 // FIXME Put this somewhere?
@@ -48,10 +51,16 @@ ContentAddress parseContentAddress(std::string_view rawCa) {
             return TextHash { hash };
         } else if (prefix == "fixed") {
             auto methodAndHash = rawCa.substr(prefixSeparator+1, string::npos);
-            if (methodAndHash.substr(0,2) == "r:") {
-                std::string_view hashRaw = methodAndHash.substr(2,string::npos);
+            if (methodAndHash.substr(0, 2) == "r:") {
+                std::string_view hashRaw = methodAndHash.substr(2, string::npos);
                 return FixedOutputHash {
                     .method = FileIngestionMethod::Recursive,
+                    .hash = Hash(string(hashRaw)),
+                };
+            } else if (methodAndHash.substr(0, 4) == "git:") {
+                std::string_view hashRaw = methodAndHash.substr(4, string::npos);
+                return FixedOutputHash {
+                    .method = FileIngestionMethod::Git,
                     .hash = Hash(string(hashRaw)),
                 };
             } else {
@@ -168,6 +177,61 @@ ContentAddressWithNameAndReferences parseContentAddressWithNameAndReferences(std
             };
         } else throw Error("unknown content address type");
     } else throw Error("unknown ca: '%s'", rawCa);
+}
+
+void to_json(nlohmann::json& j, const ContentAddress & ca) {
+    j = std::visit(overloaded {
+        [](TextHash th) {
+            return nlohmann::json {
+                { "type", "text" },
+                { "hash", th.hash.to_string(Base32, false) },
+            };
+        },
+        [](FixedOutputHash foh) {
+            return nlohmann::json {
+                { "type", "fixed" },
+                { "method", foh.method == FileIngestionMethod::Flat ? "flat" : "recursive" },
+                { "algo", printHashType(*foh.hash.type) },
+                { "hash", foh.hash.to_string(Base32, false) },
+            };
+        }
+    }, ca);
+}
+
+void from_json(const nlohmann::json& j, ContentAddress & ca) {
+    std::string_view type = j.at("type").get<std::string_view>();
+    if (type == "text") {
+        ca = TextHash {
+            .hash = Hash { j.at("hash").get<std::string_view>(), htSHA256 },
+        };
+    } else if (type == "fixed") {
+        std::string_view methodRaw = j.at("method").get<std::string_view>();
+        auto method = methodRaw == "flat" ? FileIngestionMethod::Flat
+            : methodRaw == "recursive" ? FileIngestionMethod::Recursive
+            : throw Error("invalid file ingestion method: %s", methodRaw);
+        auto hashAlgo = parseHashType(j.at("algo").get<std::string>());
+        ca = FixedOutputHash {
+            .method = method,
+            .hash = Hash { j.at("hash").get<std::string_view>(), hashAlgo },
+        };
+    } else
+        throw Error("invalid type: %s", type);
+}
+
+// Needed until https://github.com/nlohmann/json/pull/2117
+
+void to_json(nlohmann::json& j, const std::optional<ContentAddress> & c) {
+    if (!c)
+        j = nullptr;
+    else
+        to_json(j, *c);
+}
+
+void from_json(const nlohmann::json& j, std::optional<ContentAddress> & c) {
+    if (j.is_null())
+        c = std::nullopt;
+    else
+        c = j.get<ContentAddress>();
 }
 
 }

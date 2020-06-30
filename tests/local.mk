@@ -4,6 +4,7 @@ nix_tests = \
   gc.sh \
   gc-concurrent.sh \
   gc-auto.sh \
+  git.sh \
   referrers.sh user-envs.sh logging.sh nix-build.sh misc.sh fixed.sh \
   gc-runtime.sh check-refs.sh filter-source.sh \
   remote-store.sh export.sh export-graph.sh \
@@ -31,7 +32,8 @@ nix_tests = \
   nix-copy-ssh.sh \
   post-hook.sh \
   function-trace.sh \
-  recursive.sh
+  recursive.sh \
+  ipfs.sh
   # parallel.sh
 
 install-tests += $(foreach x, $(nix_tests), tests/$(x))

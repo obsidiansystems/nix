@@ -8,6 +8,7 @@
 #include "derivations.hh"
 #include "pool.hh"
 #include "finally.hh"
+#include "git.hh"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -273,7 +274,7 @@ ConnectionHandle RemoteStore::getConnection()
 }
 
 
-bool RemoteStore::isValidPathUncached(const StorePath & path)
+bool RemoteStore::isValidPathUncached(const StorePath & path, std::optional<ContentAddressWithNameAndReferences> ca)
 {
     auto conn(getConnection());
     conn->to << wopIsValidPath << printStorePath(path);
@@ -384,7 +385,7 @@ void RemoteStore::querySubstitutablePathInfos(const StorePathSet & paths, const 
 
 
 void RemoteStore::queryPathInfoUncached(const StorePath & path,
-    Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept
+    Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddressWithNameAndReferences> ca) noexcept
 {
     try {
         std::shared_ptr<ValidPathInfo> info;
@@ -510,15 +511,25 @@ StorePath RemoteStore::addToStore(const string & name, const Path & _srcPath,
 {
     if (repair) throw Error("repairing is not supported when building through the Nix daemon");
 
-    auto conn(getConnection());
-
     Path srcPath(absPath(_srcPath));
+
+    // recursively add to store if path is a directory
+    if (method == FileIngestionMethod::Git) {
+        struct stat st;
+        if (lstat(srcPath.c_str(), &st))
+            throw SysError("getting attributes of path '%1%'", srcPath);
+        if (S_ISDIR(st.st_mode))
+            for (auto & i : readDirectory(srcPath))
+                addToStore("git", srcPath + "/" + i.name, method, hashAlgo, filter, repair);
+    }
+
+    auto conn(getConnection());
 
     conn->to
         << wopAddToStore
         << name
         << ((hashAlgo == htSHA256 && method == FileIngestionMethod::Recursive) ? 0 : 1) /* backwards compatibility hack */
-        << (method == FileIngestionMethod::Recursive ? 1 : 0)
+        << (uint8_t) method
         << printHashType(hashAlgo);
 
     try {
@@ -596,7 +607,7 @@ BuildResult RemoteStore::buildDerivation(const StorePath & drvPath, const BasicD
 }
 
 
-void RemoteStore::ensurePath(const StorePath & path)
+void RemoteStore::ensurePath(const StorePath & path, std::optional<ContentAddressWithNameAndReferences> ca)
 {
     auto conn(getConnection());
     conn->to << wopEnsurePath << printStorePath(path);

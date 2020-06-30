@@ -54,6 +54,7 @@ struct Source
        It blocks until all the requested data is available, or throws
        an error if it is not going to be available.   */
     void operator () (unsigned char * data, size_t len);
+    void operator () (std::basic_string_view<unsigned char> & data);
 
     /* Store up to ‘len’ in the buffer pointed to by ‘data’, and
        return the number of bytes stored.  It blocks until at least
@@ -180,6 +181,28 @@ struct TeeSource : Source
         return n;
     }
 };
+
+#define MAKE_TEE_SINK(T) \
+	T orig; \
+    ref<std::string> data; \
+    TeeSink(T && orig) \
+        : orig(std::move(orig)), data(make_ref<std::string>()) { } \
+    void operator () (const unsigned char * data, size_t len) { \
+        this->data->append((const char *) data, len); \
+        (*this->orig)(data, len); \
+    } \
+    void operator () (const std::string & s) \
+    { \
+        *data += s; \
+        (*this->orig)(s); \
+    }
+
+template<typename T>
+struct TeeSink : Sink
+{
+    MAKE_TEE_SINK(T);
+};
+
 
 /* A reader that consumes the original Source until 'size'. */
 struct SizedSource : Source

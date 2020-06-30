@@ -113,8 +113,8 @@ StorePathWithOutputs Store::followLinksToStorePathWithOutputs(std::string_view p
        for paths copied by addToStore() or produced by fixed-output
        derivations:
          the string "fixed:out:<rec><algo>:<hash>:", where
-           <rec> = "r:" for recursive (path) hashes, or "" for flat
-             (file) hashes
+           <rec> = "r:" for recursive (path) hashes, "git:" for git
+             paths, or "" for flat (file) hashes
            <algo> = "md5", "sha1" or "sha256"
            <hash> = base-16 representation of the path or flat hash of
              the contents of the path (or expected contents of the
@@ -176,6 +176,9 @@ static std::string makeType(
 
 StorePath Store::makeFixedOutputPath(std::string_view name, const FixedOutputInfo & info) const
 {
+    if (info.method == FileIngestionMethod::Git && info.hash.type != htSHA1)
+        throw Error("Git file ingestion must use sha1 hash");
+
     if (*info.hash.type == htSHA256 && info.method == FileIngestionMethod::Recursive) {
         return makeStorePath(makeType(*this, "source", info.references), info.hash, name);
     } else {
@@ -222,9 +225,21 @@ StorePath Store::makeFixedOutputPathFromCA(const ContentAddressWithNameAndRefere
 std::pair<StorePath, Hash> Store::computeStorePathForPath(std::string_view name,
     const Path & srcPath, FileIngestionMethod method, HashType hashAlgo, PathFilter & filter) const
 {
-    Hash h = method == FileIngestionMethod::Recursive
-        ? hashPath(hashAlgo, srcPath, filter).first
-        : hashFile(hashAlgo, srcPath);
+    Hash h;
+    switch (method) {
+    case FileIngestionMethod::Recursive: {
+        h = hashPath(hashAlgo, srcPath, filter).first;
+        break;
+    }
+    case FileIngestionMethod::Git: {
+        h = hashGit(hashAlgo, srcPath, filter).first;
+        break;
+    }
+    case FileIngestionMethod::Flat: {
+        h = hashFile(hashAlgo, srcPath);
+        break;
+    }
+    }
     return std::make_pair(makeFixedOutputPath(name, FixedOutputInfo { method, h, {} }), h);
 }
 
@@ -257,7 +272,7 @@ bool Store::PathInfoCacheValue::isKnownNow()
     return std::chrono::steady_clock::now() < time_point + ttl;
 }
 
-bool Store::isValidPath(const StorePath & storePath)
+bool Store::isValidPath(const StorePath & storePath, std::optional<ContentAddressWithNameAndReferences> ca)
 {
     std::string hashPart(storePath.hashPart());
 
@@ -281,7 +296,7 @@ bool Store::isValidPath(const StorePath & storePath)
         }
     }
 
-    bool valid = isValidPathUncached(storePath);
+    bool valid = isValidPathUncached(storePath, ca);
 
     if (diskCache && !valid)
         // FIXME: handle valid = true case.
@@ -293,7 +308,7 @@ bool Store::isValidPath(const StorePath & storePath)
 
 /* Default implementation for stores that only implement
    queryPathInfoUncached(). */
-bool Store::isValidPathUncached(const StorePath & path)
+bool Store::isValidPathUncached(const StorePath & path, std::optional<ContentAddressWithNameAndReferences> ca)
 {
     try {
         queryPathInfo(path);
@@ -304,7 +319,7 @@ bool Store::isValidPathUncached(const StorePath & path)
 }
 
 
-ref<const ValidPathInfo> Store::queryPathInfo(const StorePath & storePath)
+ref<const ValidPathInfo> Store::queryPathInfo(const StorePath & storePath, std::optional<ContentAddressWithNameAndReferences> ca)
 {
     std::promise<ref<const ValidPathInfo>> promise;
 
@@ -315,14 +330,14 @@ ref<const ValidPathInfo> Store::queryPathInfo(const StorePath & storePath)
             } catch (...) {
                 promise.set_exception(std::current_exception());
             }
-        }});
+        }}, ca);
 
     return promise.get_future().get();
 }
 
 
 void Store::queryPathInfo(const StorePath & storePath,
-    Callback<ref<const ValidPathInfo>> callback) noexcept
+    Callback<ref<const ValidPathInfo>> callback, std::optional<ContentAddressWithNameAndReferences> ca) noexcept
 {
     std::string hashPart;
 
@@ -380,7 +395,7 @@ void Store::queryPathInfo(const StorePath & storePath,
 
                 (*callbackPtr)(ref<const ValidPathInfo>(info));
             } catch (...) { callbackPtr->rethrow(); }
-        }});
+        }}, ca);
 }
 
 
@@ -578,7 +593,8 @@ void Store::buildPaths(const std::vector<StorePathWithOutputs> & paths, BuildMod
 
 
 void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
-    const StorePath & storePath, RepairFlag repair, CheckSigsFlag checkSigs)
+    const StorePath & storePath, RepairFlag repair, CheckSigsFlag checkSigs,
+    std::optional<ContentAddressWithNameAndReferences> ca)
 {
     auto srcUri = srcStore->getUri();
     auto dstUri = dstStore->getUri();
@@ -592,7 +608,7 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
         {srcStore->printStorePath(storePath), srcUri, dstUri});
     PushActivity pact(act.id);
 
-    auto info = srcStore->queryPathInfo(storePath);
+    auto info = srcStore->queryPathInfo(storePath, ca);
 
     uint64_t total = 0;
 
@@ -607,7 +623,7 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
 
     if (!info->narHash) {
         StringSink sink;
-        srcStore->narFromPath({storePath}, sink);
+        srcStore->narFromPath({storePath}, sink, ca);
         auto info2 = make_ref<ValidPathInfo>(*info);
         info2->narHash = hashString(htSHA256, *sink.s);
         if (!info->narSize) info2->narSize = sink.s->size();
@@ -631,7 +647,7 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
             total += len;
             act.progress(total, info->narSize);
         });
-        srcStore->narFromPath(storePath, wrapperSink);
+        srcStore->narFromPath(storePath, wrapperSink, ca);
     }, [&]() {
            throw EndOfFile("NAR for '%s' fetched from '%s' is incomplete", srcStore->printStorePath(storePath), srcStore->getUri());
     });
@@ -731,6 +747,8 @@ std::map<StorePath, StorePath> copyPaths(ref<Store> srcStore, ref<Store> dstStor
             nrDone++;
             showProgress();
         });
+
+    dstStore->sync();
 
     return pathsMap;
 }
@@ -956,7 +974,7 @@ StoreType getStoreType(const std::string & uri, const std::string & stateDir)
 {
     if (uri == "daemon") {
         return tDaemon;
-    } else if (uri == "local" || hasPrefix(uri, "/")) {
+    } else if (uri == "local" || hasPrefix(uri, "/") || hasPrefix(uri, "./")) {
         return tLocal;
     } else if (uri == "" || uri == "auto") {
         if (access(stateDir.c_str(), R_OK | W_OK) == 0)
@@ -980,8 +998,11 @@ static RegisterStoreImplementation regStore([](
             return std::shared_ptr<Store>(std::make_shared<UDSRemoteStore>(params));
         case tLocal: {
             Store::Params params2 = params;
-            if (hasPrefix(uri, "/"))
+            if (hasPrefix(uri, "/")) {
                 params2["root"] = uri;
+            } else if (hasPrefix(uri, "./")) {
+                params2["root"] = absPath(uri);
+            }
             return std::shared_ptr<Store>(std::make_shared<LocalStore>(params2));
         }
         default:

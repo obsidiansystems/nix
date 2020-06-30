@@ -2,6 +2,7 @@
 #include "common-args.hh"
 #include "store-api.hh"
 #include "archive.hh"
+#include "git.hh"
 
 using namespace nix;
 
@@ -21,6 +22,13 @@ struct CmdAddToStore : MixDryRun, StoreCommand
             .description = "name component of the store path",
             .labels = {"name"},
             .handler = {&namePart},
+        });
+
+        addFlag({
+            .longName = "git",
+            .shortName = 0,
+            .description = "treat path as a git object",
+            .handler = {&ingestionMethod, FileIngestionMethod::Git},
         });
 
         addFlag({
@@ -65,6 +73,10 @@ struct CmdAddToStore : MixDryRun, StoreCommand
             hash = hsink.finish().first;
             break;
         }
+        case FileIngestionMethod::Git: {
+            hash = dumpGitHash(htSHA1, path);
+            break;
+        }
         }
 
         ValidPathInfo info {
@@ -84,6 +96,7 @@ struct CmdAddToStore : MixDryRun, StoreCommand
         if (!dryRun) {
             auto source = StringSource { *sink.s };
             store->addToStore(info, source);
+            store->sync();
         }
 
         logger->stdout("%s", store->printStorePath(info.path));

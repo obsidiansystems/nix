@@ -281,11 +281,11 @@ public:
         const StorePathSet & references) const;
 
     /* Check whether a path is valid. */
-    bool isValidPath(const StorePath & path);
+    bool isValidPath(const StorePath & path, std::optional<ContentAddressWithNameAndReferences> ca = std::nullopt);
 
 protected:
 
-    virtual bool isValidPathUncached(const StorePath & path);
+    virtual bool isValidPathUncached(const StorePath & path, std::optional<ContentAddressWithNameAndReferences> ca = std::nullopt);
 
 public:
 
@@ -304,16 +304,16 @@ public:
 
     /* Query information about a valid path. It is permitted to omit
        the name part of the store path. */
-    ref<const ValidPathInfo> queryPathInfo(const StorePath & path);
+    ref<const ValidPathInfo> queryPathInfo(const StorePath & path, std::optional<ContentAddressWithNameAndReferences> ca = std::nullopt);
 
     /* Asynchronous version of queryPathInfo(). */
     void queryPathInfo(const StorePath & path,
-        Callback<ref<const ValidPathInfo>> callback) noexcept;
+        Callback<ref<const ValidPathInfo>> callback, std::optional<ContentAddressWithNameAndReferences> ca = std::nullopt) noexcept;
 
 protected:
 
     virtual void queryPathInfoUncached(const StorePath & path,
-        Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept = 0;
+        Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddressWithNameAndReferences> ca = std::nullopt) noexcept = 0;
 
 public:
 
@@ -373,7 +373,7 @@ public:
         const StorePathSet & references, RepairFlag repair = NoRepair) = 0;
 
     /* Write a NAR dump of a store path. */
-    virtual void narFromPath(const StorePath & path, Sink & sink) = 0;
+    virtual void narFromPath(const StorePath & path, Sink & sink, std::optional<ContentAddressWithNameAndReferences> ca = std::nullopt) = 0;
 
     /* For each path, if it's a derivation, build it.  Building a
        derivation means ensuring that the output paths are valid.  If
@@ -396,7 +396,8 @@ public:
     /* Ensure that a path is valid.  If it is not currently valid, it
        may be made valid by running a substitute (if defined for the
        path). */
-    virtual void ensurePath(const StorePath & path) = 0;
+    virtual void ensurePath(const StorePath & path,
+        std::optional<ContentAddressWithNameAndReferences> ca = std::nullopt) = 0;
 
     /* Add a store path as a temporary root of the garbage collector.
        The root disappears as soon as we exit. */
@@ -583,6 +584,10 @@ public:
     virtual void createUser(const std::string & userName, uid_t userId)
     { }
 
+    /* Sync writes to commits written data, usually a no-op. */
+    virtual void sync()
+    { };
+
 protected:
 
     Stats stats;
@@ -616,7 +621,7 @@ public:
 
     LocalFSStore(const Params & params);
 
-    void narFromPath(const StorePath & path, Sink & sink) override;
+    void narFromPath(const StorePath & path, Sink & sink, std::optional<ContentAddressWithNameAndReferences>) override;
     ref<FSAccessor> getFSAccessor() override;
 
     /* Register a permanent GC root. */
@@ -637,7 +642,8 @@ public:
 
 /* Copy a path from one store to another. */
 void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
-    const StorePath & storePath, RepairFlag repair = NoRepair, CheckSigsFlag checkSigs = CheckSigs);
+    const StorePath & storePath, RepairFlag repair = NoRepair, CheckSigsFlag checkSigs = CheckSigs,
+    std::optional<ContentAddressWithNameAndReferences> ca = std::nullopt);
 
 
 /* Copy store paths from one store to another. The paths may be copied

@@ -8,6 +8,7 @@
 #include "archive.hh"
 #include "derivations.hh"
 #include "args.hh"
+#include "git.hh"
 
 namespace nix::daemon {
 
@@ -369,7 +370,8 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         std::string s, baseName;
         FileIngestionMethod method;
         {
-            bool fixed; uint8_t recursive;
+            bool fixed;
+            uint8_t recursive;
             from >> baseName >> fixed /* obsolete */ >> recursive >> s;
             if (recursive > (uint8_t) FileIngestionMethod::Recursive)
                 throw Error("unsupported FileIngestionMethod with value of %i; you may need to upgrade nix-daemon", recursive);
@@ -385,20 +387,21 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         TeeSource savedNAR(from);
         RetrieveRegularNARSink savedRegular;
 
-        if (method == FileIngestionMethod::Recursive) {
+        if (method == FileIngestionMethod::Flat)
+            parseDump(savedRegular, from);
+        else {
             /* Get the entire NAR dump from the client and save it to
                a string so that we can pass it to
                addToStoreFromDump(). */
             ParseSink sink; /* null sink; just parse the NAR */
             parseDump(sink, savedNAR);
-        } else
-            parseDump(savedRegular, from);
+        }
 
         logger->startWork();
         if (!savedRegular.regular) throw Error("regular file expected");
 
         auto path = store->addToStoreFromDump(
-            method == FileIngestionMethod::Recursive ? *savedNAR.data : savedRegular.s,
+            method == FileIngestionMethod::Flat ? savedRegular.s : *savedNAR.data,
             baseName,
             method,
             hashAlgo);
@@ -725,9 +728,10 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         if (GET_PROTOCOL_MINOR(clientVersion) >= 21)
             source = std::make_unique<TunnelSource>(from, to);
         else {
-            TeeSink tee(from);
-            parseDump(tee, tee.source);
-            saved = std::move(*tee.source.data);
+            TeeSource tee(from);
+            ParseSink sink;
+            parseDump(sink, tee);
+            saved = std::move(*tee.data);
             source = std::make_unique<StringSource>(saved);
         }
 

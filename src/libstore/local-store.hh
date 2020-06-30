@@ -119,7 +119,7 @@ public:
 
     std::string getUri() override;
 
-    bool isValidPathUncached(const StorePath & path) override;
+    bool isValidPathUncached(const StorePath & path, std::optional<ContentAddressWithNameAndReferences> ca) override;
 
     StorePathSet queryValidPaths(const StorePathSet & paths,
         SubstituteFlag maybeSubstitute = NoSubstitute) override;
@@ -127,7 +127,7 @@ public:
     StorePathSet queryAllValidPaths() override;
 
     void queryPathInfoUncached(const StorePath & path,
-        Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override;
+        Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddressWithNameAndReferences> ca) noexcept override;
 
     void queryReferrers(const StorePath & path, StorePathSet & referrers) override;
 
@@ -168,7 +168,7 @@ public:
     BuildResult buildDerivation(const StorePath & drvPath, const BasicDerivation & drv,
         BuildMode buildMode) override;
 
-    void ensurePath(const StorePath & path) override;
+    void ensurePath(const StorePath & path, std::optional<ContentAddressWithNameAndReferences> ca) override;
 
     void addTempRoot(const StorePath & path) override;
 
