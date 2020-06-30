@@ -479,7 +479,6 @@ private:
             json["deriver"] = printStorePath(*narInfo->deriver);
 
         json["registrationTime"] = narInfo->registrationTime;
-        json["ultimate"] = narInfo->ultimate;
 
         json["sigs"] = nlohmann::json::array();
         for (auto & sig : narInfo->sigs)
@@ -779,9 +778,6 @@ public:
 
         if (json.find("registrationTime") != json.end())
             narInfo.registrationTime = json["registrationTime"];
-
-        if (json.find("ultimate") != json.end())
-            narInfo.ultimate = json["ultimate"];
 
         if (json.find("sigs") != json.end())
             for (auto & sig : json["sigs"])
