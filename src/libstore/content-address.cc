@@ -170,8 +170,8 @@ ContentAddressWithNameAndReferences parseContentAddressWithNameAndReferences(std
                     {.method = ca_.method,
                      .hash = ca_.hash,},
                     .references = PathReferences<StorePath> {
-                        .hasSelfReference = hasSelfReference,
                         .references = references,
+                        .hasSelfReference = hasSelfReference,
                     },
                 },
             };
