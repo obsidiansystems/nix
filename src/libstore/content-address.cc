@@ -120,7 +120,7 @@ std::string renderContentAddressWithNameAndReferences(ContentAddressWithNameAndR
 ContentAddressWithNameAndReferences parseContentAddressWithNameAndReferences(std::string_view rawCa)
 {
     auto prefixSeparator = rawCa.find(':');
-    if (prefixSeparator != string::npos)
+    if (prefixSeparator == string::npos)
         throw Error("unknown ca: '%s'", rawCa);
     auto rest = rawCa.substr(prefixSeparator + 1);
 
@@ -129,8 +129,8 @@ ContentAddressWithNameAndReferences parseContentAddressWithNameAndReferences(std
         auto name = std::string(rest.substr(0, prefixSeparator));
         rest = rest.substr(prefixSeparator + 1);
 
-        if (!hasPrefix(rawCa, "refs,"))
-            throw Error("could not parse ca ''", rawCa);
+        if (!hasPrefix(rest, "refs,"))
+            throw Error("could not parse ca '%s'", rawCa);
         prefixSeparator = rest.find(':');
         if (prefixSeparator == string::npos)
             throw Error("unknown ca: '%s'", rawCa);
