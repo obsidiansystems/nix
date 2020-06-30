@@ -205,9 +205,21 @@ static GitMode dumpGitInternal(HashType ht, const Path & path, Sink & sink, Path
         perm = dumpGitBlob(path, st, sink);
     else if (S_ISDIR(st.st_mode)) {
         GitTree entries;
-        for (auto & i : readDirectory(path))
-            if (filter(path + "/" + i.name)) {
-                auto result = dumpGitHashInternal(ht, path + "/" + i.name, filter);
+        for (auto & i : readDirectory(path)) {
+            Path path_(path + "/" + i.name);
+            if (filter(path_)) {
+
+                // follow symlinks, unless it’s a to self, then we
+                // just skip it
+                if (lstat(path_.c_str(), &st))
+                    throw SysError("getting attributes of path '%1%'", path_);
+                if (S_ISLNK(st.st_mode)) {
+                    path_ = absPath(readLink(path_), dirOf(path_));
+                    if (path == path_)
+                        throw Error("cannot handle self symlinks in Git format");
+                }
+
+                auto result = dumpGitHashInternal(ht, path_, filter);
 
                 // correctly observe git order, see
                 // https://github.com/mirage/irmin/issues/352
@@ -217,6 +229,7 @@ static GitMode dumpGitInternal(HashType ht, const Path & path, Sink & sink, Path
 
                 entries[name] = result;
             }
+        }
         perm = dumpGitTree(entries, sink);
     } else throw Error("file '%1%' has an unsupported type", path);
 
