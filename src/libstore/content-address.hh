@@ -30,6 +30,10 @@ struct FixedOutputHash {
     std::string printMethodAlgo() const;
 };
 
+struct IPFSHash {
+    Hash hash;
+};
+
 /*
   We've accumulated several types of content-addressed paths over the years;
   fixed-output derivations support multiple hash algorithms and serialisation
@@ -43,7 +47,8 @@ struct FixedOutputHash {
 */
 typedef std::variant<
     TextHash, // for paths computed by makeTextPath() / addTextToStore
-    FixedOutputHash // for path computed by makeFixedOutputPath
+    FixedOutputHash, // for path computed by makeFixedOutputPath
+    IPFSHash
 > ContentAddress;
 
 /* Compute the prefix to the hash algorithm which indicates how the files were
@@ -120,11 +125,17 @@ struct FixedOutputInfo : FixedOutputHash {
     PathReferences<StorePath> references;
 };
 
+struct IPFSInfo : IPFSHash {
+    // References for the paths
+    PathReferences<StorePath> references;
+};
+
 struct ContentAddressWithNameAndReferences {
     std::string name;
     std::variant<
         TextInfo,
-        FixedOutputInfo
+        FixedOutputInfo,
+        IPFSInfo
     > info;
 
     bool operator < (const ContentAddressWithNameAndReferences & other) const

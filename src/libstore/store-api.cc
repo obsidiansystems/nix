@@ -217,6 +217,10 @@ StorePath Store::makeFixedOutputPathFromCA(const ContentAddressWithNameAndRefere
         },
         [&](FixedOutputInfo foi) {
             return makeFixedOutputPath(info.name, foi);
+        },
+        [&](IPFSInfo io) {
+            throw Error("don't know how to make output path for ipfs ca");
+            return StorePath("");
         }
     }, info.info);
 }
@@ -853,12 +857,17 @@ std::optional<ContentAddressWithNameAndReferences> ValidPathInfo::fullContentAdd
                 TextInfo info { th };
                 assert(!hasSelfReference);
                 info.references = references;
-                return std::variant<TextInfo, FixedOutputInfo> { info };
+                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo> { info };
             },
             [&](FixedOutputHash foh) {
                 FixedOutputInfo info { foh };
                 info.references = static_cast<PathReferences<StorePath>>(*this);
-                return std::variant<TextInfo, FixedOutputInfo> { info };
+                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo> { info };
+            },
+            [&](IPFSHash io) {
+                IPFSInfo info { io };
+                info.references = static_cast<PathReferences<StorePath>>(*this);
+                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo> { info };
             },
         }, *ca),
     };
@@ -922,6 +931,10 @@ ValidPathInfo::ValidPathInfo(
         [this](FixedOutputInfo foi) {
             *(static_cast<PathReferences<StorePath> *>(this)) = foi.references;
             this->ca = FixedOutputHash { (FixedOutputHash) std::move(foi) };
+        },
+        [this](IPFSInfo foi) {
+            *(static_cast<PathReferences<StorePath> *>(this)) = foi.references;
+            this->ca = IPFSHash { (IPFSHash) std::move(foi) };
         },
     }, std::move(info.info));
 }

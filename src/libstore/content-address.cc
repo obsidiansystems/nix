@@ -34,6 +34,10 @@ std::string renderContentAddress(ContentAddress ca) {
              return "fixed:"
                  + makeFileIngestionPrefix(fsh.method)
                  + fsh.hash.to_string(Base32, true);
+        },
+        [](IPFSHash fsh) {
+             return "ipfs:"
+                 + fsh.hash.to_string(Base32, true);
         }
     }, ca);
 }
@@ -70,6 +74,11 @@ ContentAddress parseContentAddress(std::string_view rawCa) {
                     .hash = Hash(string(hashRaw)),
                 };
             }
+        } else if (prefix == "ipfs") {
+            Hash hash = Hash(rawCa.substr(prefixSeparator+1, string::npos));
+            if (*hash.type != htSHA256)
+                throw Error("the text hash should have type SHA256");
+            return IPFSHash { hash };
         } else {
             throw Error("format not recognized; has to be text or fixed");
         }
@@ -95,7 +104,7 @@ std::string renderContentAddressWithNameAndReferences(ContentAddressWithNameAndR
                 result += ":";
                 result += i.to_string();
             }
-            result += ":" + renderContentAddress(std::variant<TextHash, FixedOutputHash> {TextHash {
+            result += ":" + renderContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {TextHash {
                     .hash = th.hash,
                 }});
             return result;
@@ -107,8 +116,20 @@ std::string renderContentAddressWithNameAndReferences(ContentAddressWithNameAndR
                 result += i.to_string();
             }
             if (fsh.references.hasSelfReference) result += ":self";
-            result += ":" + renderContentAddress(std::variant<TextHash, FixedOutputHash> {FixedOutputHash {
+            result += ":" + renderContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {FixedOutputHash {
                     .method = fsh.method,
+                    .hash = fsh.hash
+                }});
+            return result;
+        },
+        [](IPFSInfo fsh) {
+            std::string result = "refs," + std::to_string(fsh.references.references.size() + (fsh.references.hasSelfReference ? 1 : 0));
+            for (auto & i : fsh.references.references) {
+                result += ":";
+                result += i.to_string();
+            }
+            if (fsh.references.hasSelfReference) result += ":self";
+            result += ":" + renderContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {IPFSHash {
                     .hash = fsh.hash
                 }});
             return result;
@@ -175,6 +196,18 @@ ContentAddressWithNameAndReferences parseContentAddressWithNameAndReferences(std
                     },
                 },
             };
+        } else if (std::holds_alternative<IPFSHash>(ca)) {
+            auto ca_ = std::get<IPFSHash>(ca);
+            return ContentAddressWithNameAndReferences {
+                .name = name,
+                .info = IPFSInfo {
+                    {.hash = ca_.hash,},
+                    .references = PathReferences<StorePath> {
+                        .references = references,
+                        .hasSelfReference = hasSelfReference,
+                    },
+                },
+            };
         } else throw Error("unknown content address type");
     } else throw Error("unknown ca: '%s'", rawCa);
 }
@@ -192,6 +225,12 @@ void to_json(nlohmann::json& j, const ContentAddress & ca) {
                 { "type", "fixed" },
                 { "method", foh.method == FileIngestionMethod::Flat ? "flat" : "recursive" },
                 { "algo", printHashType(*foh.hash.type) },
+                { "hash", foh.hash.to_string(Base32, false) },
+            };
+        },
+        [](IPFSHash foh) {
+            return nlohmann::json {
+                { "type", "ipfs" },
                 { "hash", foh.hash.to_string(Base32, false) },
             };
         }
