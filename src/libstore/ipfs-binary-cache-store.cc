@@ -525,10 +525,10 @@ private:
     // f = base16
     // cid-version = 01
     // multicodec-packed-content-type = 1114
-    std::optional<std::string> getCidFromCA(ContentAddress ca)
+    std::optional<std::string> getCidFromCA(FullContentAddress ca)
     {
-        if (std::holds_alternative<FixedOutputHash>(ca)) {
-            auto ca_ = std::get<FixedOutputHash>(ca);
+        if (std::holds_alternative<FixedOutputInfo>(ca.info)) {
+            auto ca_ = std::get<FixedOutputInfo>(ca.info);
             if (ca_.method == FileIngestionMethod::Git) {
                 assert(ca_.hash.type == htSHA1);
                 return "f01781114" + ca_.hash.to_string(Base16, false);
@@ -662,7 +662,7 @@ public:
         stats.narInfoWrite++;
     }
 
-    bool isValidPathUncached(const StorePath & storePath, std::optional<ContentAddress> ca) override
+    bool isValidPathUncached(const StorePath & storePath, std::optional<FullContentAddress> ca) override
     {
         if (ca) {
             auto cid = getCidFromCA(*ca);
@@ -679,7 +679,7 @@ public:
         return json["nar"].contains(storePath.to_string());
     }
 
-    void narFromPath(const StorePath & storePath, Sink & sink, std::optional<ContentAddress> ca) override
+    void narFromPath(const StorePath & storePath, Sink & sink, std::optional<FullContentAddress> ca) override
     {
         auto info = queryPathInfo(storePath, ca).cast<const NarInfo>();
 
@@ -721,7 +721,7 @@ public:
     }
 
     void queryPathInfoUncached(const StorePath & storePath,
-        Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept override
+        Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<FullContentAddress> ca) noexcept override
     {
         // TODO: properly use callbacks
 
@@ -738,9 +738,8 @@ public:
             if (cid) {
                 auto size = ipfsBlockStat("/ipfs/" + *cid);
                 if (size) {
-                    assert(storePath == makeFixedOutputPathFromCA(storePath.name(), *ca));
-                    NarInfo narInfo { storePath };
-                    narInfo.ca = ca;
+                    NarInfo narInfo { *this, FullContentAddress { *ca } };
+                    assert(narInfo.path == storePath);
                     narInfo.url = "ipfs://" + *cid;
                     (*callbackPtr)((std::shared_ptr<ValidPathInfo>)
                         std::make_shared<NarInfo>(narInfo));
@@ -835,8 +834,17 @@ public:
         }
         }
 
-        ValidPathInfo info(makeFixedOutputPath(method, h, name));
-        info.ca = FixedOutputHash { .method = method, .hash = h };
+        ValidPathInfo info {
+            *this,
+            FullContentAddress {
+                .name = name,
+                .info = FixedOutputInfo {
+                    method,
+                    h,
+					{},
+                },
+            },
+        };
 
         auto source = StringSource { *sink.s };
         addToStore(info, source, repair, CheckSigs, nullptr);
@@ -901,7 +909,7 @@ public:
         BuildMode buildMode) override
     { unsupported("buildDerivation"); }
 
-    void ensurePath(const StorePath & path, std::optional<ContentAddress> ca) override
+    void ensurePath(const StorePath & path, std::optional<FullContentAddress> ca) override
     { unsupported("ensurePath"); }
 
     std::optional<StorePath> queryPathFromHashPart(const std::string & hashPart) override

@@ -4,8 +4,13 @@
 #include <variant>
 
 #include "hash.hh"
+#include "path.hh"
 
 namespace nix {
+
+/*
+ * Mini content address
+ */
 
 enum struct FileIngestionMethod : uint8_t {
     Flat,
@@ -39,29 +44,102 @@ struct FixedOutputHash {
 typedef std::variant<
     TextHash, // for paths computed by makeTextPath() / addTextToStore
     FixedOutputHash // for path computed by makeFixedOutputPath
-> ContentAddress;
+> MiniContentAddress;
 
 /* Compute the prefix to the hash algorithm which indicates how the files were
    ingested. */
 std::string makeFileIngestionPrefix(const FileIngestionMethod m);
 
-/* Compute the content-addressability assertion (ValidPathInfo::ca)
-   for paths created by makeFixedOutputPath() / addToStore(). */
-std::string makeFixedOutputCA(FileIngestionMethod method, const Hash & hash);
+std::string renderMiniContentAddress(MiniContentAddress ca);
 
-std::string renderContentAddress(ContentAddress ca);
+std::string renderMiniContentAddress(std::optional<MiniContentAddress> ca);
 
-std::string renderContentAddress(std::optional<ContentAddress> ca);
+MiniContentAddress parseMiniContentAddress(std::string_view rawCa);
 
-ContentAddress parseContentAddress(std::string_view rawCa);
+std::optional<MiniContentAddress> parseMiniContentAddressOpt(std::string_view rawCaOpt);
 
-std::optional<ContentAddress> parseContentAddressOpt(std::string_view rawCaOpt);
+/*
+ * References set
+ */
 
-void to_json(nlohmann::json& j, const ContentAddress & c);
-void from_json(const nlohmann::json& j, ContentAddress & c);
+template<typename Ref>
+struct PathReferences
+{
+    std::set<Ref> references;
+    bool hasSelfReference = false;
+
+    /* Functions to view references + hasSelfReference as one set, mainly for
+       compatibility's sake. */
+    StorePathSet referencesPossiblyToSelf(const Ref & self) const;
+    void insertReferencePossiblyToSelf(const Ref & self, Ref && ref);
+    void setReferencesPossiblyToSelf(const Ref & self, std::set<Ref> && refs);
+};
+
+template<typename Ref>
+StorePathSet PathReferences<Ref>::referencesPossiblyToSelf(const Ref & self) const
+{
+    StorePathSet refs { references };
+    if (hasSelfReference)
+        refs.insert(self);
+    return refs;
+}
+
+template<typename Ref>
+void PathReferences<Ref>::insertReferencePossiblyToSelf(const Ref & self, Ref && ref)
+{
+    if (ref == self)
+        hasSelfReference = true;
+    else
+        references.insert(std::move(ref));
+}
+
+template<typename Ref>
+void PathReferences<Ref>::setReferencesPossiblyToSelf(const Ref & self, std::set<Ref> && refs)
+{
+    if (refs.count(self))
+        hasSelfReference = true;
+        refs.erase(self);
+
+    references = refs;
+}
+
+void to_json(nlohmann::json& j, const MiniContentAddress & c);
+void from_json(const nlohmann::json& j, MiniContentAddress & c);
 
 // Needed until https://github.com/nlohmann/json/pull/211
 
-void to_json(nlohmann::json& j, const std::optional<ContentAddress> & c);
-void from_json(const nlohmann::json& j, std::optional<ContentAddress> & c);
+void to_json(nlohmann::json& j, const std::optional<MiniContentAddress> & c);
+void from_json(const nlohmann::json& j, std::optional<MiniContentAddress> & c);
+
+/*
+ * Full content address
+ *
+ * See the schema for store paths in store-api.cc
+ */
+
+// This matches the additional info that we need for makeTextPath
+struct TextInfo : TextHash {
+    // References for the paths, self references disallowed
+    StorePathSet references;
+};
+
+struct FixedOutputInfo : FixedOutputHash {
+    // References for the paths
+    PathReferences<StorePath> references;
+};
+
+struct FullContentAddress {
+    std::string name;
+    std::variant<
+        TextInfo,
+        FixedOutputInfo
+    > info;
+
+    bool operator < (const FullContentAddress & other) const
+    {
+        return name < other.name;
+    }
+
+};
+
 }

@@ -327,7 +327,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         logger->startWork();
         StorePathSet paths;
         if (op == wopQueryReferences)
-            for (auto & i : store->queryPathInfo(path)->references)
+            for (auto & i : store->queryPathInfo(path)->referencesPossiblyToSelf())
                 paths.insert(i);
         else if (op == wopQueryReferrers)
             store->queryReferrers(path, paths);
@@ -596,7 +596,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         auto path = store->parseStorePath(readString(from));
         logger->startWork();
         SubstitutablePathInfos infos;
-        store->querySubstitutablePathInfos({{path, std::nullopt}}, infos);
+        store->querySubstitutablePathInfos({path}, {}, infos);
         logger->stopWork();
         auto i = infos.find(path);
         if (i == infos.end())
@@ -604,7 +604,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         else {
             to << 1
                << (i->second.deriver ? store->printStorePath(*i->second.deriver) : "");
-            writeStorePaths(*store, to, i->second.references);
+            writeStorePaths(*store, to, i->second.referencesPossiblyToSelf(path));
             to << i->second.downloadSize
                << i->second.narSize;
         }
@@ -613,21 +613,18 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
 
     case wopQuerySubstitutablePathInfos: {
         SubstitutablePathInfos infos;
-        StorePathCAMap pathsMap = {};
-        if (GET_PROTOCOL_MINOR(clientVersion) < 22) {
-            auto paths = readStorePaths<StorePathSet>(*store, from);
-            for (auto & path : paths)
-                pathsMap.emplace(path, std::nullopt);
-        } else
-            pathsMap = readStorePathCAMap(*store, from);
+        auto paths = readStorePaths<StorePathSet>(*store, from);
+        std::set<FullContentAddress> caPaths;
+        if (GET_PROTOCOL_MINOR(clientVersion) > 22)
+            caPaths = readFullCaSet(*store, from);
         logger->startWork();
-        store->querySubstitutablePathInfos(pathsMap, infos);
+        store->querySubstitutablePathInfos(paths, caPaths, infos);
         logger->stopWork();
         to << infos.size();
         for (auto & i : infos) {
             to << store->printStorePath(i.first)
                << (i.second.deriver ? store->printStorePath(*i.second.deriver) : "");
-            writeStorePaths(*store, to, i.second.references);
+            writeStorePaths(*store, to, i.second.referencesPossiblyToSelf(i.first));
             to << i.second.downloadSize << i.second.narSize;
         }
         break;
@@ -656,12 +653,12 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
                 to << 1;
             to << (info->deriver ? store->printStorePath(*info->deriver) : "")
                << info->narHash.to_string(Base16, false);
-            writeStorePaths(*store, to, info->references);
+            writeStorePaths(*store, to, info->referencesPossiblyToSelf());
             to << info->registrationTime << info->narSize;
             if (GET_PROTOCOL_MINOR(clientVersion) >= 16) {
                 to << info->ultimate
                    << info->sigs
-                   << renderContentAddress(info->ca);
+                   << renderMiniContentAddress(info->ca);
             }
         } else {
             assert(GET_PROTOCOL_MINOR(clientVersion) >= 17);
@@ -716,10 +713,10 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         if (deriver != "")
             info.deriver = store->parseStorePath(deriver);
         info.narHash = Hash(readString(from), htSHA256);
-        info.references = readStorePaths<StorePathSet>(*store, from);
+        info.setReferencesPossiblyToSelf(readStorePaths<StorePathSet>(*store, from));
         from >> info.registrationTime >> info.narSize >> info.ultimate;
         info.sigs = readStrings<StringSet>(from);
-        info.ca = parseContentAddressOpt(readString(from));
+        info.ca = parseMiniContentAddressOpt(readString(from));
         from >> repair >> dontCheckSigs;
         if (!trusted && dontCheckSigs)
             dontCheckSigs = false;

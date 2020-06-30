@@ -1,5 +1,6 @@
 #include "globals.hh"
 #include "nar-info.hh"
+#include "store-api.hh"
 
 namespace nix {
 
@@ -56,7 +57,7 @@ NarInfo::NarInfo(const Store & store, const std::string & s, const std::string &
             auto refs = tokenizeString<Strings>(value, " ");
             if (!references.empty()) corrupt();
             for (auto & r : refs)
-                references.insert(StorePath(r));
+                insertReferencePossiblyToSelf(StorePath(r));
         }
         else if (name == "Deriver") {
             if (value != "unknown-deriver")
@@ -69,7 +70,7 @@ NarInfo::NarInfo(const Store & store, const std::string & s, const std::string &
         else if (name == "CA") {
             if (ca) corrupt();
             // FIXME: allow blank ca or require skipping field?
-            ca = parseContentAddressOpt(value);
+            ca = parseMiniContentAddressOpt(value);
         }
 
         pos = eol + 1;
@@ -106,7 +107,7 @@ std::string NarInfo::to_string(const Store & store) const
         res += "Sig: " + sig + "\n";
 
     if (ca)
-        res += "CA: " + renderContentAddress(*ca) + "\n";
+        res += "CA: " + renderMiniContentAddress(*ca) + "\n";
 
     return res;
 }

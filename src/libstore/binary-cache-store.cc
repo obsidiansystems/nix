@@ -125,8 +125,7 @@ void BinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSource
        reads, but typically they'll already be cached. */
     for (auto & ref : info.references)
         try {
-            if (ref != info.path)
-                queryPathInfo(ref);
+            queryPathInfo(ref);
         } catch (InvalidPath &) {
             throw Error("cannot add '%s' to the binary cache because the reference '%s' is not valid",
                 printStorePath(info.path), printStorePath(ref));
@@ -263,7 +262,7 @@ void BinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSource
     stats.narInfoWrite++;
 }
 
-bool BinaryCacheStore::isValidPathUncached(const StorePath & storePath, std::optional<ContentAddress> ca)
+bool BinaryCacheStore::isValidPathUncached(const StorePath & storePath, std::optional<FullContentAddress> ca)
 {
     // FIXME: this only checks whether a .narinfo with a matching hash
     // part exists. So ‘f4kb...-foo’ matches ‘f4kb...-bar’, even
@@ -271,7 +270,7 @@ bool BinaryCacheStore::isValidPathUncached(const StorePath & storePath, std::opt
     return fileExists(narInfoFileFor(storePath));
 }
 
-void BinaryCacheStore::narFromPath(const StorePath & storePath, Sink & sink, std::optional<ContentAddress> ca)
+void BinaryCacheStore::narFromPath(const StorePath & storePath, Sink & sink, std::optional<FullContentAddress> ca)
 {
     auto info = queryPathInfo(storePath).cast<const NarInfo>();
 
@@ -298,7 +297,7 @@ void BinaryCacheStore::narFromPath(const StorePath & storePath, Sink & sink, std
 }
 
 void BinaryCacheStore::queryPathInfoUncached(const StorePath & storePath,
-    Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept
+    Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<FullContentAddress> ca) noexcept
 {
     auto uri = getUri();
     auto storePathS = printStorePath(storePath);
@@ -354,7 +353,11 @@ StorePath BinaryCacheStore::addToStore(const string & name, const Path & srcPath
         throw Error("cannot add to binary cache store using the git file ingestion method");
     }
 
-    ValidPathInfo info(makeFixedOutputPath(method, h, name));
+    ValidPathInfo info(makeFixedOutputPath(name, FixedOutputInfo {
+        method,
+        h,
+        {},
+    }));
 
     auto source = StringSource { *sink.s };
     addToStore(info, source, repair, CheckSigs, nullptr);

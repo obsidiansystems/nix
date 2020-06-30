@@ -89,7 +89,7 @@ struct LegacySSHStore : public Store
 
     void queryPathInfoUncached(const StorePath & path,
         Callback<std::shared_ptr<const ValidPathInfo>> callback,
-        std::optional<ContentAddress> ca) noexcept override
+        std::optional<FullContentAddress> ca) noexcept override
     {
         try {
             auto conn(connections->get());
@@ -104,18 +104,17 @@ struct LegacySSHStore : public Store
             auto info = std::make_shared<ValidPathInfo>(parseStorePath(p));
             assert(path == info->path);
 
-            PathSet references;
             auto deriver = readString(conn->from);
             if (deriver != "")
                 info->deriver = parseStorePath(deriver);
-            info->references = readStorePaths<StorePathSet>(*this, conn->from);
+            info->setReferencesPossiblyToSelf(readStorePaths<StorePathSet>(*this, conn->from));
             readLongLong(conn->from); // download size
             info->narSize = readLongLong(conn->from);
 
             if (GET_PROTOCOL_MINOR(conn->remoteVersion) >= 4) {
                 auto s = readString(conn->from);
                 info->narHash = s.empty() ? Hash() : Hash(s);
-                info->ca = parseContentAddressOpt(readString(conn->from));
+                info->ca = parseMiniContentAddressOpt(readString(conn->from));
                 info->sigs = readStrings<StringSet>(conn->from);
             }
 
@@ -141,13 +140,13 @@ struct LegacySSHStore : public Store
                 << printStorePath(info.path)
                 << (info.deriver ? printStorePath(*info.deriver) : "")
                 << info.narHash.to_string(Base16, false);
-            writeStorePaths(*this, conn->to, info.references);
+            writeStorePaths(*this, conn->to, info.referencesPossiblyToSelf());
             conn->to
                 << info.registrationTime
                 << info.narSize
                 << info.ultimate
                 << info.sigs
-                << renderContentAddress(info.ca);
+                << renderMiniContentAddress(info.ca);
             try {
                 copyNAR(source, conn->to);
             } catch (...) {
@@ -170,7 +169,7 @@ struct LegacySSHStore : public Store
             conn->to
                 << exportMagic
                 << printStorePath(info.path);
-            writeStorePaths(*this, conn->to, info.references);
+            writeStorePaths(*this, conn->to, info.referencesPossiblyToSelf());
             conn->to
                 << (info.deriver ? printStorePath(*info.deriver) : "")
                 << 0
@@ -183,7 +182,7 @@ struct LegacySSHStore : public Store
             throw Error("failed to add path '%s' to remote host '%s'", printStorePath(info.path), host);
     }
 
-    void narFromPath(const StorePath & path, Sink & sink, std::optional<ContentAddress> ca) override
+    void narFromPath(const StorePath & path, Sink & sink, std::optional<FullContentAddress> ca) override
     {
         auto conn(connections->get());
 
@@ -236,7 +235,7 @@ struct LegacySSHStore : public Store
         return status;
     }
 
-    void ensurePath(const StorePath & path, std::optional<ContentAddress> ca) override
+    void ensurePath(const StorePath & path, std::optional<FullContentAddress> ca) override
     { unsupported("ensurePath"); }
 
     void computeFSClosure(const StorePathSet & paths,

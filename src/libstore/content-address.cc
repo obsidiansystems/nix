@@ -20,29 +20,25 @@ std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
     abort();
 }
 
-std::string makeFixedOutputCA(FileIngestionMethod method, const Hash & hash)
-{
-    return "fixed:"
-        + makeFileIngestionPrefix(method)
-        + hash.to_string(Base32, true);
-}
-
 // FIXME Put this somewhere?
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-std::string renderContentAddress(ContentAddress ca) {
+std::string renderMiniContentAddress(MiniContentAddress ca) {
     return std::visit(overloaded {
         [](TextHash th) {
-            return "text:" + th.hash.to_string(Base32, true);
+            return "text:"
+                + th.hash.to_string(Base32, true);
         },
         [](FixedOutputHash fsh) {
-            return makeFixedOutputCA(fsh.method, fsh.hash);
+             return "fixed:"
+                 + makeFileIngestionPrefix(fsh.method)
+                 + fsh.hash.to_string(Base32, true);
         }
     }, ca);
 }
 
-ContentAddress parseContentAddress(std::string_view rawCa) {
+MiniContentAddress parseMiniContentAddress(std::string_view rawCa) {
     auto prefixSeparator = rawCa.find(':');
     if (prefixSeparator != string::npos) {
         auto prefix = string(rawCa, 0, prefixSeparator);
@@ -50,11 +46,10 @@ ContentAddress parseContentAddress(std::string_view rawCa) {
             auto hashTypeAndHash = rawCa.substr(prefixSeparator+1, string::npos);
             Hash hash = Hash(string(hashTypeAndHash));
             if (*hash.type != htSHA256) {
-                throw Error("parseContentAddress: the text hash should have type SHA256");
+                throw Error("parseMiniContentAddress: the text hash should have type SHA256");
             }
             return TextHash { hash };
         } else if (prefix == "fixed") {
-            // This has to be an inverse of makeFixedOutputCA
             auto methodAndHash = rawCa.substr(prefixSeparator+1, string::npos);
             if (methodAndHash.substr(0, 2) == "r:") {
                 std::string_view hashRaw = methodAndHash.substr(2, string::npos);
@@ -76,23 +71,23 @@ ContentAddress parseContentAddress(std::string_view rawCa) {
                 };
             }
         } else {
-            throw Error("parseContentAddress: format not recognized; has to be text or fixed");
+            throw Error("parseMiniContentAddress: format not recognized; has to be text or fixed");
         }
     } else {
         throw Error("Not a content address because it lacks an appropriate prefix");
     }
 };
 
-std::optional<ContentAddress> parseContentAddressOpt(std::string_view rawCaOpt) {
-    return rawCaOpt == "" ? std::optional<ContentAddress> {} : parseContentAddress(rawCaOpt);
+std::optional<MiniContentAddress> parseMiniContentAddressOpt(std::string_view rawCaOpt) {
+    return rawCaOpt == "" ? std::optional<MiniContentAddress> {} : parseMiniContentAddress(rawCaOpt);
 };
 
-std::string renderContentAddress(std::optional<ContentAddress> ca) {
-    return ca ? renderContentAddress(*ca) : "";
+std::string renderMiniContentAddress(std::optional<MiniContentAddress> ca) {
+    return ca ? renderMiniContentAddress(*ca) : "";
 }
 
 
-void to_json(nlohmann::json& j, const ContentAddress & ca) {
+void to_json(nlohmann::json& j, const MiniContentAddress & ca) {
     j = std::visit(overloaded {
         [](TextHash th) {
             return nlohmann::json {
@@ -111,7 +106,7 @@ void to_json(nlohmann::json& j, const ContentAddress & ca) {
     }, ca);
 }
 
-void from_json(const nlohmann::json& j, ContentAddress & ca) {
+void from_json(const nlohmann::json& j, MiniContentAddress & ca) {
     std::string_view type = j.at("type").get<std::string_view>();
     if (type == "text") {
         ca = TextHash {
@@ -133,18 +128,18 @@ void from_json(const nlohmann::json& j, ContentAddress & ca) {
 
 // Needed until https://github.com/nlohmann/json/pull/2117
 
-void to_json(nlohmann::json& j, const std::optional<ContentAddress> & c) {
+void to_json(nlohmann::json& j, const std::optional<MiniContentAddress> & c) {
     if (!c)
         j = nullptr;
     else
         to_json(j, *c);
 }
 
-void from_json(const nlohmann::json& j, std::optional<ContentAddress> & c) {
+void from_json(const nlohmann::json& j, std::optional<MiniContentAddress> & c) {
     if (j.is_null())
         c = std::nullopt;
     else
-        c = j.get<ContentAddress>();
+        c = j.get<MiniContentAddress>();
 }
 
 }

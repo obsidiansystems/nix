@@ -61,8 +61,7 @@ void Store::computeFSClosure(const StorePathSet & startPaths,
                 } else {
 
                     for (auto & ref : info->references)
-                        if (ref != path)
-                            enqueue(printStorePath(ref));
+                        enqueue(printStorePath(ref));
 
                     if (includeOutputs && path.isDerivation())
                         for (auto & i : queryDerivationOutputs(path))
@@ -108,11 +107,15 @@ void Store::computeFSClosure(const StorePath & startPath,
 }
 
 
-std::optional<FixedOutputHash> getDerivationCA(const BasicDerivation & drv)
+std::optional<FullContentAddress> getDerivationCA(const BasicDerivation & drv)
 {
     auto out = drv.outputs.find("out");
-    if (out != drv.outputs.end())
-        return out->second.hash;
+    if (out != drv.outputs.end() && out->second.hash) {
+        return FullContentAddress {
+            .name = std::string { out->second.path.name() },
+            .info = FixedOutputInfo { *out->second.hash, {} },
+        };
+    }
     return std::nullopt;
 }
 
@@ -165,7 +168,11 @@ void Store::queryMissing(const std::vector<StorePathWithOutputs> & targets,
         auto outPath = parseStorePath(outPathS);
 
         SubstitutablePathInfos infos;
-        querySubstitutablePathInfos({{outPath, getDerivationCA(*drv)}}, infos);
+        auto caOpt = getDerivationCA(*drv);
+        if (caOpt)
+            querySubstitutablePathInfos({}, { *std::move(caOpt) }, infos);
+        else
+            querySubstitutablePathInfos({outPath}, {}, infos);
 
         if (infos.empty()) {
             drvState_->lock()->done = true;
@@ -222,7 +229,7 @@ void Store::queryMissing(const std::vector<StorePathWithOutputs> & targets,
             if (isValidPath(path.path)) return;
 
             SubstitutablePathInfos infos;
-            querySubstitutablePathInfos({{path.path, std::nullopt}}, infos);
+            querySubstitutablePathInfos({path.path}, {}, infos);
 
             if (infos.empty()) {
                 auto state(state_.lock());
@@ -276,7 +283,7 @@ StorePaths Store::topoSortPaths(const StorePathSet & paths)
         for (auto & i : references)
             /* Don't traverse into paths that don't exist.  That can
                happen due to substitutes for non-existent paths. */
-            if (i != path && paths.count(i))
+            if (paths.count(i))
                 dfsVisit(i, &path);
 
         sorted.push_back(path);

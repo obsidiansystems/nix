@@ -198,12 +198,12 @@ public:
             narInfo->narHash = Hash(queryNAR.getStr(6));
             narInfo->narSize = queryNAR.getInt(7);
             for (auto & r : tokenizeString<Strings>(queryNAR.getStr(8), " "))
-                narInfo->references.insert(StorePath(r));
+                narInfo->insertReferencePossiblyToSelf(StorePath(r));
             if (!queryNAR.isNull(9))
                 narInfo->deriver = StorePath(queryNAR.getStr(9));
             for (auto & sig : tokenizeString<Strings>(queryNAR.getStr(10), " "))
                 narInfo->sigs.insert(sig);
-            narInfo->ca = parseContentAddressOpt(queryNAR.getStr(11));
+            narInfo->ca = parseMiniContentAddressOpt(queryNAR.getStr(11));
 
             return {oValid, narInfo};
         });
@@ -237,7 +237,7 @@ public:
                     (concatStringsSep(" ", info->shortRefs()))
                     (info->deriver ? std::string(info->deriver->to_string()) : "", (bool) info->deriver)
                     (concatStringsSep(" ", info->sigs))
-                    (renderContentAddress(info->ca))
+                    (renderMiniContentAddress(info->ca))
                     (time(0)).exec();
 
             } else {
