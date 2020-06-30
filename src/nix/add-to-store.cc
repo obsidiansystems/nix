@@ -79,13 +79,19 @@ struct CmdAddToStore : MixDryRun, StoreCommand
         }
         }
 
-        ValidPathInfo info(store->makeFixedOutputPath(ingestionMethod, hash, *namePart));
+        ValidPathInfo info {
+            *store,
+            FullContentAddress {
+                .name = *namePart,
+                .info = FixedOutputInfo {
+                    std::move(ingestionMethod),
+                    std::move(hash),
+                    {},
+                },
+            },
+        };
         info.narHash = narHash;
         info.narSize = sink.s->size();
-        info.ca = std::optional { FixedOutputHash {
-            .method = ingestionMethod,
-            .hash = hash,
-        } };
 
         if (!dryRun) {
             auto source = StringSource { *sink.s };

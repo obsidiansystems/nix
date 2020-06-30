@@ -208,7 +208,11 @@ static void opPrintFixedPath(Strings opFlags, Strings opArgs)
     string hash = *i++;
     string name = *i++;
 
-    cout << fmt("%s\n", store->printStorePath(store->makeFixedOutputPath(method, Hash(hash, hashAlgo), name)));
+    cout << fmt("%s\n", store->printStorePath(store->makeFixedOutputPath(name, FixedOutputInfo {
+        method,
+        Hash { hash, hashAlgo },
+        {},
+    })));
 }
 
 
@@ -245,7 +249,7 @@ static void printTree(const StorePath & path,
        closure(B).  That is, if derivation A is an (possibly indirect)
        input of B, then A is printed first.  This has the effect of
        flattening the tree, preventing deeply nested structures.  */
-    auto sorted = store->topoSortPaths(info->references);
+    auto sorted = store->topoSortPaths(info->referencesPossiblyToSelf());
     reverse(sorted.begin(), sorted.end());
 
     for (const auto &[n, i] : enumerate(sorted)) {
@@ -328,7 +332,7 @@ static void opQuery(Strings opFlags, Strings opArgs)
                 for (auto & j : ps) {
                     if (query == qRequisites) store->computeFSClosure(j, paths, false, includeOutputs);
                     else if (query == qReferences) {
-                        for (auto & p : store->queryPathInfo(j)->references)
+                        for (auto & p : store->queryPathInfo(j)->referencesPossiblyToSelf())
                             paths.insert(p);
                     }
                     else if (query == qReferrers) {
@@ -859,12 +863,12 @@ static void opServe(Strings opFlags, Strings opArgs)
                         auto info = store->queryPathInfo(i);
                         out << store->printStorePath(info->path)
                             << (info->deriver ? store->printStorePath(*info->deriver) : "");
-                        writeStorePaths(*store, out, info->references);
+                        writeStorePaths(*store, out, info->referencesPossiblyToSelf());
                         // !!! Maybe we want compression?
                         out << info->narSize // downloadSize
                             << info->narSize;
                         if (GET_PROTOCOL_MINOR(clientVersion) >= 4)
-                            out << (info->narHash ? info->narHash.to_string(Base32, true) : "") << renderContentAddress(info->ca) << info->sigs;
+                            out << (info->narHash ? info->narHash.to_string(Base32, true) : "") << renderMiniContentAddress(info->ca) << info->sigs;
                     } catch (InvalidPath &) {
                     }
                 }
@@ -949,10 +953,10 @@ static void opServe(Strings opFlags, Strings opArgs)
                 if (deriver != "")
                     info.deriver = store->parseStorePath(deriver);
                 info.narHash = Hash(readString(in), htSHA256);
-                info.references = readStorePaths<StorePathSet>(*store, in);
+                info.setReferencesPossiblyToSelf(readStorePaths<StorePathSet>(*store, in));
                 in >> info.registrationTime >> info.narSize >> info.ultimate;
                 info.sigs = readStrings<StringSet>(in);
-                info.ca = parseContentAddressOpt(readString(in));
+                info.ca = parseMiniContentAddressOpt(readString(in));
 
                 if (info.narSize == 0)
                     throw Error("narInfo is too old and missing the narSize field");

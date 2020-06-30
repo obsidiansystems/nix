@@ -67,13 +67,19 @@ DownloadFileResult downloadFile(
         StringSink sink;
         dumpString(*res.data, sink);
         auto hash = hashString(htSHA256, *res.data);
-        ValidPathInfo info(store->makeFixedOutputPath(FileIngestionMethod::Flat, hash, name));
+        ValidPathInfo info {
+            *store,
+            FullContentAddress {
+                .name = name,
+                .info = FixedOutputInfo {
+                    FileIngestionMethod::Flat,
+                    hash,
+                    {},
+                },
+            },
+        };
         info.narHash = hashString(htSHA256, *sink.s);
         info.narSize = sink.s->size();
-        info.ca = FixedOutputHash {
-            .method = FileIngestionMethod::Flat,
-            .hash = hash,
-        };
         auto source = StringSource { *sink.s };
         store->addToStore(info, source, NoRepair, NoCheckSigs);
         storePath = std::move(info.path);
