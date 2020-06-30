@@ -49,6 +49,7 @@ rec {
       buildPackages.git
       buildPackages.mercurial
       buildPackages.ipfs
+      buildPackages.jq
     ];
 
   buildDeps =
@@ -62,7 +63,6 @@ rec {
       boost
       nlohmann_json
       gmock
-      jq
     ]
     ++ lib.optionals stdenv.isLinux [libseccomp utillinuxMinimal]
     ++ lib.optional (stdenv.isLinux || stdenv.isDarwin) libsodium

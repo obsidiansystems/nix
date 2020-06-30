@@ -309,6 +309,7 @@ let
           echo "file installer $out/install" >> $out/nix-support/hydra-build-products
         '';
 
+    obsidian-ci-hack = build-static.x86_64-linux;
   };
 
 
