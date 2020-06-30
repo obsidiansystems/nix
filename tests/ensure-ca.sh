@@ -23,6 +23,7 @@ rewrite=$(nix --experimental-features 'nix-command ca-references' make-content-a
 
 ca=$(nix path-info --json $rewrite | jq -r .\[0\].ca)
 numRefs=$(nix-store -q --references $rewrite | wc -l)
-refs=$(nix-store -q --references $rewrite | sed s,$rewrite,self, | rev | sed s,\\\(\[^/\]\*\\\)/.\*,\\1, | rev | tr \\n :)
+refs=$(nix-store -q --references $rewrite | sed s,$rewrite,self, | sed s,$NIX_STORE_DIR/,, | tr \\n :)
 
-nix ensure-ca full:dependencies-top:refs,$numRefs:$refs$ca
+path2=$(nix ensure-ca dependencies-top:refs,$numRefs:$refs$ca)
+[ -d $path2 ]
