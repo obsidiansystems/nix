@@ -183,7 +183,7 @@ struct TeeSource : Source
 };
 
 #define MAKE_TEE_SINK(T) \
-	T orig; \
+    T orig; \
     ref<std::string> data; \
     TeeSink(T && orig) \
         : orig(std::move(orig)), data(make_ref<std::string>()) { } \

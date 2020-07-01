@@ -145,6 +145,12 @@ struct BuildResult
     }
 };
 
+/* Useful for many store functions which can take advantage of content
+   addresses or work with regular store paths */
+typedef std::variant<
+    std::reference_wrapper<const StorePath>,
+    std::reference_wrapper<const FullContentAddress>
+> StorePathOrFullCA;
 
 class Store : public std::enable_shared_from_this<Store>, public Config
 {
@@ -256,6 +262,8 @@ public:
 
     StorePath makeFixedOutputPathFromCA(const FullContentAddress & info) const;
 
+    StorePath bakeCaIfNeeded(StorePathOrFullCA path) const;
+
     /* This is the preparatory part of addToStore(); it computes the
        store path to which srcPath is to be copied.  Returns the store
        path and the cryptographic hash of the contents of srcPath. */
@@ -281,11 +289,11 @@ public:
         const StorePathSet & references) const;
 
     /* Check whether a path is valid. */
-    bool isValidPath(const StorePath & path, std::optional<FullContentAddress> ca = std::nullopt);
+    bool isValidPath(StorePathOrFullCA ca);
 
 protected:
 
-    virtual bool isValidPathUncached(const StorePath & path, std::optional<FullContentAddress> ca = std::nullopt);
+    virtual bool isValidPathUncached(StorePathOrFullCA ca);
 
 public:
 
@@ -304,16 +312,16 @@ public:
 
     /* Query information about a valid path. It is permitted to omit
        the name part of the store path. */
-    ref<const ValidPathInfo> queryPathInfo(const StorePath & path, std::optional<FullContentAddress> ca = std::nullopt);
+    ref<const ValidPathInfo> queryPathInfo(StorePathOrFullCA path);
 
     /* Asynchronous version of queryPathInfo(). */
-    void queryPathInfo(const StorePath & path,
-        Callback<ref<const ValidPathInfo>> callback, std::optional<FullContentAddress> ca = std::nullopt) noexcept;
+    void queryPathInfo(StorePathOrFullCA path,
+        Callback<ref<const ValidPathInfo>> callback) noexcept;
 
 protected:
 
-    virtual void queryPathInfoUncached(const StorePath & path,
-        Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<FullContentAddress> ca = std::nullopt) noexcept = 0;
+    virtual void queryPathInfoUncached(StorePathOrFullCA path,
+        Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept;
 
 public:
 
@@ -373,7 +381,7 @@ public:
         const StorePathSet & references, RepairFlag repair = NoRepair) = 0;
 
     /* Write a NAR dump of a store path. */
-    virtual void narFromPath(const StorePath & path, Sink & sink, std::optional<FullContentAddress> ca = std::nullopt) = 0;
+    virtual void narFromPath(StorePathOrFullCA ca, Sink & sink) = 0;
 
     /* For each path, if it's a derivation, build it.  Building a
        derivation means ensuring that the output paths are valid.  If
@@ -396,8 +404,7 @@ public:
     /* Ensure that a path is valid.  If it is not currently valid, it
        may be made valid by running a substitute (if defined for the
        path). */
-    virtual void ensurePath(const StorePath & path,
-        std::optional<FullContentAddress> ca = std::nullopt) = 0;
+    virtual void ensurePath(StorePathOrFullCA ca) = 0;
 
     /* Add a store path as a temporary root of the garbage collector.
        The root disappears as soon as we exit. */
@@ -621,7 +628,8 @@ public:
 
     LocalFSStore(const Params & params);
 
-    void narFromPath(const StorePath & path, Sink & sink, std::optional<FullContentAddress>) override;
+    void narFromPath(StorePathOrFullCA path, Sink & sink) override;
+
     ref<FSAccessor> getFSAccessor() override;
 
     /* Register a permanent GC root. */
@@ -642,8 +650,8 @@ public:
 
 /* Copy a path from one store to another. */
 void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
-    const StorePath & storePath, RepairFlag repair = NoRepair, CheckSigsFlag checkSigs = CheckSigs,
-    std::optional<FullContentAddress> ca = std::nullopt);
+    StorePathOrFullCA storePath,
+    RepairFlag repair = NoRepair, CheckSigsFlag checkSigs = CheckSigs);
 
 
 /* Copy store paths from one store to another. The paths may be copied

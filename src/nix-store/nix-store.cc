@@ -353,7 +353,8 @@ static void opQuery(Strings opFlags, Strings opArgs)
 
         case qDeriver:
             for (auto & i : opArgs) {
-                auto info = store->queryPathInfo(store->followLinksToStorePath(i));
+                auto path = store->followLinksToStorePath(i);
+                auto info = store->queryPathInfo(path);
                 cout << fmt("%s\n", info->deriver ? store->printStorePath(*info->deriver) : "unknown-deriver");
             }
             break;
@@ -876,9 +877,11 @@ static void opServe(Strings opFlags, Strings opArgs)
                 break;
             }
 
-            case cmdDumpStorePath:
-                store->narFromPath(store->parseStorePath(readString(in)), out);
+            case cmdDumpStorePath: {
+                auto path = store->parseStorePath(readString(in));
+                store->narFromPath(path, out);
                 break;
+            }
 
             case cmdImportPaths: {
                 if (!writeAllowed) throw Error("importing paths is not allowed");

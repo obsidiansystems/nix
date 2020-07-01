@@ -103,7 +103,13 @@ static void prim_scopedImport(EvalState & state, const Pos & pos, Value * * args
     Path realPath = state.checkSourcePath(state.toRealPath(path, context));
 
     // FIXME
-    if (state.store->isStorePath(path) && state.store->isValidPath(state.store->parseStorePath(path)) && isDerivation(path)) {
+    auto complicatedCondition = [&]() -> bool {
+        if (!state.store->isStorePath(path))
+            return false;
+        auto path2 = state.store->parseStorePath(path);
+        return state.store->isValidPath(path2) && isDerivation(path);
+    };
+    if (complicatedCondition()) {
         Derivation drv = readDerivation(*state.store, realPath);
         Value & w = *state.allocValue();
         state.mkAttrs(w, 3 + drv.outputs.size());
@@ -887,8 +893,10 @@ static void prim_storePath(EvalState & state, const Pos & pos, Value * * args, V
             .nixCode = NixCode { .errPos = pos }
         });
     Path path2 = state.store->toStorePath(path);
-    if (!settings.readOnlyMode)
-        state.store->ensurePath(state.store->parseStorePath(path2));
+    if (!settings.readOnlyMode) {
+        auto path3 = state.store->parseStorePath(path2);
+        state.store->ensurePath(path3);
+    }
     context.insert(path2);
     mkString(v, path, context);
 }

@@ -73,16 +73,16 @@ struct CmdVerify : StorePathsCommand
 
         ThreadPool pool;
 
-        auto doPath = [&](const Path & storePath) {
+        auto doPath = [&](const StorePath & storePath) {
             try {
                 checkInterrupt();
 
-                Activity act2(*logger, lvlInfo, actUnknown, fmt("checking '%s'", storePath));
+                Activity act2(*logger, lvlInfo, actUnknown, fmt("checking '%s'", store->printStorePath(storePath)));
 
                 MaintainCount<std::atomic<size_t>> mcActive(active);
                 update();
 
-                auto info = store->queryPathInfo(store->parseStorePath(storePath));
+                auto info = store->queryPathInfo(storePath);
 
                 if (!noContents) {
 
@@ -175,7 +175,7 @@ struct CmdVerify : StorePathsCommand
         };
 
         for (auto & storePath : storePaths)
-            pool.enqueue(std::bind(doPath, store->printStorePath(storePath)));
+            pool.enqueue(std::bind(doPath, storePath));
 
         pool.process();
 

@@ -68,6 +68,12 @@ struct PathReferences
     std::set<Ref> references;
     bool hasSelfReference = false;
 
+    bool operator == (const PathReferences<Ref> & other) const
+    {
+        return references == other.references
+            && hasSelfReference == other.hasSelfReference;
+    }
+
     /* Functions to view references + hasSelfReference as one set, mainly for
        compatibility's sake. */
     StorePathSet referencesPossiblyToSelf(const Ref & self) const;
@@ -138,6 +144,7 @@ struct FullContentAddress {
     bool operator < (const FullContentAddress & other) const
     {
         return name < other.name;
+        // FIXME second field
     }
 
 };
