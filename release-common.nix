@@ -63,7 +63,6 @@ rec {
       boost
       nlohmann_json
       gmock
-      jq
     ]
     ++ lib.optionals stdenv.isLinux [libseccomp utillinuxMinimal]
     ++ lib.optional (stdenv.isLinux || stdenv.isDarwin) libsodium
