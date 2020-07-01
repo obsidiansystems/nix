@@ -208,7 +208,7 @@ StorePath Store::makeTextPath(std::string_view name, const TextInfo & info) cons
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-StorePath Store::makeFixedOutputPathFromCA(const FullContentAddress & info) const
+StorePath Store::makeFixedOutputPathFromCA(const ContentAddress & info) const
 {
     // New template
     return std::visit(overloaded {
@@ -272,7 +272,7 @@ bool Store::PathInfoCacheValue::isKnownNow()
     return std::chrono::steady_clock::now() < time_point + ttl;
 }
 
-bool Store::isValidPath(const StorePath & storePath, std::optional<FullContentAddress> ca)
+bool Store::isValidPath(const StorePath & storePath, std::optional<ContentAddress> ca)
 {
     std::string hashPart(storePath.hashPart());
 
@@ -308,7 +308,7 @@ bool Store::isValidPath(const StorePath & storePath, std::optional<FullContentAd
 
 /* Default implementation for stores that only implement
    queryPathInfoUncached(). */
-bool Store::isValidPathUncached(const StorePath & path, std::optional<FullContentAddress> ca)
+bool Store::isValidPathUncached(const StorePath & path, std::optional<ContentAddress> ca)
 {
     try {
         queryPathInfo(path);
@@ -319,7 +319,7 @@ bool Store::isValidPathUncached(const StorePath & path, std::optional<FullConten
 }
 
 
-ref<const ValidPathInfo> Store::queryPathInfo(const StorePath & storePath, std::optional<FullContentAddress> ca)
+ref<const ValidPathInfo> Store::queryPathInfo(const StorePath & storePath, std::optional<ContentAddress> ca)
 {
     std::promise<ref<const ValidPathInfo>> promise;
 
@@ -337,7 +337,7 @@ ref<const ValidPathInfo> Store::queryPathInfo(const StorePath & storePath, std::
 
 
 void Store::queryPathInfo(const StorePath & storePath,
-    Callback<ref<const ValidPathInfo>> callback, std::optional<FullContentAddress> ca) noexcept
+    Callback<ref<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept
 {
     std::string hashPart;
 
@@ -502,7 +502,7 @@ void Store::pathInfoToJSON(JSONPlaceholder & jsonOut, const StorePathSet & store
             }
 
             if (info->ca)
-                jsonPath.attr("ca", renderMiniContentAddress(info->ca));
+                jsonPath.attr("ca", renderLegacyContentAddress(info->ca));
 
             std::pair<uint64_t, uint64_t> closureSizes;
 
@@ -594,7 +594,7 @@ void Store::buildPaths(const std::vector<StorePathWithOutputs> & paths, BuildMod
 
 void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
     const StorePath & storePath, RepairFlag repair, CheckSigsFlag checkSigs,
-    std::optional<FullContentAddress> ca)
+    std::optional<ContentAddress> ca)
 {
     auto srcUri = srcStore->getUri();
     auto dstUri = dstStore->getUri();
@@ -839,12 +839,12 @@ void ValidPathInfo::sign(const Store & store, const SecretKey & secretKey)
     sigs.insert(secretKey.signDetached(fingerprint(store)));
 }
 
-std::optional<FullContentAddress> ValidPathInfo::fullContentAddressOpt() const
+std::optional<ContentAddress> ValidPathInfo::fullContentAddressOpt() const
 {
     if (! ca)
         return std::nullopt;
 
-    return FullContentAddress {
+    return ContentAddress {
         .name = std::string { path.name() },
         .info = std::visit(overloaded {
             [&](TextHash th) {
@@ -909,7 +909,7 @@ Strings ValidPathInfo::shortRefs() const
 
 ValidPathInfo::ValidPathInfo(
     const Store & store,
-    FullContentAddress && info)
+    ContentAddress && info)
       : path(store.makeFixedOutputPathFromCA(info))
 {
     std::visit(overloaded {
