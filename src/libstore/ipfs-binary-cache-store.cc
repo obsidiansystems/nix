@@ -128,9 +128,12 @@ public:
 
 private:
 
-    std::string putIpfsDag(nlohmann::json data)
+    std::string putIpfsDag(nlohmann::json data, std::optional<std::string> hash = std::nullopt)
     {
-        auto req = FileTransferRequest(daemonUri + "/api/v0/dag/put");
+        auto uri(daemonUri + "/api/v0/dag/put");
+        if (hash)
+            uri += "?hash=" + *hash;
+        auto req = FileTransferRequest(uri);
         req.data = std::make_shared<string>(data.dump());
         req.post = true;
         req.tries = 1;
