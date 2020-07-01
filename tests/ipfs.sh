@@ -231,3 +231,5 @@ nix-store --delete $rewrite
 path5=$(nix --experimental-features 'nix-command ca-references' ensure-ca full:dependencies-top:refs,$numRefs:$refs$ca --substituters ipfs:// --option substitute true)
 
 [ -d $path5 ]
+[ $(nix-store -q --references $path5 | wc -l) = $numRefs ]
+[ $ca = $(nix path-info --json $path5 | jq -r .\[0\].ca) ]

@@ -27,3 +27,4 @@ refs=$(nix-store -q --references $rewrite | sed s,$rewrite,self, | sed s,$NIX_ST
 
 path2=$(nix ensure-ca full:dependencies-top:refs,$numRefs:$refs$ca)
 [ -d $path2 ]
+[ $ca = $(nix path-info --json $path2 | jq -r .\[0\].ca) ]
