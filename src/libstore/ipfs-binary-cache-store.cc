@@ -8,6 +8,7 @@
 #include "compression.hh"
 #include "git.hh"
 #include "names.hh"
+#include "references.hh"
 
 namespace nix {
 
@@ -573,37 +574,70 @@ private:
         return (std::string) json["Key"];
     }
 
-    std::string addGit(Path path)
+    std::string addGit(Path path, std::string modulus)
     {
         struct stat st;
         if (lstat(path.c_str(), &st))
             throw SysError("getting attributes of path '%1%'", path);
 
-        if (S_ISREG(st.st_mode)) {
-            StringSink sink;
-            dumpGitBlob(path, st, sink);
-            return putIpfsGitBlock(*sink.s);
-        } else if (S_ISDIR(st.st_mode)) {
+        if (S_ISDIR(st.st_mode)) {
             for (auto & i : readDirectory(path))
-                addGit(path + "/" + i.name);
-            StringSink sink;
-            dumpGit(htSHA1, path, sink);
-            return putIpfsGitBlock(*sink.s);
-        } else throw Error("file '%1%' has an unsupported type", path);
+                addGit(path + "/" + i.name, modulus);
+        }
+
+        StringSink sink;
+        RewritingSink rewritingSink(modulus, std::string(modulus.size(), 0), sink);
+
+        dumpGitWithCustomHash([&]{ return std::make_unique<HashModuloSink>(htSHA1, modulus); }, path, rewritingSink);
+
+        rewritingSink.flush();
+
+        for (auto & pos : rewritingSink.matches) {
+            auto s = fmt("|%d", pos);
+            sink((unsigned char *) s.data(), s.size());
+        }
+
+        return putIpfsGitBlock(*sink.s);
+    }
+
+    std::unique_ptr<Source> getGitObject(std::string path, std::string hashPart)
+    {
+        return sinkToSource([path, hashPart, this](Sink & sink) {
+            StringSink sink2;
+            getIpfsBlock(path, sink2);
+
+            // unrewrite modulus
+            std::string offset;
+            std::string result = *sink2.s;
+            int i = result.size() - 1;
+            for (; i > 0; i--) {
+                char c = result.data()[i];
+                if (!(c >= '0' && c <= '9') && c != '|')
+                    break;
+                if (c == '|') {
+                    int pos = stoi(offset);
+                    assert(pos > 0 && pos + hashPart.size() < i);
+                    assert(std::string(result, pos, hashPart.size()) == std::string(hashPart.size(), 0));
+                    std::copy(hashPart.begin(), hashPart.end(), result.begin() + pos);
+                    offset = "";
+                } else
+                    offset = c + offset;
+            }
+            result.erase(i + 1);
+
+            sink(result);
+        });
     }
 
     void getGitEntry(ParseSink & sink, const Path & path,
         const Path & realStoreDir, const Path & storeDir,
-        int perm, std::string name, Hash hash)
+        int perm, std::string name, Hash hash, std::string hashPart)
     {
-        auto url = "ipfs://f01781114" + hash.to_string(Base16, false);
-        auto source = sinkToSource([&](Sink & sink) {
-            getIpfsBlock("/ipfs/" + std::string(url, 7), sink);
-        });
+        auto source = getGitObject("/ipfs/f01781114" + hash.to_string(Base16, false), hashPart);
         parseGitInternal(sink, *source, path + "/" + name, realStoreDir, storeDir,
-            [this] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
+            [hashPart, this] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
                 int perm, std::string name, Hash hash) {
-                this->getGitEntry(sink, path, realStoreDir, storeDir, perm, name, hash);
+                getGitEntry(sink, path, realStoreDir, storeDir, perm, name, hash, hashPart);
             });
     }
 
@@ -625,7 +659,7 @@ public:
                 TeeSource savedNAR(narSource);
                 restorePath((Path) tmpDir + "/tmp", savedNAR);
 
-                auto key = ipfsCidFormat(addGit((Path) tmpDir + "/tmp"), "base16");
+                auto key = ipfsCidFormat(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())), "base16");
                 assert(std::string(key, 0, 9) == "f01781114");
 
                 Hash hash(std::string(key, 9), htSHA1);
@@ -651,7 +685,7 @@ public:
             TeeSource savedNAR(narSource);
             restorePath((Path) tmpDir + "/tmp", savedNAR);
 
-            auto key = ipfsCidFormat(addGit((Path) tmpDir + "/tmp"), "base16");
+            auto key = ipfsCidFormat(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())), "base16");
             assert(std::string(key, 0, 9) == "f01781114");
 
             Hash hash_(std::string(key, 9), htSHA1);
@@ -748,13 +782,11 @@ public:
         // ugh... we have to convert git data to nar.
         if (hasPrefix(info->url, "ipfs://f01781114")) {
             AutoDelete tmpDir(createTempDir(), true);
-            auto source = sinkToSource([&](Sink & sink) {
-                getIpfsBlock("/ipfs/" + std::string(info->url, 7), sink);
-            });
+            auto source = getGitObject("/ipfs/" + std::string(info->url, 7), std::string(storePath.hashPart()));
             restoreGit((Path) tmpDir + "/tmp", *source, storeDir, storeDir,
-                [this] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
+                [this, storePath] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
                     int perm, std::string name, Hash hash) {
-                    this->getGitEntry(sink, path, realStoreDir, storeDir, perm, name, hash);
+                    getGitEntry(sink, path, realStoreDir, storeDir, perm, name, hash, std::string(storePath.hashPart()));
                 });
             dumpPath((Path) tmpDir + "/tmp", wrapperSink);
             return;

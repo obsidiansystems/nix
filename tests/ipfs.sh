@@ -233,3 +233,4 @@ path5=$(nix --experimental-features 'nix-command ca-references' ensure-ca full:d
 [ -d $path5 ]
 [ $(nix-store -q --references $path5 | wc -l) = $numRefs ]
 [ $ca = $(nix path-info --json $path5 | jq -r .\[0\].ca) ]
+[ $(cat $path5/self) = $path5 ]
