@@ -76,8 +76,8 @@ ContentAddress parseContentAddress(std::string_view rawCa) {
             }
         } else if (prefix == "ipfs") {
             Hash hash = Hash(rawCa.substr(prefixSeparator+1, string::npos));
-            if (*hash.type != htSHA256)
-                throw Error("the text hash should have type SHA256");
+            if (*hash.type != htSHA1)
+                throw Error("the ipfs hash should have type SHA1");
             return IPFSHash { hash };
         } else {
             throw Error("format not recognized; has to be text or fixed");
@@ -255,6 +255,84 @@ void from_json(const nlohmann::json& j, ContentAddress & ca) {
         };
     } else
         throw Error("invalid type: %s", type);
+}
+
+// f01781114 is the cid prefix for a base16 cbor sha1. This hash
+// stores the ContentAddressWithNameAndReferences information. The
+// hash (without the cid prefix) will be put directly in the store
+// path hash.
+
+void to_json(nlohmann::json& j, const ContentAddressWithNameAndReferences & ca)
+{
+    if (std::holds_alternative<IPFSInfo>(ca.info)) {
+        auto info = std::get<IPFSInfo>(ca.info);
+
+        // FIXME: ipfs sort order is weird, it always puts type before
+        // references, so we rename it to qtype so it always comes
+        // before references
+        j = nlohmann::json {
+            { "qtype", "ipfs" },
+            { "name", ca.name },
+            { "references", info.references },
+            { "cid", "f01781114" + info.hash.to_string(Base16, false) }
+        };
+    } else throw Error("cannot convert to json");
+}
+
+void from_json(const nlohmann::json& j, ContentAddressWithNameAndReferences & ca)
+{
+    std::string_view type = j.at("qtype").get<std::string_view>();
+    if (type == "ipfs") {
+        auto cid = j.at("cid").get<std::string_view>();
+        if (cid.substr(0, 9) != "f01781114")
+            throw Error("cid '%s' is wrong type for ipfs hash", cid);
+        ca = ContentAddressWithNameAndReferences {
+            .name = j.at("name"),
+            .info = IPFSInfo {
+                Hash { cid.substr(9), htSHA1 },
+                j.at("references").get<PathReferences<StorePath>>(),
+            },
+        };
+    } else
+        throw Error("invalid type: %s", type);
+}
+
+void to_json(nlohmann::json& j, const PathReferences<StorePath> & references)
+{
+    auto refs = nlohmann::json::array();
+    for (auto & i : references.references) {
+        Hash hash { i.hashPart(), htSHA1 };
+        refs.push_back(nlohmann::json {
+            { "name", i.name() },
+            { "cid", "f01781114" + hash.to_string(Base16, false) }
+        });
+    }
+
+    // FIXME: ipfs sort order is weird, it always puts references
+    // before hasSelfReference, so we rename it to zhasSelfReferences
+    // so it always comes after references
+
+    j = nlohmann::json {
+        { "zhasSelfReference", references.hasSelfReference },
+        { "references", refs }
+    };
+}
+
+void from_json(const nlohmann::json& j, PathReferences<StorePath> & references)
+{
+    StorePathSet refs;
+    for (auto & ref : j.at("references")) {
+        auto name = ref.at("name").get<std::string>();
+        auto cid = ref.at("cid").get<std::string>();
+        if (cid.substr(0, 9) != "f01781114")
+            throw Error("cid '%s' is wrong type for ipfs hash", cid);
+        Hash hash { cid.substr(9), htSHA1 };
+        refs.insert(StorePath(hash, name));
+    }
+    references = PathReferences<StorePath> {
+        .references = refs,
+        .hasSelfReference = j.at("zhasSelfReference").get<bool>(),
+    };
 }
 
 // Needed until https://github.com/nlohmann/json/pull/2117

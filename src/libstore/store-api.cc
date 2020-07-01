@@ -204,6 +204,17 @@ StorePath Store::makeTextPath(std::string_view name, const TextInfo & info) cons
 }
 
 
+static StorePath makeIPFSPath(const ContentAddressWithNameAndReferences & info)
+{
+    nlohmann::json j = info;
+    std::vector<std::uint8_t>  cbor = nlohmann::json::to_cbor(j);
+    Hash hash = hashString(htSHA1, std::string(cbor.begin(), cbor.end()));
+
+    // note this only works because sha1 is size 20
+    return StorePath(hash, info.name);
+}
+
+
 // FIXME Put this somewhere?
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
@@ -219,8 +230,7 @@ StorePath Store::makeFixedOutputPathFromCA(const ContentAddressWithNameAndRefere
             return makeFixedOutputPath(info.name, foi);
         },
         [&](IPFSInfo io) {
-            throw Error("don't know how to make output path for ipfs ca");
-            return StorePath("");
+            return makeIPFSPath(info);
         }
     }, info.info);
 }
