@@ -192,9 +192,7 @@ GitMode dumpGitTree(const GitTree & entries, Sink & sink)
     return GitMode::Directory;
 }
 
-static std::pair<GitMode, Hash> dumpGitHashInternal(HashType ht, const Path & path, PathFilter & filter);
-
-static GitMode dumpGitInternal(HashType ht, const Path & path, Sink & sink, PathFilter & filter)
+static GitMode dumpGitInternal(std::function<std::unique_ptr<AbstractHashSink>(void)> genHashSink, const Path & path, Sink & sink, PathFilter & filter)
 {
     struct stat st;
     GitMode perm;
@@ -214,15 +212,17 @@ static GitMode dumpGitInternal(HashType ht, const Path & path, Sink & sink, Path
                 if (lstat(path_.c_str(), &st))
                     throw SysError("getting attributes of path '%1%'", path_);
 
-                auto result = dumpGitHashInternal(ht, path_, filter);
+                auto hashSink = genHashSink();
+                auto perm = dumpGitInternal(genHashSink, path_, *hashSink, filter);
+                auto hash = hashSink->finish().first;
 
                 // correctly observe git order, see
                 // https://github.com/mirage/irmin/issues/352
                 auto name = i.name;
-                if (result.first == GitMode::Directory)
+                if (perm == GitMode::Directory)
                     name += "/";
 
-                entries[name] = result;
+                entries[name] = std::pair{ perm, hash};
             }
         }
         perm = dumpGitTree(entries, sink);
@@ -232,23 +232,24 @@ static GitMode dumpGitInternal(HashType ht, const Path & path, Sink & sink, Path
 }
 
 
-static std::pair<GitMode, Hash> dumpGitHashInternal(HashType ht, const Path & path, PathFilter & filter)
+Hash dumpGitHashWithCustomHash(std::function<std::unique_ptr<AbstractHashSink>(void)> genHashSink, const Path & path, PathFilter & filter)
 {
-    assert(ht == htSHA1);
-    auto hashSink = new HashSink(ht);
-    auto perm = dumpGitInternal(ht, path, *hashSink, filter);
-    auto hash = hashSink->finish().first;
-    return std::pair { perm, hash };
-}
-
-Hash dumpGitHash(HashType ht, const Path & path, PathFilter & filter)
-{
-    return dumpGitHashInternal(ht, path, filter).second;
+    auto hashSink = genHashSink();
+    dumpGitInternal(genHashSink, path, *hashSink, filter);
+    return hashSink->finish().first;
 }
 
 void dumpGit(HashType ht, const Path & path, Sink & sink, PathFilter & filter)
 {
-    dumpGitInternal(ht, path, sink, filter);
+    assert(ht == htSHA1);
+    dumpGitInternal([&]{ return std::make_unique<HashSink>(ht); }, path, sink, filter);
+}
+
+Hash dumpGitHash(HashType ht, const Path & path, PathFilter & filter)
+{
+    auto hashSink = new HashSink(ht);
+    dumpGit(ht, path, *hashSink, filter);
+    return hashSink->finish().first;
 }
 
 }
