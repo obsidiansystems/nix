@@ -233,6 +233,21 @@ public:
         else return path;
     }
 
+    // FIXME: we shouldn’t need a separate to make an api call just to
+    // format cids
+    std::string ipfsCidFormat(std::string cid, std::optional<std::string> base)
+    {
+        auto uri(daemonUri + "/api/v0/cid/format?arg=" + cid);
+        if (base)
+            uri += "&b=" + *base;
+        auto req = FileTransferRequest(uri);
+        req.post = true;
+        req.tries = 1;
+        auto res = getFileTransfer()->upload(req);
+        auto json = nlohmann::json::parse(*res.data);
+        return (std::string) json["Formatted"];
+    }
+
     // IPNS publish can be slow, we try to do it rarely.
     void sync() override
     {
