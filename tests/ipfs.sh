@@ -213,3 +213,21 @@ if [[ -n $(type -p git) ]]; then
 else
     echo "Git not installed; skipping IPFS/Git tests"
 fi
+
+# Try copying content addressable stuff
+
+body=$(nix-build ipfs-dependencies.nix --no-out-link)
+nix --experimental-features 'nix-command ca-references' make-content-addressable --ipfs --json -r $body
+rewrite=$(nix --experimental-features 'nix-command ca-references' make-content-addressable --ipfs --json -r $body | jq -r ".rewrites[\"$body\"]")
+
+ca=$(nix path-info --json $rewrite | jq -r .\[0\].ca)
+numRefs=$(nix-store -q --references $rewrite | wc -l)
+refs=$(nix-store -q --references $rewrite | sed s,$rewrite,self, | sed s,$NIX_STORE_DIR/,, | tr \\n :)
+
+nix copy $rewrite --to ipfs://
+
+nix-store --delete $rewrite
+
+path5=$(nix --experimental-features 'nix-command ca-references' ensure-ca full:dependencies-top:refs,$numRefs:$refs$ca --substituters ipfs:// --option substitute true)
+
+[ -d $path5 ]

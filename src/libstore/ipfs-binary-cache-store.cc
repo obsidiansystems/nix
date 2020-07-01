@@ -633,6 +633,31 @@ public:
 
                 return;
             }
+        } else if (info.ca && std::holds_alternative<IPFSHash>(*info.ca)) {
+            auto ca_ = std::get<IPFSHash>(*info.ca);
+            auto fullCa = ContentAddressWithNameAndReferences {
+                .name = std::string(info.path.name()),
+                .info = IPFSInfo {
+                    ca_.hash,
+                    info
+                }
+            };
+            auto cid = getCidFromCA(fullCa, info.path);
+
+            auto cid_ = ipfsCidFormat(std::string(putIpfsDag(fullCa, "sha1"), 6), "base16");
+            assert(cid_ == cid);
+
+            AutoDelete tmpDir(createTempDir(), true);
+            TeeSource savedNAR(narSource);
+            restorePath((Path) tmpDir + "/tmp", savedNAR);
+
+            auto key = ipfsCidFormat(addGit((Path) tmpDir + "/tmp"), "base16");
+            assert(std::string(key, 0, 9) == "f01781114");
+
+            Hash hash_(std::string(key, 9), htSHA1);
+            assert(hash_ == ca_.hash);
+
+            return;
         }
 
         if (trustless)
@@ -765,16 +790,19 @@ public:
 
         if (ca) {
             auto cid = getCidFromCA(*ca, storePath);
-            if (cid) {
-                auto size = ipfsBlockStat("/ipfs/" + *cid);
-                if (size) {
-                    assert(storePath == makeFixedOutputPathFromCA(*ca));
-                    NarInfo narInfo (ValidPathInfo { *this, ContentAddressWithNameAndReferences { *ca } });;
-                    narInfo.url = "ipfs://" + *cid;
-                    (*callbackPtr)((std::shared_ptr<ValidPathInfo>)
-                        std::make_shared<NarInfo>(narInfo));
-                    return;
+            if (cid && ipfsBlockStat("/ipfs/" + *cid)) {
+                assert(storePath == makeFixedOutputPathFromCA(*ca));
+                std::string url("ipfs://" + *cid);
+                if (hasPrefix(*cid, "f01711114")) {
+                    auto json = getIpfsDag("/ipfs/" + *cid);
+                    ca = json;
+                    url = "ipfs://" + (std::string) json["cid"];
                 }
+                NarInfo narInfo (ValidPathInfo { *this, ContentAddressWithNameAndReferences { *ca } });
+                narInfo.url = url;
+                (*callbackPtr)((std::shared_ptr<ValidPathInfo>)
+                    std::make_shared<NarInfo>(narInfo));
+                return;
             }
         }
 
