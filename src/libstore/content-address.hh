@@ -108,6 +108,14 @@ void PathReferences<Ref>::setReferencesPossiblyToSelf(const Ref & self, std::set
     references = refs;
 }
 
+void to_json(nlohmann::json& j, const ContentAddress & c);
+void from_json(const nlohmann::json& j, ContentAddress & c);
+
+// Needed until https://github.com/nlohmann/json/pull/211
+
+void to_json(nlohmann::json& j, const std::optional<ContentAddress> & c);
+void from_json(const nlohmann::json& j, std::optional<ContentAddress> & c);
+
 /*
  * Full content address
  *
@@ -148,18 +156,10 @@ std::string renderContentAddressWithNameAndReferences(ContentAddressWithNameAndR
 
 ContentAddressWithNameAndReferences parseContentAddressWithNameAndReferences(std::string_view rawCa);
 
-void to_json(nlohmann::json& j, const ContentAddress & c);
-void from_json(const nlohmann::json& j, ContentAddress & c);
-
 void to_json(nlohmann::json& j, const ContentAddressWithNameAndReferences & c);
 void from_json(const nlohmann::json& j, ContentAddressWithNameAndReferences & c);
 
 void to_json(nlohmann::json& j, const PathReferences<StorePath> & c);
 void from_json(const nlohmann::json& j, PathReferences<StorePath> & c);
-
-// Needed until https://github.com/nlohmann/json/pull/211
-
-void to_json(nlohmann::json& j, const std::optional<ContentAddress> & c);
-void from_json(const nlohmann::json& j, std::optional<ContentAddress> & c);
 
 }

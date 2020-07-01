@@ -762,8 +762,6 @@ std::map<StorePath, StorePath> copyPaths(ref<Store> srcStore, ref<Store> dstStor
             showProgress();
         });
 
-    dstStore->sync();
-
     return pathsMap;
 }
 

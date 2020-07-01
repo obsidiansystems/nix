@@ -235,6 +235,8 @@ static int _main(int argc, char * * argv)
         if (printPath)
             std::cout << store->printStorePath(*storePath) << std::endl;
 
+        store->sync();
+
         return 0;
     }
 }

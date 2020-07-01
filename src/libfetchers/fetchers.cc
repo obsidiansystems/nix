@@ -82,18 +82,18 @@ std::pair<Tree, std::shared_ptr<const Input>> Input::fetchTree(ref<Store> store)
 std::optional<StorePath> trySubstitute(ref<Store> store, FileIngestionMethod ingestionMethod,
     Hash hash, std::string_view name)
 {
-    auto info = FixedOutputInfo {
-        ingestionMethod,
-        hash,
-        {},
+    auto ca = ContentAddressWithNameAndReferences {
+        .name = std::string { name },
+        .info = FixedOutputInfo {
+            ingestionMethod,
+            hash,
+            {}
+        },
     };
-    auto substitutablePath = store->makeFixedOutputPath(name, info);
+    auto substitutablePath = store->makeFixedOutputPathFromCA(ca);
 
     try {
-        store->ensurePath(substitutablePath, ContentAddressWithNameAndReferences {
-            .name = std::string(name),
-            .info = info
-        });
+        store->ensurePath(substitutablePath, ca);
 
         debug("using substituted path '%s'", store->printStorePath(substitutablePath));
 

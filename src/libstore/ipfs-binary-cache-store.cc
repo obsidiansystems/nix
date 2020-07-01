@@ -791,14 +791,14 @@ public:
         if (ca) {
             auto cid = getCidFromCA(*ca, storePath);
             if (cid && ipfsBlockStat("/ipfs/" + *cid)) {
-                assert(storePath == makeFixedOutputPathFromCA(*ca));
                 std::string url("ipfs://" + *cid);
                 if (hasPrefix(*cid, "f01711114")) {
                     auto json = getIpfsDag("/ipfs/" + *cid);
                     ca = json;
                     url = "ipfs://" + (std::string) json["cid"];
                 }
-                NarInfo narInfo (ValidPathInfo { *this, ContentAddressWithNameAndReferences { *ca } });
+                NarInfo narInfo { *this, ContentAddressWithNameAndReferences { *ca } };
+                assert(narInfo.path == storePath);
                 narInfo.url = url;
                 (*callbackPtr)((std::shared_ptr<ValidPathInfo>)
                     std::make_shared<NarInfo>(narInfo));
@@ -889,13 +889,17 @@ public:
         }
         }
 
-        ValidPathInfo info{*this, ContentAddressWithNameAndReferences {
-            .name = name,
-            .info = FixedOutputInfo {
-                method,
-                h,
-                {},
-            }}};
+        ValidPathInfo info {
+            *this,
+            ContentAddressWithNameAndReferences {
+                .name = name,
+                .info = FixedOutputInfo {
+                    method,
+                    h,
+					{},
+                },
+            },
+        };
 
         auto source = StringSource { *sink.s };
         addToStore(info, source, repair, CheckSigs, nullptr);
