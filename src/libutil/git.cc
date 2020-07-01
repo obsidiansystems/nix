@@ -213,11 +213,6 @@ static GitMode dumpGitInternal(HashType ht, const Path & path, Sink & sink, Path
                 // just skip it
                 if (lstat(path_.c_str(), &st))
                     throw SysError("getting attributes of path '%1%'", path_);
-                if (S_ISLNK(st.st_mode)) {
-                    path_ = absPath(readLink(path_), dirOf(path_));
-                    if (path == path_)
-                        throw Error("cannot handle self symlinks in Git format");
-                }
 
                 auto result = dumpGitHashInternal(ht, path_, filter);
 
