@@ -542,8 +542,9 @@ private:
     // <cidv1> ::= <multibase-prefix><cid-version><multicodec-packed-content-type><multihash-content-address>
     // f = base16
     // cid-version = 01
+    // codec = 78 (git codec) / 71 (dag codec)
     // multicodec-packed-content-type = 1114
-    std::optional<std::string> getCidFromCA(ContentAddressWithNameAndReferences ca)
+    std::optional<std::string> getCidFromCA(ContentAddressWithNameAndReferences ca, StorePath path)
     {
         if (std::holds_alternative<FixedOutputInfo>(ca.info)) {
             auto ca_ = std::get<FixedOutputInfo>(ca.info);
@@ -551,6 +552,9 @@ private:
                 assert(ca_.hash.type == htSHA1);
                 return "f01781114" + ca_.hash.to_string(Base16, false);
             }
+        } else if (std::holds_alternative<IPFSInfo>(ca.info)) {
+            Hash hash(path.hashPart(), htSHA1);
+            return "f01711114" + hash.to_string(Base16, false);
         }
 
         return std::nullopt;
@@ -691,7 +695,7 @@ public:
     bool isValidPathUncached(const StorePath & storePath, std::optional<ContentAddressWithNameAndReferences> ca) override
     {
         if (ca) {
-            auto cid = getCidFromCA(*ca);
+            auto cid = getCidFromCA(*ca, storePath);
             if (cid && ipfsBlockStat("/ipfs/" + *cid))
                 return true;
         }
@@ -760,7 +764,7 @@ public:
         PushActivity pact(act->id);
 
         if (ca) {
-            auto cid = getCidFromCA(*ca);
+            auto cid = getCidFromCA(*ca, storePath);
             if (cid) {
                 auto size = ipfsBlockStat("/ipfs/" + *cid);
                 if (size) {
