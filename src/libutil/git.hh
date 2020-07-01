@@ -37,8 +37,13 @@ void dumpGit(HashType ht, const Path & path, Sink & sink, PathFilter & filter = 
 
 void parseGitInternal(ParseSink & sink, Source & source, const Path & path,
     const Path & realStoreDir, const Path & storeDir,
-    std::function<void (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir, int perm, std::string name, Hash hash)> addEntry);
+    std::function<void (ParseSink & sink, const Path & path,
+        const Path & realStoreDir, const Path & storeDir, int perm, std::string name, Hash hash)> addEntry);
 
-Hash dumpGitHashWithCustomHash(std::function<std::unique_ptr<AbstractHashSink>(void)> genHashSink, const Path & path, PathFilter & filter = defaultPathFilter);
+Hash dumpGitHashWithCustomHash(std::function<std::unique_ptr<AbstractHashSink>(void)> genHashSink,
+    const Path & path, PathFilter & filter = defaultPathFilter);
+
+GitMode dumpGitWithCustomHash(std::function<std::unique_ptr<AbstractHashSink>(void)> genHashSink,
+    const Path & path, Sink & sink, PathFilter & filter = defaultPathFilter);
 
 }
