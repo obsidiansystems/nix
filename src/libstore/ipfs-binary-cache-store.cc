@@ -224,7 +224,6 @@ private:
         return json["Path"];
     }
 
-public:
     Path formatPathAsProtocol(Path path) {
         if (hasPrefix(path, "/ipfs/"))
             return "ipfs://" + path.substr(strlen("/ipfs/"), string::npos);
@@ -247,6 +246,8 @@ public:
         auto json = nlohmann::json::parse(*res.data);
         return (std::string) json["Formatted"];
     }
+
+public:
 
     // IPNS publish can be slow, we try to do it rarely.
     void sync() override
