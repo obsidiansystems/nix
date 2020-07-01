@@ -204,7 +204,7 @@ StorePath Store::makeTextPath(std::string_view name, const TextInfo & info) cons
 }
 
 
-static StorePath makeIPFSPath(const ContentAddressWithNameAndReferences & info)
+static StorePath makeIPFSPath(const ContentAddress & info)
 {
     nlohmann::json j = info;
     std::vector<std::uint8_t>  cbor = nlohmann::json::to_cbor(j);
@@ -219,7 +219,7 @@ static StorePath makeIPFSPath(const ContentAddressWithNameAndReferences & info)
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-StorePath Store::makeFixedOutputPathFromCA(const ContentAddressWithNameAndReferences & info) const
+StorePath Store::makeFixedOutputPathFromCA(const ContentAddress & info) const
 {
     // New template
     return std::visit(overloaded {
@@ -286,7 +286,7 @@ bool Store::PathInfoCacheValue::isKnownNow()
     return std::chrono::steady_clock::now() < time_point + ttl;
 }
 
-bool Store::isValidPath(const StorePath & storePath, std::optional<ContentAddressWithNameAndReferences> ca)
+bool Store::isValidPath(const StorePath & storePath, std::optional<ContentAddress> ca)
 {
     std::string hashPart(storePath.hashPart());
 
@@ -322,7 +322,7 @@ bool Store::isValidPath(const StorePath & storePath, std::optional<ContentAddres
 
 /* Default implementation for stores that only implement
    queryPathInfoUncached(). */
-bool Store::isValidPathUncached(const StorePath & path, std::optional<ContentAddressWithNameAndReferences> ca)
+bool Store::isValidPathUncached(const StorePath & path, std::optional<ContentAddress> ca)
 {
     try {
         queryPathInfo(path);
@@ -333,7 +333,7 @@ bool Store::isValidPathUncached(const StorePath & path, std::optional<ContentAdd
 }
 
 
-ref<const ValidPathInfo> Store::queryPathInfo(const StorePath & storePath, std::optional<ContentAddressWithNameAndReferences> ca)
+ref<const ValidPathInfo> Store::queryPathInfo(const StorePath & storePath, std::optional<ContentAddress> ca)
 {
     std::promise<ref<const ValidPathInfo>> promise;
 
@@ -351,7 +351,7 @@ ref<const ValidPathInfo> Store::queryPathInfo(const StorePath & storePath, std::
 
 
 void Store::queryPathInfo(const StorePath & storePath,
-    Callback<ref<const ValidPathInfo>> callback, std::optional<ContentAddressWithNameAndReferences> ca) noexcept
+    Callback<ref<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept
 {
     std::string hashPart;
 
@@ -516,7 +516,7 @@ void Store::pathInfoToJSON(JSONPlaceholder & jsonOut, const StorePathSet & store
             }
 
             if (info->ca)
-                jsonPath.attr("ca", renderContentAddress(info->ca));
+                jsonPath.attr("ca", renderLegacyContentAddress(info->ca));
 
             std::pair<uint64_t, uint64_t> closureSizes;
 
@@ -608,7 +608,7 @@ void Store::buildPaths(const std::vector<StorePathWithOutputs> & paths, BuildMod
 
 void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
     const StorePath & storePath, RepairFlag repair, CheckSigsFlag checkSigs,
-    std::optional<ContentAddressWithNameAndReferences> ca)
+    std::optional<ContentAddress> ca)
 {
     auto srcUri = srcStore->getUri();
     auto dstUri = dstStore->getUri();
@@ -853,12 +853,12 @@ void ValidPathInfo::sign(const Store & store, const SecretKey & secretKey)
     sigs.insert(secretKey.signDetached(fingerprint(store)));
 }
 
-std::optional<ContentAddressWithNameAndReferences> ValidPathInfo::fullContentAddressOpt() const
+std::optional<ContentAddress> ValidPathInfo::fullContentAddressOpt() const
 {
     if (! ca)
         return std::nullopt;
 
-    return ContentAddressWithNameAndReferences {
+    return ContentAddress {
         .name = std::string { path.name() },
         .info = std::visit(overloaded {
             [&](TextHash th) {
@@ -928,7 +928,7 @@ Strings ValidPathInfo::shortRefs() const
 
 ValidPathInfo::ValidPathInfo(
     const Store & store,
-    ContentAddressWithNameAndReferences && info)
+    ContentAddress && info)
       : path(store.makeFixedOutputPathFromCA(info))
 {
     std::visit(overloaded {

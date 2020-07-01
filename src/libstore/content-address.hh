@@ -49,19 +49,19 @@ typedef std::variant<
     TextHash, // for paths computed by makeTextPath() / addTextToStore
     FixedOutputHash, // for path computed by makeFixedOutputPath
     IPFSHash
-> ContentAddress;
+> LegacyContentAddress;
 
 /* Compute the prefix to the hash algorithm which indicates how the files were
    ingested. */
 std::string makeFileIngestionPrefix(const FileIngestionMethod m);
 
-std::string renderContentAddress(ContentAddress ca);
+std::string renderLegacyContentAddress(LegacyContentAddress ca);
 
-std::string renderContentAddress(std::optional<ContentAddress> ca);
+std::string renderLegacyContentAddress(std::optional<LegacyContentAddress> ca);
 
-ContentAddress parseContentAddress(std::string_view rawCa);
+LegacyContentAddress parseLegacyContentAddress(std::string_view rawCa);
 
-std::optional<ContentAddress> parseContentAddressOpt(std::string_view rawCaOpt);
+std::optional<LegacyContentAddress> parseLegacyContentAddressOpt(std::string_view rawCaOpt);
 
 /*
  * References set
@@ -108,13 +108,13 @@ void PathReferences<Ref>::setReferencesPossiblyToSelf(const Ref & self, std::set
     references = refs;
 }
 
-void to_json(nlohmann::json& j, const ContentAddress & c);
-void from_json(const nlohmann::json& j, ContentAddress & c);
+void to_json(nlohmann::json& j, const LegacyContentAddress & c);
+void from_json(const nlohmann::json& j, LegacyContentAddress & c);
 
 // Needed until https://github.com/nlohmann/json/pull/211
 
-void to_json(nlohmann::json& j, const std::optional<ContentAddress> & c);
-void from_json(const nlohmann::json& j, std::optional<ContentAddress> & c);
+void to_json(nlohmann::json& j, const std::optional<LegacyContentAddress> & c);
+void from_json(const nlohmann::json& j, std::optional<LegacyContentAddress> & c);
 
 /*
  * Full content address
@@ -138,7 +138,7 @@ struct IPFSInfo : IPFSHash {
     PathReferences<StorePath> references;
 };
 
-struct ContentAddressWithNameAndReferences {
+struct ContentAddress {
     std::string name;
     std::variant<
         TextInfo,
@@ -146,18 +146,18 @@ struct ContentAddressWithNameAndReferences {
         IPFSInfo
     > info;
 
-    bool operator < (const ContentAddressWithNameAndReferences & other) const
+    bool operator < (const ContentAddress & other) const
     {
         return name < other.name;
     }
 };
 
-std::string renderContentAddressWithNameAndReferences(ContentAddressWithNameAndReferences ca);
+std::string renderContentAddress(ContentAddress ca);
 
-ContentAddressWithNameAndReferences parseContentAddressWithNameAndReferences(std::string_view rawCa);
+ContentAddress parseContentAddress(std::string_view rawCa);
 
-void to_json(nlohmann::json& j, const ContentAddressWithNameAndReferences & c);
-void from_json(const nlohmann::json& j, ContentAddressWithNameAndReferences & c);
+void to_json(nlohmann::json& j, const ContentAddress & c);
+void from_json(const nlohmann::json& j, ContentAddress & c);
 
 void to_json(nlohmann::json& j, const PathReferences<StorePath> & c);
 void from_json(const nlohmann::json& j, PathReferences<StorePath> & c);

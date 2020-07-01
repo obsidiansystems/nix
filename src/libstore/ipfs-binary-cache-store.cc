@@ -544,7 +544,7 @@ private:
     // cid-version = 01
     // codec = 78 (git codec) / 71 (dag codec)
     // multicodec-packed-content-type = 1114
-    std::optional<std::string> getCidFromCA(ContentAddressWithNameAndReferences ca, StorePath path)
+    std::optional<std::string> getCidFromCA(ContentAddress ca, StorePath path)
     {
         if (std::holds_alternative<FixedOutputInfo>(ca.info)) {
             auto ca_ = std::get<FixedOutputInfo>(ca.info);
@@ -635,7 +635,7 @@ public:
             }
         } else if (info.ca && std::holds_alternative<IPFSHash>(*info.ca)) {
             auto ca_ = std::get<IPFSHash>(*info.ca);
-            auto fullCa = ContentAddressWithNameAndReferences {
+            auto fullCa = ContentAddress {
                 .name = std::string(info.path.name()),
                 .info = IPFSInfo {
                     ca_.hash,
@@ -717,7 +717,7 @@ public:
         stats.narInfoWrite++;
     }
 
-    bool isValidPathUncached(const StorePath & storePath, std::optional<ContentAddressWithNameAndReferences> ca) override
+    bool isValidPathUncached(const StorePath & storePath, std::optional<ContentAddress> ca) override
     {
         if (ca) {
             auto cid = getCidFromCA(*ca, storePath);
@@ -734,7 +734,7 @@ public:
         return json["nar"].contains(storePath.to_string());
     }
 
-    void narFromPath(const StorePath & storePath, Sink & sink, std::optional<ContentAddressWithNameAndReferences> ca) override
+    void narFromPath(const StorePath & storePath, Sink & sink, std::optional<ContentAddress> ca) override
     {
         auto info = queryPathInfo(storePath, ca).cast<const NarInfo>();
 
@@ -776,7 +776,7 @@ public:
     }
 
     void queryPathInfoUncached(const StorePath & storePath,
-        Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddressWithNameAndReferences> ca) noexcept override
+        Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept override
     {
         // TODO: properly use callbacks
 
@@ -797,7 +797,7 @@ public:
                     ca = json;
                     url = "ipfs://" + (std::string) json["cid"];
                 }
-                NarInfo narInfo { *this, ContentAddressWithNameAndReferences { *ca } };
+                NarInfo narInfo { *this, ContentAddress { *ca } };
                 assert(narInfo.path == storePath);
                 narInfo.url = url;
                 (*callbackPtr)((std::shared_ptr<ValidPathInfo>)
@@ -891,7 +891,7 @@ public:
 
         ValidPathInfo info {
             *this,
-            ContentAddressWithNameAndReferences {
+            ContentAddress {
                 .name = name,
                 .info = FixedOutputInfo {
                     method,
@@ -964,7 +964,7 @@ public:
         BuildMode buildMode) override
     { unsupported("buildDerivation"); }
 
-    void ensurePath(const StorePath & path, std::optional<ContentAddressWithNameAndReferences> ca) override
+    void ensurePath(const StorePath & path, std::optional<ContentAddress> ca) override
     { unsupported("ensurePath"); }
 
     std::optional<StorePath> queryPathFromHashPart(const std::string & hashPart) override

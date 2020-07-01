@@ -89,7 +89,7 @@ struct LegacySSHStore : public Store
 
     void queryPathInfoUncached(const StorePath & path,
         Callback<std::shared_ptr<const ValidPathInfo>> callback,
-        std::optional<ContentAddressWithNameAndReferences> ca) noexcept override
+        std::optional<ContentAddress> ca) noexcept override
     {
         try {
             auto conn(connections->get());
@@ -114,7 +114,7 @@ struct LegacySSHStore : public Store
             if (GET_PROTOCOL_MINOR(conn->remoteVersion) >= 4) {
                 auto s = readString(conn->from);
                 info->narHash = s.empty() ? Hash() : Hash(s);
-                info->ca = parseContentAddressOpt(readString(conn->from));
+                info->ca = parseLegacyContentAddressOpt(readString(conn->from));
                 info->sigs = readStrings<StringSet>(conn->from);
             }
 
@@ -146,7 +146,7 @@ struct LegacySSHStore : public Store
                 << info.narSize
                 << info.ultimate
                 << info.sigs
-                << renderContentAddress(info.ca);
+                << renderLegacyContentAddress(info.ca);
             try {
                 copyNAR(source, conn->to);
             } catch (...) {
@@ -182,7 +182,7 @@ struct LegacySSHStore : public Store
             throw Error("failed to add path '%s' to remote host '%s'", printStorePath(info.path), host);
     }
 
-    void narFromPath(const StorePath & path, Sink & sink, std::optional<ContentAddressWithNameAndReferences> ca) override
+    void narFromPath(const StorePath & path, Sink & sink, std::optional<ContentAddress> ca) override
     {
         auto conn(connections->get());
 
@@ -235,7 +235,7 @@ struct LegacySSHStore : public Store
         return status;
     }
 
-    void ensurePath(const StorePath & path, std::optional<ContentAddressWithNameAndReferences> ca) override
+    void ensurePath(const StorePath & path, std::optional<ContentAddress> ca) override
     { unsupported("ensurePath"); }
 
     void computeFSClosure(const StorePathSet & paths,

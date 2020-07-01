@@ -593,7 +593,7 @@ uint64_t LocalStore::addValidPath(State & state,
         (info.narSize, info.narSize != 0)
         (info.ultimate ? 1 : 0, info.ultimate)
         (concatStringsSep(" ", info.sigs), !info.sigs.empty())
-        (renderContentAddress(info.ca), (bool) info.ca)
+        (renderLegacyContentAddress(info.ca), (bool) info.ca)
         .exec();
     uint64_t id = sqlite3_last_insert_rowid(state.db);
 
@@ -631,7 +631,7 @@ uint64_t LocalStore::addValidPath(State & state,
 
 
 void LocalStore::queryPathInfoUncached(const StorePath & path,
-    Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddressWithNameAndReferences> ca) noexcept
+    Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept
 {
     try {
         auto info = std::make_shared<ValidPathInfo>(path);
@@ -667,7 +667,7 @@ void LocalStore::queryPathInfoUncached(const StorePath & path,
             if (s) info->sigs = tokenizeString<StringSet>(s, " ");
 
             s = (const char *) sqlite3_column_text(state->stmtQueryPathInfo, 7);
-            if (s) info->ca = parseContentAddressOpt(s);
+            if (s) info->ca = parseLegacyContentAddressOpt(s);
 
             /* Get the references. */
             auto useQueryReferences(state->stmtQueryReferences.use()(info->id));
@@ -692,7 +692,7 @@ void LocalStore::updatePathInfo(State & state, const ValidPathInfo & info)
         (info.narHash.to_string(Base16, true))
         (info.ultimate ? 1 : 0, info.ultimate)
         (concatStringsSep(" ", info.sigs), !info.sigs.empty())
-        (renderContentAddress(info.ca), (bool) info.ca)
+        (renderLegacyContentAddress(info.ca), (bool) info.ca)
         (printStorePath(info.path))
         .exec();
 }
@@ -713,7 +713,7 @@ bool LocalStore::isValidPath_(State & state, const StorePath & path)
 }
 
 
-bool LocalStore::isValidPathUncached(const StorePath & path, std::optional<ContentAddressWithNameAndReferences> ca)
+bool LocalStore::isValidPathUncached(const StorePath & path, std::optional<ContentAddress> ca)
 {
     return retrySQLite<bool>([&]() {
         auto state(_state.lock());
@@ -846,7 +846,7 @@ StorePathSet LocalStore::querySubstitutablePaths(const StorePathSet & paths)
 }
 
 
-void LocalStore::querySubstitutablePathInfos(const StorePathSet & paths, const std::set<ContentAddressWithNameAndReferences> & caPaths, SubstitutablePathInfos & infos)
+void LocalStore::querySubstitutablePathInfos(const StorePathSet & paths, const std::set<ContentAddress> & caPaths, SubstitutablePathInfos & infos)
 {
     if (!settings.useSubstitutes) return;
 

@@ -115,9 +115,9 @@ struct GitInput : Input
             warn("Nix's computed git tree hash will be different when submodules are converted to regular directories");
         }
 
-        std::optional<ContentAddressWithNameAndReferences> ca;
+        std::optional<ContentAddress> ca;
         if (treeHash)
-            ca = ContentAddressWithNameAndReferences {
+            ca = ContentAddress {
                 .name = name,
                 .info = FixedOutputInfo {
                     ingestionMethod,

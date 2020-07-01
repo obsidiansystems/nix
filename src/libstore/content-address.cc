@@ -24,7 +24,7 @@ std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
 template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-std::string renderContentAddress(ContentAddress ca) {
+std::string renderLegacyContentAddress(LegacyContentAddress ca) {
     return std::visit(overloaded {
         [](TextHash th) {
             return "text:"
@@ -42,7 +42,7 @@ std::string renderContentAddress(ContentAddress ca) {
     }, ca);
 }
 
-ContentAddress parseContentAddress(std::string_view rawCa) {
+LegacyContentAddress parseLegacyContentAddress(std::string_view rawCa) {
     auto prefixSeparator = rawCa.find(':');
     if (prefixSeparator != string::npos) {
         auto prefix = string(rawCa, 0, prefixSeparator);
@@ -87,15 +87,15 @@ ContentAddress parseContentAddress(std::string_view rawCa) {
     }
 };
 
-std::optional<ContentAddress> parseContentAddressOpt(std::string_view rawCaOpt) {
-    return rawCaOpt == "" ? std::optional<ContentAddress> {} : parseContentAddress(rawCaOpt);
+std::optional<LegacyContentAddress> parseLegacyContentAddressOpt(std::string_view rawCaOpt) {
+    return rawCaOpt == "" ? std::optional<LegacyContentAddress> {} : parseLegacyContentAddress(rawCaOpt);
 };
 
-std::string renderContentAddress(std::optional<ContentAddress> ca) {
-    return ca ? renderContentAddress(*ca) : "";
+std::string renderLegacyContentAddress(std::optional<LegacyContentAddress> ca) {
+    return ca ? renderLegacyContentAddress(*ca) : "";
 }
 
-std::string renderContentAddressWithNameAndReferences(ContentAddressWithNameAndReferences ca)
+std::string renderContentAddress(ContentAddress ca)
 {
     return "full:" + ca.name + ":" + std::visit(overloaded {
         [](TextInfo th) {
@@ -104,7 +104,7 @@ std::string renderContentAddressWithNameAndReferences(ContentAddressWithNameAndR
                 result += ":";
                 result += i.to_string();
             }
-            result += ":" + renderContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {TextHash {
+            result += ":" + renderLegacyContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {TextHash {
                     .hash = th.hash,
                 }});
             return result;
@@ -116,7 +116,7 @@ std::string renderContentAddressWithNameAndReferences(ContentAddressWithNameAndR
                 result += i.to_string();
             }
             if (fsh.references.hasSelfReference) result += ":self";
-            result += ":" + renderContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {FixedOutputHash {
+            result += ":" + renderLegacyContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {FixedOutputHash {
                     .method = fsh.method,
                     .hash = fsh.hash
                 }});
@@ -129,7 +129,7 @@ std::string renderContentAddressWithNameAndReferences(ContentAddressWithNameAndR
                 result += i.to_string();
             }
             if (fsh.references.hasSelfReference) result += ":self";
-            result += ":" + renderContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {IPFSHash {
+            result += ":" + renderLegacyContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {IPFSHash {
                     .hash = fsh.hash
                 }});
             return result;
@@ -138,7 +138,7 @@ std::string renderContentAddressWithNameAndReferences(ContentAddressWithNameAndR
 
 }
 
-ContentAddressWithNameAndReferences parseContentAddressWithNameAndReferences(std::string_view rawCa)
+ContentAddress parseContentAddress(std::string_view rawCa)
 {
     auto prefixSeparator = rawCa.find(':');
     if (prefixSeparator == string::npos)
@@ -171,12 +171,12 @@ ContentAddressWithNameAndReferences parseContentAddressWithNameAndReferences(std
                 references.insert(StorePath(s));
             rest = rest.substr(prefixSeparator + 1);
         }
-        ContentAddress ca = parseContentAddress(rest);
+        LegacyContentAddress ca = parseLegacyContentAddress(rest);
         if (std::holds_alternative<TextHash>(ca)) {
             auto ca_ = std::get<TextHash>(ca);
             if (hasSelfReference)
                 throw Error("text content address cannot have self reference");
-            return ContentAddressWithNameAndReferences {
+            return ContentAddress {
                 .name = name,
                 .info = TextInfo {
                     {.hash = ca_.hash,},
@@ -185,7 +185,7 @@ ContentAddressWithNameAndReferences parseContentAddressWithNameAndReferences(std
             };
         } else if (std::holds_alternative<FixedOutputHash>(ca)) {
             auto ca_ = std::get<FixedOutputHash>(ca);
-            return ContentAddressWithNameAndReferences {
+            return ContentAddress {
                 .name = name,
                 .info = FixedOutputInfo {
                     {.method = ca_.method,
@@ -198,7 +198,7 @@ ContentAddressWithNameAndReferences parseContentAddressWithNameAndReferences(std
             };
         } else if (std::holds_alternative<IPFSHash>(ca)) {
             auto ca_ = std::get<IPFSHash>(ca);
-            return ContentAddressWithNameAndReferences {
+            return ContentAddress {
                 .name = name,
                 .info = IPFSInfo {
                     {.hash = ca_.hash,},
@@ -212,7 +212,7 @@ ContentAddressWithNameAndReferences parseContentAddressWithNameAndReferences(std
     } else throw Error("unknown ca: '%s'", rawCa);
 }
 
-void to_json(nlohmann::json& j, const ContentAddress & ca) {
+void to_json(nlohmann::json& j, const LegacyContentAddress & ca) {
     j = std::visit(overloaded {
         [](TextHash th) {
             return nlohmann::json {
@@ -237,7 +237,7 @@ void to_json(nlohmann::json& j, const ContentAddress & ca) {
     }, ca);
 }
 
-void from_json(const nlohmann::json& j, ContentAddress & ca) {
+void from_json(const nlohmann::json& j, LegacyContentAddress & ca) {
     std::string_view type = j.at("type").get<std::string_view>();
     if (type == "text") {
         ca = TextHash {
@@ -258,11 +258,10 @@ void from_json(const nlohmann::json& j, ContentAddress & ca) {
 }
 
 // f01781114 is the cid prefix for a base16 cbor sha1. This hash
-// stores the ContentAddressWithNameAndReferences information. The
-// hash (without the cid prefix) will be put directly in the store
-// path hash.
+// stores the ContentAddress information. The hash (without the cid
+// prefix) will be put directly in the store path hash.
 
-void to_json(nlohmann::json& j, const ContentAddressWithNameAndReferences & ca)
+void to_json(nlohmann::json& j, const ContentAddress & ca)
 {
     if (std::holds_alternative<IPFSInfo>(ca.info)) {
         auto info = std::get<IPFSInfo>(ca.info);
@@ -279,14 +278,14 @@ void to_json(nlohmann::json& j, const ContentAddressWithNameAndReferences & ca)
     } else throw Error("cannot convert to json");
 }
 
-void from_json(const nlohmann::json& j, ContentAddressWithNameAndReferences & ca)
+void from_json(const nlohmann::json& j, ContentAddress & ca)
 {
     std::string_view type = j.at("qtype").get<std::string_view>();
     if (type == "ipfs") {
         auto cid = j.at("cid").get<std::string_view>();
         if (cid.substr(0, 9) != "f01781114")
             throw Error("cid '%s' is wrong type for ipfs hash", cid);
-        ca = ContentAddressWithNameAndReferences {
+        ca = ContentAddress {
             .name = j.at("name"),
             .info = IPFSInfo {
                 Hash { cid.substr(9), htSHA1 },
@@ -337,18 +336,18 @@ void from_json(const nlohmann::json& j, PathReferences<StorePath> & references)
 
 // Needed until https://github.com/nlohmann/json/pull/2117
 
-void to_json(nlohmann::json& j, const std::optional<ContentAddress> & c) {
+void to_json(nlohmann::json& j, const std::optional<LegacyContentAddress> & c) {
     if (!c)
         j = nullptr;
     else
         to_json(j, *c);
 }
 
-void from_json(const nlohmann::json& j, std::optional<ContentAddress> & c) {
+void from_json(const nlohmann::json& j, std::optional<LegacyContentAddress> & c) {
     if (j.is_null())
         c = std::nullopt;
     else
-        c = j.get<ContentAddress>();
+        c = j.get<LegacyContentAddress>();
 }
 
 }

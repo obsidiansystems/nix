@@ -82,7 +82,7 @@ std::pair<Tree, std::shared_ptr<const Input>> Input::fetchTree(ref<Store> store)
 std::optional<StorePath> trySubstitute(ref<Store> store, FileIngestionMethod ingestionMethod,
     Hash hash, std::string_view name)
 {
-    auto ca = ContentAddressWithNameAndReferences {
+    auto ca = ContentAddress {
         .name = std::string { name },
         .info = FixedOutputInfo {
             ingestionMethod,

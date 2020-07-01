@@ -90,7 +90,7 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
 
             ValidPathInfo info {
                 *store,
-                ContentAddressWithNameAndReferences {
+                ContentAddress {
                     .name = std::string { path.name() },
                     .info = ipfsContent ?
                       std::variant<TextInfo, FixedOutputInfo, IPFSInfo> {IPFSInfo {

@@ -69,7 +69,7 @@ DownloadFileResult downloadFile(
         auto hash = hashString(htSHA256, *res.data);
         ValidPathInfo info {
             *store,
-            ContentAddressWithNameAndReferences {
+            ContentAddress {
                 .name = name,
                 .info = FixedOutputInfo {
                     FileIngestionMethod::Flat,

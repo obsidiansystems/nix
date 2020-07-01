@@ -14,7 +14,7 @@ struct TreeInfo
 {
     Hash narHash;
 
-    std::optional<ContentAddressWithNameAndReferences> ca;
+    std::optional<ContentAddress> ca;
 
     std::optional<uint64_t> revCount;
     std::optional<time_t> lastModified;

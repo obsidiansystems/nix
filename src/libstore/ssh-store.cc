@@ -40,7 +40,7 @@ public:
     bool sameMachine() override
     { return false; }
 
-    void narFromPath(const StorePath & path, Sink & sink, std::optional<ContentAddressWithNameAndReferences> ca) override;
+    void narFromPath(const StorePath & path, Sink & sink, std::optional<ContentAddress> ca) override;
 
     ref<FSAccessor> getFSAccessor() override;
 
@@ -68,7 +68,7 @@ private:
     };
 };
 
-void SSHStore::narFromPath(const StorePath & path, Sink & sink, std::optional<ContentAddressWithNameAndReferences> ca)
+void SSHStore::narFromPath(const StorePath & path, Sink & sink, std::optional<ContentAddress> ca)
 {
     auto conn(connections->get());
     conn->to << wopNarFromPath << printStorePath(path);

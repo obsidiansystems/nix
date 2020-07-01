@@ -22,7 +22,7 @@ struct CmdEnsureCA : StoreCommand
 
     void run(ref<Store> store) override
     {
-        auto ca = parseContentAddressWithNameAndReferences(caStr);
+        auto ca = parseContentAddress(caStr);
 
         auto path = store->makeFixedOutputPathFromCA(ca);
         store->ensurePath(path, ca);
