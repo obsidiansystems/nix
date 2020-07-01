@@ -625,10 +625,10 @@ public:
                 TeeSource savedNAR(narSource);
                 restorePath((Path) tmpDir + "/tmp", savedNAR);
 
-                auto key = addGit((Path) tmpDir + "/tmp");
+                auto key = ipfsCidFormat(addGit((Path) tmpDir + "/tmp"), "base16");
                 assert(std::string(key, 0, 9) == "f01781114");
 
-                Hash hash(ipfsCidFormat(std::string(key, 9), "base16"), htSHA1);
+                Hash hash(std::string(key, 9), htSHA1);
                 assert(hash == ca_.hash);
 
                 return;
