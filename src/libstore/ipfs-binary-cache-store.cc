@@ -556,7 +556,7 @@ private:
         return std::nullopt;
     }
 
-    void putIpfsGitBlock(std::string s)
+    std::string putIpfsGitBlock(std::string s)
     {
         auto uri = daemonUri + "/api/v0/block/put?format=git-raw&mhtype=sha1";
 
@@ -564,10 +564,12 @@ private:
         req.data = std::make_shared<string>(s);
         req.post = true;
         req.tries = 1;
-        getFileTransfer()->upload(req);
+        auto res = getFileTransfer()->upload(req);
+        auto json = nlohmann::json::parse(*res.data);
+        return (std::string) json["Key"];
     }
 
-    void addGit(Path path)
+    std::string addGit(Path path)
     {
         struct stat st;
         if (lstat(path.c_str(), &st))
@@ -576,13 +578,13 @@ private:
         if (S_ISREG(st.st_mode)) {
             StringSink sink;
             dumpGitBlob(path, st, sink);
-            putIpfsGitBlock(*sink.s);
+            return putIpfsGitBlock(*sink.s);
         } else if (S_ISDIR(st.st_mode)) {
             for (auto & i : readDirectory(path))
                 addGit(path + "/" + i.name);
             StringSink sink;
             dumpGit(htSHA1, path, sink);
-            putIpfsGitBlock(*sink.s);
+            return putIpfsGitBlock(*sink.s);
         } else throw Error("file '%1%' has an unsupported type", path);
     }
 
