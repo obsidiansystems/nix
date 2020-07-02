@@ -146,12 +146,13 @@ void to_json(nlohmann::json& j, const std::optional<LegacyContentAddress> & c) {
 }
 
 void from_json(const nlohmann::json& j, std::optional<LegacyContentAddress> & c) {
-    if (j.is_null())
+    if (j.is_null()) {
         c = std::nullopt;
-    else
+    } else {
         // Dummy value to set tag bit.
         c = TextHash { .hash = Hash { htSHA256 } };
         from_json(j, *c);
+    }
 }
 
 }
