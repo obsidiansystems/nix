@@ -62,12 +62,12 @@ rec {
       libarchive
       boost
       (nlohmann_json.overrideAttrs (_: rec {
-        version = "3.8.0";
+        version = "3.8.0post";
         src = fetchFromGitHub {
-          owner = "nlohmann";
+          owner = "matthewbauer";
           repo = "json";
-          rev = "v${version}";
-          sha256 = "09l2kf7hrnf8xb7k6b2271imggyqcyvz83xf9k730prdzxy997y7";
+          rev = "e54f03f73ba6a2710fad457a299590ade22c3477";
+          sha256 = "12l7dsm2q45lkicwr4y9iv6b72z59683yg8mg0lcbacpaqh0566f";
         };
       }))
       gmock
