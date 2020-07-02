@@ -105,8 +105,9 @@ void parseGitWithPath(ParseSink & sink, Source & source, const Path & path,
     auto type = getString(source, 5);
 
     if (type == "blob ") {
+        unsigned long long size = std::stoi(getStringUntil(source, 0));
+
         if (perm == 120000) {
-            unsigned long long size = std::stoi(getStringUntil(source, 0));
             assert(size < 4096);
             std::vector<unsigned char> target(size);
             source(target.data(), size);
@@ -117,8 +118,6 @@ void parseGitWithPath(ParseSink & sink, Source & source, const Path & path,
             else
                 sink.createRegularFile(path);
 
-            unsigned long long size = std::stoi(getStringUntil(source, 0));
-
             sink.preallocateContents(size);
 
             unsigned long long left = size;
@@ -127,7 +126,7 @@ void parseGitWithPath(ParseSink & sink, Source & source, const Path & path,
             while (left) {
                 checkInterrupt();
                 auto n = buf.size();
-                if ((unsigned long long)n > left) n = left;
+                if ((unsigned long long) n > left) n = left;
                 source(buf.data(), n);
                 sink.receiveContents(buf.data(), n);
                 left -= n;
@@ -230,16 +229,9 @@ GitMode dumpGitWithCustomHash(std::function<std::unique_ptr<AbstractHashSink>(vo
     else if (S_ISDIR(st.st_mode)) {
         GitTree entries;
         for (auto & i : readDirectory(path)) {
-            Path path_(path + "/" + i.name);
-            if (filter(path_)) {
-
-                // follow symlinks, unless it’s a to self, then we
-                // just skip it
-                if (lstat(path_.c_str(), &st))
-                    throw SysError("getting attributes of path '%1%'", path_);
-
+            if (filter(path + "/" + i.name)) {
                 auto hashSink = genHashSink();
-                auto perm = dumpGitWithCustomHash(genHashSink, path_, *hashSink, filter);
+                auto perm = dumpGitWithCustomHash(genHashSink, path + "/" + i.name, *hashSink, filter);
                 auto hash = hashSink->finish().first;
 
                 // correctly observe git order, see
@@ -248,7 +240,7 @@ GitMode dumpGitWithCustomHash(std::function<std::unique_ptr<AbstractHashSink>(vo
                 if (perm == GitMode::Directory)
                     name += "/";
 
-                entries[name] = std::pair{ perm, hash};
+                entries[name] = std::pair { perm, hash };
             }
         }
         perm = dumpGitTree(entries, sink);

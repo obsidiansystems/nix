@@ -208,7 +208,7 @@ StorePath Store::makeTextPath(std::string_view name, const TextInfo & info) cons
 static StorePath makeIPFSPath(const ContentAddress & info)
 {
     nlohmann::json j = info;
-    std::vector<std::uint8_t>  cbor = nlohmann::json::to_cbor(j);
+    std::vector<std::uint8_t> cbor = nlohmann::json::to_cbor(j);
     Hash hash = hashString(htSHA1, std::string(cbor.begin(), cbor.end()));
 
     // note this only works because sha1 is size 20
