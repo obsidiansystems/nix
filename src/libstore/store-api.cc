@@ -173,6 +173,17 @@ static std::string makeType(
     return std::move(type);
 }
 
+StorePath Store::bakeCaIfNeeded(StorePathOrFullCA path) const
+{
+    return std::visit(overloaded {
+        [this](std::reference_wrapper<const StorePath> storePath) {
+            return StorePath {storePath};
+        },
+        [this](std::reference_wrapper<const FullContentAddress> ca) {
+            return makeFixedOutputPathFromCA(ca);
+        },
+    }, path);
+}
 
 StorePath Store::makeFixedOutputPath(std::string_view name, const FixedOutputInfo & info) const
 {

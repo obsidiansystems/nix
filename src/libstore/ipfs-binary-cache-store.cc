@@ -662,8 +662,11 @@ public:
         stats.narInfoWrite++;
     }
 
-    bool isValidPathUncached(const StorePath & storePath, std::optional<FullContentAddress> ca) override
+    bool isValidPathUncached(StorePathOrFullCA storePathOrCA) override
     {
+        auto storePath = this->bakeCaIfNeeded(storePathOrCA);
+        auto ca = std::get_if<1>(&storePathOrCA);
+
         if (ca) {
             auto cid = getCidFromCA(*ca);
             if (cid && ipfsBlockStat("/ipfs/" + *cid))
@@ -720,10 +723,11 @@ public:
         stats.narReadBytes += narSize;
     }
 
-    void queryPathInfoUncached(const StorePath & storePath,
-        Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<FullContentAddress> ca) noexcept
+    void queryPathInfoUncached(StorePathOrFullCA storePathOrCa,
+        Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override
     {
         // TODO: properly use callbacks
+        auto storePath = bakeCaIfNeeded(storePathOrCa);
 
         auto callbackPtr = std::make_shared<decltype(callback)>(std::move(callback));
 
@@ -733,12 +737,16 @@ public:
             fmt("querying info about '%s' on '%s'", storePathS, uri), Logger::Fields{storePathS, uri});
         PushActivity pact(act->id);
 
-        if (ca) {
+
+        if (auto ca = std::get_if<1>(&storePathOrCa)) {
             auto cid = getCidFromCA(*ca);
             if (cid) {
                 auto size = ipfsBlockStat("/ipfs/" + *cid);
                 if (size) {
-                    NarInfo narInfo { *this, FullContentAddress { *ca } };
+                    NarInfo narInfo {
+                        *this,
+                        FullContentAddress { (FullContentAddress &) *ca }
+                    };
                     assert(narInfo.path == storePath);
                     narInfo.url = "ipfs://" + *cid;
                     (*callbackPtr)((std::shared_ptr<ValidPathInfo>)

@@ -321,7 +321,7 @@ public:
 protected:
 
     virtual void queryPathInfoUncached(StorePathOrFullCA path,
-        Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept;
+        Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept = 0;
 
 public:
 
