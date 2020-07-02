@@ -36,7 +36,7 @@ std::string renderLegacyContentAddress(LegacyContentAddress ca) {
                  + fsh.hash.to_string(Base32, true);
         },
         [](IPFSHash fsh) {
-             return "ipfs:"
+             return "ipfs-git:"
                  + fsh.hash.to_string(Base32, true);
         }
     }, ca);
@@ -74,7 +74,7 @@ LegacyContentAddress parseLegacyContentAddress(std::string_view rawCa) {
                     .hash = Hash(string(hashRaw)),
                 };
             }
-        } else if (prefix == "ipfs") {
+        } else if (prefix == "ipfs-git") {
             Hash hash = Hash(rawCa.substr(prefixSeparator+1, string::npos));
             if (*hash.type != htSHA1)
                 throw Error("the ipfs hash should have type SHA1");
@@ -200,12 +200,8 @@ ContentAddress parseContentAddress(std::string_view rawCa)
             auto ca_ = std::get<IPFSHash>(ca);
             return ContentAddress {
                 .name = name,
-                .info = IPFSInfo {
-                    {.hash = ca_.hash,},
-                    .references = PathReferences<StorePath> {
-                        .references = references,
-                        .hasSelfReference = hasSelfReference,
-                    },
+                .info = IPFSGitTreeReference {
+                    .hash = ca_.hash,
                 },
             };
         } else throw Error("unknown content address type");

@@ -105,11 +105,11 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
                 ContentAddress {
                     .name = std::string { path.name() },
                     .info = ipfsContent ?
-                      std::variant<TextInfo, FixedOutputInfo, IPFSInfo> {IPFSInfo {
+                      ContentAddressWithoutName {IPFSInfo {
                           { .hash = gitHash },
                           std::move(refs),
                       }}
-                    : std::variant<TextInfo, FixedOutputInfo, IPFSInfo> {FixedOutputInfo {
+                    : ContentAddressWithoutName {FixedOutputInfo {
                           {
                               .method = FileIngestionMethod::Recursive,
                               .hash = narHash,
