@@ -10,6 +10,7 @@ enum struct GitMode {
     Directory,
     Executable,
     Regular,
+    Symlink,
 };
 
 void addGitEntry(ParseSink & sink, const Path & path,

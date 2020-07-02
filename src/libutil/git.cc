@@ -80,12 +80,16 @@ void addGitEntry(ParseSink & sink, const Path & path,
         if (perm == 40000)
             throw SysError("file is a file but expected to be a directory '%1%'", entry);
 
-        if (perm == 100755 || perm == 755)
-            sink.createExecutableFile(path + "/" + name);
-        else
-            sink.createRegularFile(path + "/" + name);
+        if (perm == 120000)
+            sink.createSymlink(path + "/" + name, readFile(entry));
+        else {
+            if (perm == 100755 || perm == 755)
+                sink.createExecutableFile(path + "/" + name);
+            else
+                sink.createRegularFile(path + "/" + name);
 
-        sink.copyFile(entry);
+            sink.copyFile(entry);
+        }
     } else if (S_ISDIR(st.st_mode)) {
         if (perm != 40000)
             throw SysError("file is a directory but expected to be a file '%1%'", entry);
@@ -130,7 +134,7 @@ void parseGitInternal(ParseSink & sink, Source & source, const Path & path,
             left -= 1;
 
             int perm = std::stoi(perms);
-            if (perm != 100644 && perm != 100755 && perm != 644 && perm != 755 && perm != 40000)
+            if (perm != 100644 && perm != 100755 && perm != 644 && perm != 755 && perm != 40000 && perm != 120000)
               throw Error("Unknown Git permission: %d", perm);
 
             string name = getStringUntil(source, 0);
@@ -151,14 +155,24 @@ void parseGitInternal(ParseSink & sink, Source & source, const Path & path,
 // TODO stream file into sink, rather than reading into vector
 GitMode dumpGitBlob(const Path & path, const struct stat st, Sink & sink)
 {
-    auto s = fmt("blob %d\0%s"s, std::to_string(st.st_size), readFile(path));
+    std::string data;
+    if (S_ISLNK(st.st_mode))
+        data = readLink(path);
+    else
+        data = readFile(path);
+
+    auto s = fmt("blob %d\0%s"s, std::to_string(st.st_size), data);
 
     vector<uint8_t> v;
     std::copy(s.begin(), s.end(), std::back_inserter(v));
     sink(v.data(), v.size());
-    return st.st_mode & S_IXUSR
-        ? GitMode::Executable
-        : GitMode::Regular;
+
+    if (S_ISLNK(st.st_mode))
+        return GitMode::Symlink;
+    else if (st.st_mode & S_IXUSR)
+        return GitMode::Executable;
+    else
+        return GitMode::Regular;
 }
 
 GitMode dumpGitTree(const GitTree & entries, Sink & sink)
@@ -171,6 +185,7 @@ GitMode dumpGitTree(const GitTree & entries, Sink & sink)
         case GitMode::Directory: mode = 40000; break;
         case GitMode::Executable: mode = 100755; break;
         case GitMode::Regular: mode = 100644; break;
+        case GitMode::Symlink: mode = 120000; break;
         }
         auto name = i.first;
         if (i.second.first == GitMode::Directory)
@@ -199,7 +214,7 @@ GitMode dumpGitWithCustomHash(std::function<std::unique_ptr<AbstractHashSink>(vo
     if (lstat(path.c_str(), &st))
         throw SysError("getting attributes of path '%1%'", path);
 
-    if (S_ISREG(st.st_mode))
+    if (S_ISREG(st.st_mode) || S_ISLNK(st.st_mode))
         perm = dumpGitBlob(path, st, sink);
     else if (S_ISDIR(st.st_mode)) {
         GitTree entries;

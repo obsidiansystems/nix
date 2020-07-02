@@ -216,7 +216,7 @@ fi
 
 # Try copying content addressable stuff
 
-body=$(nix-build ipfs-dependencies.nix --no-out-link)
+body=$(nix-build dependencies.nix --no-out-link)
 nix --experimental-features 'nix-command ca-references' make-content-addressable --ipfs --json -r $body
 rewrite=$(nix --experimental-features 'nix-command ca-references' make-content-addressable --ipfs --json -r $body | jq -r ".rewrites[\"$body\"]")
 
