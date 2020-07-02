@@ -4700,13 +4700,13 @@ GoalPtr Worker::makeSubstitutionGoal(StorePathOrFullCA path, RepairFlag repair)
     auto p = store.bakeCaIfNeeded(path);
     GoalPtr goal = substitutionGoals[p].lock(); // FIXME
     if (!goal) {
-        auto optCA = std::get_if<1>(path);
+        auto optCA = std::get_if<1>(&path);
         goal = std::make_shared<SubstitutionGoal>(
             p,
             *this,
             repair,
             optCA ? std::optional { *optCA } : std::nullopt);
-        substitutionGoals.insert_or_assign(path, goal);
+        substitutionGoals.insert_or_assign(p, goal);
         wakeUp(goal);
     }
     return goal;
@@ -5147,12 +5147,13 @@ BuildResult LocalStore::buildDerivation(const StorePath & drvPath, const BasicDe
 void LocalStore::ensurePath(StorePathOrFullCA path)
 {
     /* If the path is already valid, we're done. */
-    if (isValidPath(path, ca)) return;
+    auto p = this->bakeCaIfNeeded(path);
+    if (isValidPath(p)) return;
 
     // primeCache(*this, {{path}});
 
     Worker worker(*this);
-    GoalPtr goal = worker.makeSubstitutionGoal(path, NoRepair);
+    GoalPtr goal = worker.makeSubstitutionGoal(p, NoRepair);
     Goals goals = {goal};
 
     worker.run(goals);
@@ -5162,7 +5163,7 @@ void LocalStore::ensurePath(StorePathOrFullCA path)
             goal->ex->status = worker.exitStatus();
             throw *goal->ex;
         } else
-            throw Error(worker.exitStatus(), "path '%s' does not exist and cannot be created", printStorePath(path));
+            throw Error(worker.exitStatus(), "path '%s' does not exist and cannot be created", printStorePath(p));
     }
 }
 

@@ -679,9 +679,9 @@ public:
         return json["nar"].contains(storePath.to_string());
     }
 
-    void narFromPath(const StorePath & storePath, Sink & sink, std::optional<FullContentAddress> ca) override
+    void narFromPath(StorePathOrFullCA storePathOrCA, Sink & sink) override
     {
-        auto info = queryPathInfo(storePath, ca).cast<const NarInfo>();
+        auto info = queryPathInfo(storePathOrCA).cast<const NarInfo>();
 
         uint64_t narSize = 0;
 
@@ -721,7 +721,7 @@ public:
     }
 
     void queryPathInfoUncached(const StorePath & storePath,
-        Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<FullContentAddress> ca) noexcept override
+        Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<FullContentAddress> ca) noexcept
     {
         // TODO: properly use callbacks
 
@@ -909,7 +909,7 @@ public:
         BuildMode buildMode) override
     { unsupported("buildDerivation"); }
 
-    void ensurePath(const StorePath & path, std::optional<FullContentAddress> ca) override
+    void ensurePath(StorePathOrFullCA ca) override
     { unsupported("ensurePath"); }
 
     std::optional<StorePath> queryPathFromHashPart(const std::string & hashPart) override
