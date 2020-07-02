@@ -7,6 +7,7 @@
 #include "json.hh"
 #include "derivations.hh"
 #include "url.hh"
+#include "references.hh"
 
 #include <future>
 
@@ -639,7 +640,15 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
         StringSink sink;
         srcStore->narFromPath({storePath}, sink, ca);
         auto info2 = make_ref<ValidPathInfo>(*info);
-        info2->narHash = hashString(htSHA256, *sink.s);
+
+        std::unique_ptr<AbstractHashSink> hashSink;
+        if (!info->ca || !info->hasSelfReference)
+            hashSink = std::make_unique<HashSink>(htSHA256);
+        else
+            hashSink = std::make_unique<HashModuloSink>(htSHA256, std::string(info->path.hashPart()));
+        (*hashSink)((unsigned char *) sink.s->data(), sink.s->size());
+        info2->narHash = hashSink->finish().first;
+
         if (!info->narSize) info2->narSize = sink.s->size();
         if (info->ultimate) info2->ultimate = false;
         info = info2;
