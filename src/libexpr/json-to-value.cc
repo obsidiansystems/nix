@@ -91,6 +91,11 @@ public:
         return handle_value(mkNull);
     }
 
+    bool binary(binary_t& val)
+    {
+        // no-op
+    }
+
     bool boolean(bool val)
     {
         return handle_value(mkBool, val);
