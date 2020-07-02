@@ -861,8 +861,7 @@ void LocalStore::querySubstitutablePathInfos(const StorePathSet & paths, const s
             auto narInfo = std::dynamic_pointer_cast<const NarInfo>(
                 std::shared_ptr<const ValidPathInfo>(info));
             infos.insert_or_assign(localPath, SubstitutablePathInfo {
-                info->references,
-                info->hasSelfReference,
+                { *info },
                 info->deriver,
                 narInfo ? narInfo->fileSize : 0,
                 info->narSize,
@@ -1068,8 +1067,10 @@ StorePath LocalStore::addToStoreFromDump(const string & dump, const string & nam
     }
 
     auto dstPath = makeFixedOutputPath(name, FixedOutputInfo {
-        method,
-        h,
+        {
+            .method = method,
+            .hash = h,
+        },
         {},
     });
 
@@ -1159,7 +1160,10 @@ StorePath LocalStore::addTextToStore(const string & name, const string & s,
     const StorePathSet & references, RepairFlag repair)
 {
     auto hash = hashString(htSHA256, s);
-    auto dstPath = makeTextPath(name, TextInfo { hash, references });
+    auto dstPath = makeTextPath(name, TextInfo {
+        { .hash = hash },
+        references,
+    });
 
     addTempRoot(dstPath);
 

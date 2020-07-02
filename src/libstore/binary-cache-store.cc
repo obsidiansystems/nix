@@ -354,8 +354,10 @@ StorePath BinaryCacheStore::addToStore(const string & name, const Path & srcPath
     }
 
     ValidPathInfo info(makeFixedOutputPath(name, FixedOutputInfo {
-        method,
-        h,
+        {
+            .method = method,
+            .hash = h,
+        },
         {},
     }));
 

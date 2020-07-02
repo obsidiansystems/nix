@@ -209,8 +209,10 @@ static void opPrintFixedPath(Strings opFlags, Strings opArgs)
     string name = *i++;
 
     cout << fmt("%s\n", store->printStorePath(store->makeFixedOutputPath(name, FixedOutputInfo {
-        method,
-        Hash { hash, hashAlgo },
+        {
+            .method = method,
+            .hash = Hash { hash, hashAlgo },
+        },
         {},
     })));
 }
