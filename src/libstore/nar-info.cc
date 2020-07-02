@@ -67,7 +67,7 @@ NarInfo::NarInfo(const Store & store, const std::string & s, const std::string &
         else if (name == "Sig")
             sigs.insert(value);
         else if (name == "CA") {
-            if (!value.empty()) throw corrupt();
+            if (ca) throw corrupt();
             // FIXME: allow blank ca or require skipping field?
             ca = parseLegacyContentAddressOpt(value);
         }
