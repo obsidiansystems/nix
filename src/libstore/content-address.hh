@@ -30,9 +30,17 @@ struct FixedOutputHash {
     std::string printMethodAlgo() const;
 };
 
+// Deref is a phantom parameter that just signifies what the hash should
+// dereference too.
+template<typename Deref>
 struct IPFSHash {
     Hash hash;
 };
+
+template<template <typename> class Ref>
+struct IPFSGitTreeNodeT;
+
+typedef IPFSHash<IPFSGitTreeNodeT<IPFSHash>> IPFSGitTreeReference;
 
 /*
   We've accumulated several types of content-addressed paths over the years;
@@ -48,7 +56,7 @@ struct IPFSHash {
 typedef std::variant<
     TextHash, // for paths computed by makeTextPath() / addTextToStore
     FixedOutputHash, // for path computed by makeFixedOutputPath
-    IPFSHash
+    IPFSGitTreeReference
 > LegacyContentAddress;
 
 /* Compute the prefix to the hash algorithm which indicates how the files were
@@ -133,24 +141,37 @@ struct FixedOutputInfo : FixedOutputHash {
     PathReferences<StorePath> references;
 };
 
-struct IPFSInfo : IPFSHash {
+template<typename Underlying>
+struct ContentAddressT;
+
+template<template <typename> class Ref>
+struct IPFSGitTreeNodeT {
+	Hash gitTree;
     // References for the paths
-    PathReferences<StorePath> references;
+    PathReferences<ContentAddressT<Ref<IPFSGitTreeNodeT<Ref>>>> references;
 };
 
-struct ContentAddress {
-    std::string name;
-    std::variant<
-        TextInfo,
-        FixedOutputInfo,
-        IPFSInfo
-    > info;
+typedef IPFSGitTreeNodeT<IPFSHash> IPFSGitTreeNode;
 
-    bool operator < (const ContentAddress & other) const
+// FIXME names
+typedef std::variant<
+    TextInfo,
+    FixedOutputInfo,
+    IPFSGitTreeReference
+> ContentAddressWithoutName;
+
+template<typename Underlying>
+struct ContentAddressT {
+    std::string name;
+    Underlying info;
+
+    bool operator < (const ContentAddressT<Underlying> & other) const
     {
         return name < other.name;
     }
 };
+
+typedef ContentAddressT<ContentAddressWithoutName> ContentAddress;
 
 std::string renderContentAddress(ContentAddress ca);
 
