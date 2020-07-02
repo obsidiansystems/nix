@@ -634,11 +634,11 @@ private:
         int perm, std::string name, Hash hash, std::string hashPart)
     {
         auto source = getGitObject("/ipfs/f01781114" + hash.to_string(Base16, false), hashPart);
-        parseGitInternal(sink, *source, path + "/" + name, realStoreDir, storeDir,
+        parseGitWithPath(sink, *source, path + "/" + name, realStoreDir, storeDir,
             [hashPart, this] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
                 int perm, std::string name, Hash hash) {
                 getGitEntry(sink, path, realStoreDir, storeDir, perm, name, hash, hashPart);
-            });
+            }, perm);
     }
 
 

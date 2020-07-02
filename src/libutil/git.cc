@@ -33,7 +33,7 @@ void restoreGit(const Path & path, Source & source, const Path & realStoreDir, c
 void parseGit(ParseSink & sink, Source & source, const Path & realStoreDir, const Path & storeDir,
     std::function<void (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir, int perm, std::string name, Hash hash)> addEntry)
 {
-    parseGitInternal(sink, source, "", realStoreDir, storeDir, addEntry);
+    parseGitWithPath(sink, source, "", realStoreDir, storeDir, addEntry);
 }
 
 static string getStringUntil(Source & source, char byte)
@@ -98,29 +98,40 @@ void addGitEntry(ParseSink & sink, const Path & path,
     } else throw Error("file '%1%' has an unsupported type", entry);
 }
 
-void parseGitInternal(ParseSink & sink, Source & source, const Path & path,
+void parseGitWithPath(ParseSink & sink, Source & source, const Path & path,
     const Path & realStoreDir, const Path & storeDir,
-    std::function<void (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir, int perm, std::string name, Hash hash)> addEntry)
+    std::function<void (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir, int perm, std::string name, Hash hash)> addEntry, int perm)
 {
     auto type = getString(source, 5);
 
     if (type == "blob ") {
-        sink.createRegularFile(path);
+        if (perm == 120000) {
+            unsigned long long size = std::stoi(getStringUntil(source, 0));
+            assert(size < 4096);
+            std::vector<unsigned char> target(size);
+            source(target.data(), size);
+            sink.createSymlink(path, std::string(target.begin(), target.end()));
+        } else {
+            if (perm == 100755 || perm == 755)
+                sink.createExecutableFile(path);
+            else
+                sink.createRegularFile(path);
 
-        unsigned long long size = std::stoi(getStringUntil(source, 0));
+            unsigned long long size = std::stoi(getStringUntil(source, 0));
 
-        sink.preallocateContents(size);
+            sink.preallocateContents(size);
 
-        unsigned long long left = size;
-        std::vector<unsigned char> buf(65536);
+            unsigned long long left = size;
+            std::vector<unsigned char> buf(65536);
 
-        while (left) {
-            checkInterrupt();
-            auto n = buf.size();
-            if ((unsigned long long)n > left) n = left;
-            source(buf.data(), n);
-            sink.receiveContents(buf.data(), n);
-            left -= n;
+            while (left) {
+                checkInterrupt();
+                auto n = buf.size();
+                if ((unsigned long long)n > left) n = left;
+                source(buf.data(), n);
+                sink.receiveContents(buf.data(), n);
+                left -= n;
+            }
         }
     } else if (type == "tree ") {
         unsigned long long size = std::stoi(getStringUntil(source, 0));
