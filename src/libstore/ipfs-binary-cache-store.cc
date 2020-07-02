@@ -459,7 +459,7 @@ private:
     void writeNarInfo(ref<NarInfo> narInfo)
     {
         auto json = nlohmann::json::object();
-        json["narHash"] = narInfo->narHash.to_string(Base32, true);
+        json["narHash"] = narInfo->narHash->to_string(Base32, true);
         json["narSize"] = narInfo->narSize;
 
         auto narMap = getIpfsDag(getIpfsPath())["nar"];
@@ -491,7 +491,7 @@ private:
         }
 
         if (narInfo->fileHash)
-            json["downloadHash"] = narInfo->fileHash.to_string(Base32, true);
+            json["downloadHash"] = narInfo->fileHash->to_string(Base32, true);
 
         json["downloadSize"] = narInfo->fileSize;
         json["compression"] = narInfo->compression;
@@ -762,7 +762,7 @@ public:
         json = getIpfsDag("/ipfs/" + narObjectHash);
 
         NarInfo narInfo { storePath };
-        narInfo.narHash = Hash((std::string) json["narHash"]);
+        narInfo.narHash = Hash::parseAnyPrefixed((std::string) json["narHash"]);
         narInfo.narSize = json["narSize"];
 
         for (auto & ref : json["references"].items())
@@ -791,7 +791,7 @@ public:
             narInfo.url = "ipfs://" + json["ipfsCid"]["/"].get<std::string>();
 
         if (json.find("downloadHash") != json.end())
-            narInfo.fileHash = Hash((std::string) json["downloadHash"]);
+            narInfo.fileHash = Hash::parseAnyPrefixed((std::string) json["downloadHash"]);
 
         if (json.find("downloadSize") != json.end())
             narInfo.fileSize = json["downloadSize"];
@@ -815,7 +815,7 @@ public:
            method for very large paths, but `copyPath' is mainly used for
            small files. */
         StringSink sink;
-        Hash h;
+        Hash h { htSHA256 }; // dummy initial value
         switch (method) {
         case FileIngestionMethod::Recursive:
             dumpPath(srcPath, sink, filter);
@@ -839,9 +839,11 @@ public:
             ContentAddress {
                 .name = name,
                 .info = FixedOutputInfo {
-                    method,
-                    h,
-					{},
+                    {
+                        .method = method,
+                        .hash = h,
+                    },
+                    {},
                 },
             },
         };

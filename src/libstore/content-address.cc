@@ -1,11 +1,13 @@
 #include <nlohmann/json.hpp>
 
+#include "args.hh"
 #include "content-address.hh"
+#include "parser.hh"
 
 namespace nix {
 
 std::string FixedOutputHash::printMethodAlgo() const {
-    return makeFileIngestionPrefix(method) + printHashType(*hash.type);
+    return makeFileIngestionPrefix(method) + printHashType(hash.type);
 }
 
 std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
@@ -39,43 +41,51 @@ std::string renderLegacyContentAddress(LegacyContentAddress ca) {
 }
 
 LegacyContentAddress parseLegacyContentAddress(std::string_view rawCa) {
-    auto prefixSeparator = rawCa.find(':');
-    if (prefixSeparator != string::npos) {
-        auto prefix = string(rawCa, 0, prefixSeparator);
-        if (prefix == "text") {
-            auto hashTypeAndHash = rawCa.substr(prefixSeparator+1, string::npos);
-            Hash hash = Hash(string(hashTypeAndHash));
-            if (*hash.type != htSHA256) {
-                throw Error("parseLegacyContentAddress: the text hash should have type SHA256");
-            }
-            return TextHash { hash };
-        } else if (prefix == "fixed") {
-            auto methodAndHash = rawCa.substr(prefixSeparator+1, string::npos);
-            if (methodAndHash.substr(0, 2) == "r:") {
-                std::string_view hashRaw = methodAndHash.substr(2, string::npos);
-                return FixedOutputHash {
-                    .method = FileIngestionMethod::Recursive,
-                    .hash = Hash(string(hashRaw)),
-                };
-            } else if (methodAndHash.substr(0, 4) == "git:") {
-                std::string_view hashRaw = methodAndHash.substr(4, string::npos);
-                return FixedOutputHash {
-                    .method = FileIngestionMethod::Git,
-                    .hash = Hash(string(hashRaw)),
-                };
-            } else {
-                std::string_view hashRaw = methodAndHash;
-                return FixedOutputHash {
-                    .method = FileIngestionMethod::Flat,
-                    .hash = Hash(string(hashRaw)),
-                };
-            }
-        } else {
-            throw Error("parseLegacyContentAddress: format not recognized; has to be text or fixed");
-        }
-    } else {
-        throw Error("Not a content address because it lacks an appropriate prefix");
+    auto rest = rawCa;
+
+    std::string_view prefix;
+    {
+        auto optPrefix = splitPrefix(rest, ':');
+        if (!optPrefix)
+            throw UsageError("not a content address because it is not in the form \"<prefix>:<rest>\": %s", rawCa);
+        prefix = *optPrefix;
     }
+
+    auto parseHashType_ = [&](){
+        auto hashTypeRaw = splitPrefix(rest, ':');
+        if (!hashTypeRaw)
+            throw UsageError("content address hash must be in form \"<algo>:<hash>\", but found: %s", rawCa);
+        HashType hashType = parseHashType(*hashTypeRaw);
+        return std::move(hashType);
+    };
+
+    // Switch on prefix
+    if (prefix == "text") {
+        // No parsing of the method, "text" only support flat.
+        HashType hashType = parseHashType_();
+        if (hashType != htSHA256)
+            throw Error("text content address hash should use %s, but instead uses %s",
+                printHashType(htSHA256), printHashType(hashType));
+        return TextHash {
+            .hash = Hash::parseNonSRIUnprefixed(rest, std::move(hashType)),
+        };
+    } else if (prefix == "fixed") {
+        // Parse method
+        auto method = FileIngestionMethod::Flat;
+        if (hasPrefix(rest, "r:")) {
+            method = FileIngestionMethod::Recursive;
+            rest.remove_prefix(sizeof("r:") - 1);
+        } else if (hasPrefix(rest, "git:")) {
+            method = FileIngestionMethod::Git;
+            rest.remove_prefix(sizeof("git:") - 1);
+        }
+        HashType hashType = parseHashType_();
+        return FixedOutputHash {
+            .method = method,
+            .hash = Hash::parseNonSRIUnprefixed(rest, std::move(hashType)),
+        };
+    } else
+        throw UsageError("content address prefix \"%s\" is unrecognized. Recogonized prefixes are \"text\" or \"fixed\"", prefix);
 };
 
 std::optional<LegacyContentAddress> parseLegacyContentAddressOpt(std::string_view rawCaOpt) {
@@ -99,7 +109,7 @@ void to_json(nlohmann::json& j, const LegacyContentAddress & ca) {
             return nlohmann::json {
                 { "type", "fixed" },
                 { "method", foh.method == FileIngestionMethod::Flat ? "flat" : "recursive" },
-                { "algo", printHashType(*foh.hash.type) },
+                { "algo", printHashType(foh.hash.type) },
                 { "hash", foh.hash.to_string(Base32, false) },
             };
         }
@@ -110,7 +120,7 @@ void from_json(const nlohmann::json& j, LegacyContentAddress & ca) {
     std::string_view type = j.at("type").get<std::string_view>();
     if (type == "text") {
         ca = TextHash {
-            .hash = Hash { j.at("hash").get<std::string_view>(), htSHA256 },
+            .hash = Hash::parseNonSRIUnprefixed(j.at("hash").get<std::string_view>(), htSHA256),
         };
     } else if (type == "fixed") {
         std::string_view methodRaw = j.at("method").get<std::string_view>();
@@ -120,7 +130,7 @@ void from_json(const nlohmann::json& j, LegacyContentAddress & ca) {
         auto hashAlgo = parseHashType(j.at("algo").get<std::string>());
         ca = FixedOutputHash {
             .method = method,
-            .hash = Hash { j.at("hash").get<std::string_view>(), hashAlgo },
+            .hash = Hash::parseNonSRIUnprefixed(j.at("hash").get<std::string_view>(), hashAlgo),
         };
     } else
         throw Error("invalid type: %s", type);
@@ -139,7 +149,9 @@ void from_json(const nlohmann::json& j, std::optional<LegacyContentAddress> & c)
     if (j.is_null())
         c = std::nullopt;
     else
-        c = j.get<LegacyContentAddress>();
+        // Dummy value to set tag bit.
+        c = TextHash { .hash = Hash { htSHA256 } };
+        from_json(j, *c);
 }
 
 }

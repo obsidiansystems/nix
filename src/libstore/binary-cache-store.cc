@@ -180,7 +180,7 @@ void BinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSource
         ((1.0 - (double) narCompressed->size() / nar->size()) * 100.0),
         duration);
 
-    narInfo->url = "nar/" + narInfo->fileHash.to_string(Base32, false) + ".nar"
+    narInfo->url = "nar/" + narInfo->fileHash->to_string(Base32, false) + ".nar"
         + (compression == "xz" ? ".xz" :
            compression == "bzip2" ? ".bz2" :
            compression == "br" ? ".br" :
@@ -337,7 +337,7 @@ StorePath BinaryCacheStore::addToStore(const string & name, const Path & srcPath
        method for very large paths, but `copyPath' is mainly used for
        small files. */
     StringSink sink;
-    Hash h;
+    std::optional<Hash> h;
     switch (method) {
     case FileIngestionMethod::Recursive:
         dumpPath(srcPath, sink, filter);
@@ -356,7 +356,7 @@ StorePath BinaryCacheStore::addToStore(const string & name, const Path & srcPath
     ValidPathInfo info(makeFixedOutputPath(name, FixedOutputInfo {
         {
             .method = method,
-            .hash = h,
+            .hash = *h,
         },
         {},
     }));

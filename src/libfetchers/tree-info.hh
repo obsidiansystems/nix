@@ -12,7 +12,7 @@ namespace nix::fetchers {
 
 struct TreeInfo
 {
-    Hash narHash;
+    std::optional<Hash> narHash;
 
     std::optional<ContentAddress> ca;
 
