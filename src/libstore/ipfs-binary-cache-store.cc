@@ -545,7 +545,7 @@ private:
     // cid-version = 01
     // codec = 78 (git codec) / 71 (dag codec)
     // multicodec-packed-content-type = 1114
-    std::optional<std::string> getCidFromCA(ContentAddress ca, StorePath path)
+    std::optional<std::string> getCidFromCA(ContentAddress ca)
     {
         if (std::holds_alternative<FixedOutputInfo>(ca.info)) {
             auto ca_ = std::get<FixedOutputInfo>(ca.info);
@@ -554,6 +554,7 @@ private:
                 return "f01781114" + ca_.hash.to_string(Base16, false);
             }
         } else if (std::holds_alternative<IPFSInfo>(ca.info)) {
+            auto path = makeFixedOutputPathFromCA(ca);
             Hash hash(path.hashPart(), htSHA1);
             return "f01711114" + hash.to_string(Base16, false);
         }
@@ -668,15 +669,8 @@ public:
                 return;
             }
         } else if (info.ca && std::holds_alternative<IPFSHash>(*info.ca)) {
-            auto ca_ = std::get<IPFSHash>(*info.ca);
-            auto fullCa = ContentAddress {
-                .name = std::string(info.path.name()),
-                .info = IPFSInfo {
-                    ca_.hash,
-                    info
-                }
-            };
-            auto cid = getCidFromCA(fullCa, info.path);
+            auto fullCa = *info.fullContentAddressOpt();
+            auto cid = getCidFromCA(fullCa);
 
             auto cid_ = ipfsCidFormat(std::string(putIpfsDag(fullCa, "sha1"), 6), "base16");
             assert(cid_ == cid);
@@ -689,7 +683,7 @@ public:
             assert(std::string(key, 0, 9) == "f01781114");
 
             Hash hash_(std::string(key, 9), htSHA1);
-            assert(hash_ == ca_.hash);
+            assert(hash_ == std::get<IPFSHash>(*info.ca).hash);
 
             return;
         }
@@ -754,7 +748,7 @@ public:
     bool isValidPathUncached(const StorePath & storePath, std::optional<ContentAddress> ca) override
     {
         if (ca) {
-            auto cid = getCidFromCA(*ca, storePath);
+            auto cid = getCidFromCA(*ca);
             if (cid && ipfsBlockStat("/ipfs/" + *cid))
                 return true;
         }
@@ -821,7 +815,7 @@ public:
         PushActivity pact(act->id);
 
         if (ca) {
-            auto cid = getCidFromCA(*ca, storePath);
+            auto cid = getCidFromCA(*ca);
             if (cid && ipfsBlockStat("/ipfs/" + *cid)) {
                 std::string url("ipfs://" + *cid);
                 if (hasPrefix(*cid, "f01711114")) {
