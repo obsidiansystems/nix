@@ -353,13 +353,13 @@ StorePath BinaryCacheStore::addToStore(const string & name, const Path & srcPath
         throw Error("cannot add to binary cache store using the git file ingestion method");
     }
 
-    ValidPathInfo info{*this, ContentAddress {
-        .name = name,
-        .info = FixedOutputInfo {
-            method,
-            h,
-            {},
-        }}};
+    ValidPathInfo info(makeFixedOutputPath(name, FixedOutputInfo {
+        {
+            .method = method,
+            .hash = h,
+        },
+        {},
+    }));
 
     auto source = StringSource { *sink.s };
     addToStore(info, source, repair, CheckSigs, nullptr);

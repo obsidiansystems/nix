@@ -84,8 +84,10 @@ struct CmdAddToStore : MixDryRun, StoreCommand
             ContentAddress {
                 .name = *namePart,
                 .info = FixedOutputInfo {
-                    std::move(ingestionMethod),
-                    std::move(hash),
+                    {
+                        .method = std::move(ingestionMethod),
+                        .hash = std::move(hash),
+                    },
                     {},
                 },
             },
