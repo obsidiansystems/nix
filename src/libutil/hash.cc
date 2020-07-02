@@ -137,12 +137,33 @@ Hash Hash::parseSRI(std::string_view original) {
     auto rest = original;
 
     // Parse the has type before the separater, if there was one.
-    auto hashRaw = splitPrefix(rest, '-');
+    auto hashRaw = splitPrefixTo(rest, '-');
     if (!hashRaw)
         throw BadHash("hash '%s' is not SRI", original);
     HashType parsedType = parseHashType(*hashRaw);
 
     return Hash(rest, parsedType, true);
+}
+
+// Mutates the string to eliminate the prefixes when found
+static std::pair<std::optional<HashType>, bool> getParsedTypeAndSRI(std::string_view & rest) {
+    bool isSRI = false;
+
+    // Parse the has type before the separater, if there was one.
+    std::optional<HashType> optParsedType;
+    {
+        auto hashRaw = splitPrefixTo(rest, ':');
+
+        if (!hashRaw) {
+            hashRaw = splitPrefixTo(rest, '-');
+            if (hashRaw)
+                isSRI = true;
+        }
+        if (hashRaw)
+            optParsedType = parseHashType(*hashRaw);
+    }
+
+    return {optParsedType, isSRI};
 }
 
 Hash Hash::parseAnyPrefixed(std::string_view original)
