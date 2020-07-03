@@ -479,7 +479,7 @@ private:
     void writeNarInfo(ref<NarInfo> narInfo)
     {
         auto json = nlohmann::json::object();
-        json["narHash"] = narInfo->narHash.to_string(Base32, true);
+        json["narHash"] = narInfo->narHash->to_string(Base32, true);
         json["narSize"] = narInfo->narSize;
 
         auto narMap = getIpfsDag(getIpfsPath())["nar"];
@@ -510,7 +510,7 @@ private:
         }
 
         if (narInfo->fileHash)
-            json["downloadHash"] = narInfo->fileHash.to_string(Base32, true);
+            json["downloadHash"] = narInfo->fileHash->to_string(Base32, true);
 
         json["downloadSize"] = narInfo->fileSize;
         json["compression"] = narInfo->compression;
@@ -555,7 +555,7 @@ private:
             }
         } else if (std::holds_alternative<IPFSInfo>(ca.info)) {
             auto path = makeFixedOutputPathFromCA(ca);
-            Hash hash(path.hashPart(), htSHA1);
+            auto hash = Hash::parseAny(path.hashPart(), htSHA1);
             return "f01711114" + hash.to_string(Base16, false);
         }
 
@@ -610,7 +610,7 @@ private:
             // unrewrite modulus
             std::string offset;
             std::string result = *sink2.s;
-            int i = result.size() - 1;
+            size_t i = result.size() - 1;
             for (; i > 0; i--) {
                 char c = result.data()[i];
                 if (!(c >= '0' && c <= '9') && c != '|')
@@ -663,7 +663,7 @@ public:
                 auto key = ipfsCidFormat(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())), "base16");
                 assert(std::string(key, 0, 9) == "f01781114");
 
-                Hash hash(std::string(key, 9), htSHA1);
+                auto hash = Hash::parseAny(std::string(key, 9), htSHA1);
                 assert(hash == ca_.hash);
 
                 return;
@@ -682,7 +682,7 @@ public:
             auto key = ipfsCidFormat(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())), "base16");
             assert(std::string(key, 0, 9) == "f01781114");
 
-            Hash hash_(std::string(key, 9), htSHA1);
+            auto hash_ = Hash::parseAny(std::string(key, 9), htSHA1);
             assert(hash_ == std::get<IPFSHash>(*info.ca).hash);
 
             return;
@@ -820,7 +820,12 @@ public:
                 std::string url("ipfs://" + *cid);
                 if (hasPrefix(*cid, "f01711114")) {
                     auto json = getIpfsDag("/ipfs/" + *cid);
-                    ca = json;
+                    // Dummy value to set tag bit.
+                    ca = ContentAddress {
+                        .name = "t e m p",
+                        TextInfo { { .hash = Hash { htSHA256 } } },
+                    };
+                    from_json(json, *ca);
                     url = "ipfs://" + (std::string) json["cid"];
                 }
                 NarInfo narInfo { *this, ContentAddress { *ca } };
@@ -846,7 +851,7 @@ public:
         json = getIpfsDag("/ipfs/" + narObjectHash);
 
         NarInfo narInfo { storePath };
-        narInfo.narHash = Hash((std::string) json["narHash"]);
+        narInfo.narHash = Hash::parseAnyPrefixed((std::string) json["narHash"]);
         narInfo.narSize = json["narSize"];
 
         for (auto & ref : json["references"].items())
@@ -872,7 +877,7 @@ public:
             narInfo.url = "ipfs://" + json["ipfsCid"]["/"].get<std::string>();
 
         if (json.find("downloadHash") != json.end())
-            narInfo.fileHash = Hash((std::string) json["downloadHash"]);
+            narInfo.fileHash = Hash::parseAnyPrefixed((std::string) json["downloadHash"]);
 
         if (json.find("downloadSize") != json.end())
             narInfo.fileSize = json["downloadSize"];
@@ -896,7 +901,7 @@ public:
            method for very large paths, but `copyPath' is mainly used for
            small files. */
         StringSink sink;
-        Hash h;
+        Hash h { htSHA256 }; // dummy initial value
         switch (method) {
         case FileIngestionMethod::Recursive:
             dumpPath(srcPath, sink, filter);
@@ -920,9 +925,11 @@ public:
             ContentAddress {
                 .name = name,
                 .info = FixedOutputInfo {
-                    method,
-                    h,
-					{},
+                    {
+                        .method = method,
+                        .hash = h,
+                    },
+                    {},
                 },
             },
         };
