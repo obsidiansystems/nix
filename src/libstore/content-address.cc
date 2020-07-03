@@ -280,7 +280,7 @@ void to_json(nlohmann::json& j, const ContentAddress & ca)
             { "qtype", "ipfs" },
             { "name", ca.name },
             { "references", info.references },
-            { "cid", "f01781114" + info.hash.to_string(Base16, false) }
+            { "cid", nlohmann::json { { "/", "f01781114" + info.hash.to_string(Base16, false) } } }
         };
     } else throw Error("cannot convert to json");
 }
@@ -289,7 +289,7 @@ void from_json(const nlohmann::json& j, ContentAddress & ca)
 {
     std::string_view type = j.at("qtype").get<std::string_view>();
     if (type == "ipfs") {
-        auto cid = j.at("cid").get<std::string_view>();
+        auto cid = j.at("cid").at("/").get<std::string_view>();
         if (cid.substr(0, 9) != "f01781114")
             throw Error("cid '%s' is wrong type for ipfs hash", cid);
         ca = ContentAddress {
@@ -310,7 +310,7 @@ void to_json(nlohmann::json& j, const PathReferences<StorePath> & references)
         auto hash = Hash::parseAny(i.hashPart(), htSHA1);
         refs.push_back(nlohmann::json {
             { "name", i.name() },
-            { "cid", "f01781114" + hash.to_string(Base16, false) }
+            { "cid", nlohmann::json {{ "/", "f01711114" + hash.to_string(Base16, false) }} }
         });
     }
 
@@ -329,8 +329,8 @@ void from_json(const nlohmann::json& j, PathReferences<StorePath> & references)
     StorePathSet refs;
     for (auto & ref : j.at("references")) {
         auto name = ref.at("name").get<std::string>();
-        auto cid = ref.at("cid").get<std::string>();
-        if (cid.substr(0, 9) != "f01781114")
+        auto cid = ref.at("cid").at("/").get<std::string>();
+        if (cid.substr(0, 9) != "f01711114")
             throw Error("cid '%s' is wrong type for ipfs hash", cid);
         auto hash = Hash::parseAny(cid.substr(9), htSHA1);
         refs.insert(StorePath(hash, name));

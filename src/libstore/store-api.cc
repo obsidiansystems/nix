@@ -204,10 +204,31 @@ StorePath Store::makeTextPath(std::string_view name, const TextInfo & info) cons
         name);
 }
 
+static std::vector<uint8_t> packMultihash(std::string cid)
+{
+    std::vector<uint8_t> result;
+    assert(cid[0] == 'f');
+    result.push_back(0x00);
+    result.push_back(std::stoi(cid.substr(1, 2), nullptr, 16));
+    result.push_back(std::stoi(cid.substr(3, 2), nullptr, 16));
+    result.push_back(std::stoi(cid.substr(5, 2), nullptr, 16));
+    result.push_back(std::stoi(cid.substr(7, 2), nullptr, 16));
+    Hash hash(cid.substr(9), htSHA1);
+    for (unsigned int i = 0; i < hash.hashSize; i++)
+        result.push_back(hash.hash[i]);
+    return result;
+}
 
 static StorePath makeIPFSPath(const ContentAddress & info)
 {
     nlohmann::json j = info;
+
+    // replace {"/": ...} with packed multihash
+    // ipfs converts automatically between the two
+    j.at("cid") = nlohmann::json::binary(packMultihash(j.at("cid").at("/").get<std::string>()), 42);
+    for (auto & ref : j.at("references").at("references"))
+        ref.at("cid") = nlohmann::json::binary(packMultihash(ref.at("cid").at("/").get<std::string>()), 42);
+
     std::vector<std::uint8_t> cbor = nlohmann::json::to_cbor(j);
     Hash hash = hashString(htSHA1, std::string(cbor.begin(), cbor.end()));
 

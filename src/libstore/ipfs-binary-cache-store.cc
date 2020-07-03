@@ -779,7 +779,7 @@ public:
         });
 
         // ugh... we have to convert git data to nar.
-        if (hasPrefix(info->url, "ipfs://f01781114")) {
+        if (info->url[7] != 'Q' && hasPrefix(ipfsCidFormatBase16(std::string(info->url, 7)), "f0178")) {
             AutoDelete tmpDir(createTempDir(), true);
             auto source = getGitObject("/ipfs/" + std::string(info->url, 7), std::string(storePath.hashPart()));
             restoreGit((Path) tmpDir + "/tmp", *source, storeDir, storeDir,
@@ -823,15 +823,15 @@ public:
             auto cid = getCidFromCA(*ca);
             if (cid && ipfsBlockStat("/ipfs/" + *cid)) {
                 std::string url("ipfs://" + *cid);
-                if (hasPrefix(*cid, "f01711114")) {
+                if (hasPrefix(ipfsCidFormatBase16(*cid), "f0171")) {
                     auto json = getIpfsDag("/ipfs/" + *cid);
-                    // Dummy value to set tag bit.
-                    ca = ContentAddress {
-                        .name = "t e m p",
-                        TextInfo { { .hash = Hash { htSHA256 } } },
-                    };
-                    from_json(json, *ca);
-                    url = "ipfs://" + (std::string) json["cid"];
+                    url = "ipfs://" + (std::string) json.at("cid").at("/");
+
+                    json.at("cid").at("/") = ipfsCidFormatBase16(json.at("cid").at("/"));
+                    for (auto & ref : json.at("references").at("references"))
+                        ref.at("cid").at("/") = ipfsCidFormatBase16(ref.at("cid").at("/"));
+
+                    ca = json;
                 }
                 NarInfo narInfo { *this, ContentAddress { *ca } };
                 assert(narInfo.path == storePath);
