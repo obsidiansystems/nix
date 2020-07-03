@@ -80,7 +80,7 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
             auto narHash = hashModuloSink.finish().first;
 
             // ugh... we have to convert nar data to git.
-			std::optional<Hash> gitHash;
+            std::optional<Hash> gitHash;
             if (ipfsContent) {
                 AutoDelete tmpDir(createTempDir(), true);
                 StringSource source(*sink.s);

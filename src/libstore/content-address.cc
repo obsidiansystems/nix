@@ -295,7 +295,7 @@ void from_json(const nlohmann::json& j, ContentAddress & ca)
         ca = ContentAddress {
             .name = j.at("name"),
             .info = IPFSInfo {
-				Hash::parseAny(cid.substr(9), htSHA1),
+                Hash::parseAny(cid.substr(9), htSHA1),
                 j.at("references").get<PathReferences<StorePath>>(),
             },
         };
