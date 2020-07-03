@@ -831,7 +831,12 @@ public:
                     for (auto & ref : json.at("references").at("references"))
                         ref.at("cid").at("/") = ipfsCidFormatBase16(ref.at("cid").at("/"));
 
-                    ca = json;
+                    // Dummy value to set tag bit.
+                    ca = ContentAddress {
+                        .name = "t e m p",
+                        TextInfo { { .hash = Hash { htSHA256 } } },
+                    };
+                    from_json(json, *ca);
                 }
                 NarInfo narInfo { *this, ContentAddress { *ca } };
                 assert(narInfo.path == storePath);

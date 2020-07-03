@@ -213,7 +213,7 @@ static std::vector<uint8_t> packMultihash(std::string cid)
     result.push_back(std::stoi(cid.substr(3, 2), nullptr, 16));
     result.push_back(std::stoi(cid.substr(5, 2), nullptr, 16));
     result.push_back(std::stoi(cid.substr(7, 2), nullptr, 16));
-    Hash hash(cid.substr(9), htSHA1);
+    Hash hash = Hash::parseAny(cid.substr(9), htSHA1);
     for (unsigned int i = 0; i < hash.hashSize; i++)
         result.push_back(hash.hash[i]);
     return result;
