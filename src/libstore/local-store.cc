@@ -587,7 +587,7 @@ uint64_t LocalStore::addValidPath(State & state,
 
     state.stmtRegisterValidPath.use()
         (printStorePath(info.path))
-        (info.narHash.to_string(Base16, true))
+        (info.narHash->to_string(Base16, true))
         (info.registrationTime == 0 ? time(0) : info.registrationTime)
         (info.deriver ? printStorePath(*info.deriver) : "", (bool) info.deriver)
         (info.narSize, info.narSize != 0)
@@ -630,7 +630,7 @@ uint64_t LocalStore::addValidPath(State & state,
 }
 
 
-void LocalStore::queryPathInfoUncached(StorePathOrFullCA pathOrCA,
+void LocalStore::queryPathInfoUncached(StorePathOrCA pathOrCA,
     Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept
 {
     auto path = bakeCaIfNeeded(pathOrCA);
@@ -649,7 +649,7 @@ void LocalStore::queryPathInfoUncached(StorePathOrFullCA pathOrCA,
             info->id = useQueryPathInfo.getInt(0);
 
             try {
-                info->narHash = Hash(useQueryPathInfo.getStr(1));
+                info->narHash = Hash::parseAnyPrefixed(useQueryPathInfo.getStr(1));
             } catch (BadHash & e) {
                 throw Error("in valid-path entry for '%s': %s", printStorePath(path), e.what());
             }
@@ -690,7 +690,7 @@ void LocalStore::updatePathInfo(State & state, const ValidPathInfo & info)
 {
     state.stmtUpdatePathInfo.use()
         (info.narSize, info.narSize != 0)
-        (info.narHash.to_string(Base16, true))
+        (info.narHash->to_string(Base16, true))
         (info.ultimate ? 1 : 0, info.ultimate)
         (concatStringsSep(" ", info.sigs), !info.sigs.empty())
         (renderLegacyContentAddress(info.ca), (bool) info.ca)
@@ -714,7 +714,7 @@ bool LocalStore::isValidPath_(State & state, const StorePath & path)
 }
 
 
-bool LocalStore::isValidPathUncached(StorePathOrFullCA pathOrCA)
+bool LocalStore::isValidPathUncached(StorePathOrCA pathOrCA)
 {
     auto path = bakeCaIfNeeded(pathOrCA);
     return retrySQLite<bool>([&]() {
@@ -779,17 +779,20 @@ StorePathSet LocalStore::queryValidDerivers(const StorePath & path)
 }
 
 
-StorePathSet LocalStore::queryDerivationOutputs(const StorePath & path)
+OutputPathMap LocalStore::queryDerivationOutputMap(const StorePath & path)
 {
-    return retrySQLite<StorePathSet>([&]() {
+    return retrySQLite<OutputPathMap>([&]() {
         auto state(_state.lock());
 
         auto useQueryDerivationOutputs(state->stmtQueryDerivationOutputs.use()
             (queryValidPathId(*state, path)));
 
-        StorePathSet outputs;
+        OutputPathMap outputs;
         while (useQueryDerivationOutputs.next())
-            outputs.insert(parseStorePath(useQueryDerivationOutputs.getStr(1)));
+            outputs.emplace(
+                useQueryDerivationOutputs.getStr(0),
+                parseStorePath(useQueryDerivationOutputs.getStr(1))
+            );
 
         return outputs;
     });
@@ -863,8 +866,7 @@ void LocalStore::querySubstitutablePathInfos(const StorePathSet & paths, const s
             auto narInfo = std::dynamic_pointer_cast<const NarInfo>(
                 std::shared_ptr<const ValidPathInfo>(info));
             infos.insert_or_assign(localPath, SubstitutablePathInfo {
-                info->references,
-                info->hasSelfReference,
+                { *info },
                 info->deriver,
                 narInfo ? narInfo->fileSize : 0,
                 info->narSize,
@@ -923,7 +925,7 @@ void LocalStore::registerValidPaths(const ValidPathInfos & infos)
         StorePathSet paths;
 
         for (auto & i : infos) {
-            assert(i.narHash.type == htSHA256);
+            assert(i.narHash && i.narHash->type == htSHA256);
             if (isValidPath_(*state, i.path))
                 updatePathInfo(*state, i);
             else
@@ -1035,7 +1037,7 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source,
 
             if (hashResult.first != info.narHash)
                 throw Error("hash mismatch importing path '%s';\n  wanted: %s\n  got:    %s",
-                    printStorePath(info.path), info.narHash.to_string(Base32, true), hashResult.first.to_string(Base32, true));
+                    printStorePath(info.path), info.narHash->to_string(Base32, true), hashResult.first.to_string(Base32, true));
 
             if (hashResult.second != info.narSize)
                 throw Error("size mismatch importing path '%s';\n  wanted: %s\n  got:   %s",
@@ -1070,8 +1072,10 @@ StorePath LocalStore::addToStoreFromDump(const string & dump, const string & nam
     }
 
     auto dstPath = makeFixedOutputPath(name, FixedOutputInfo {
-        method,
-        h,
+        {
+            .method = method,
+            .hash = h,
+        },
         {},
     });
 
@@ -1106,12 +1110,12 @@ StorePath LocalStore::addToStoreFromDump(const string & dump, const string & nam
                the path in the database.  We may just have computed it
                above (if called with recursive == true and hashAlgo ==
                sha256); otherwise, compute it here. */
-            HashResult hash;
-            if (method == FileIngestionMethod::Recursive) {
-                hash.first = hashAlgo == htSHA256 ? h : hashString(htSHA256, dump);
-                hash.second = dump.size();
-            } else
-                hash = hashPath(htSHA256, realPath);
+            HashResult hash = method == FileIngestionMethod::Recursive
+                ? HashResult {
+                    hashAlgo == htSHA256 ? h : hashString(htSHA256, dump),
+                    dump.size(),
+                  }
+                : hashPath(htSHA256, realPath);
 
             optimisePath(realPath); // FIXME: combine with hashPath()
 
@@ -1161,7 +1165,10 @@ StorePath LocalStore::addTextToStore(const string & name, const string & s,
     const StorePathSet & references, RepairFlag repair)
 {
     auto hash = hashString(htSHA256, s);
-    auto dstPath = makeTextPath(name, TextInfo { hash, references });
+    auto dstPath = makeTextPath(name, TextInfo {
+        { .hash = hash },
+        references,
+    });
 
     addTempRoot(dstPath);
 
@@ -1304,9 +1311,9 @@ bool LocalStore::verifyStore(bool checkContents, RepairFlag repair)
 
                 std::unique_ptr<AbstractHashSink> hashSink;
                 if (!info->ca || !info->hasSelfReference)
-                    hashSink = std::make_unique<HashSink>(*info->narHash.type);
+                    hashSink = std::make_unique<HashSink>(info->narHash->type);
                 else
-                    hashSink = std::make_unique<HashModuloSink>(*info->narHash.type, std::string(info->path.hashPart()));
+                    hashSink = std::make_unique<HashModuloSink>(info->narHash->type, std::string(info->path.hashPart()));
 
                 dumpPath(Store::toRealPath(i), *hashSink);
                 auto current = hashSink->finish();
@@ -1315,7 +1322,7 @@ bool LocalStore::verifyStore(bool checkContents, RepairFlag repair)
                     logError({
                         .name = "Invalid hash - path modified",
                         .hint = hintfmt("path '%s' was modified! expected hash '%s', got '%s'",
-                        printStorePath(i), info->narHash.to_string(Base32, true), current.first.to_string(Base32, true))
+                        printStorePath(i), info->narHash->to_string(Base32, true), current.first.to_string(Base32, true))
                     });
                     if (repair) repairPath(i); else errors = true;
                 } else {

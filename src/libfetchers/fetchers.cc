@@ -36,8 +36,7 @@ std::unique_ptr<Input> inputFromAttrs(const Attrs & attrs)
         auto res = inputScheme->inputFromAttrs(attrs2);
         if (res) {
             if (auto narHash = maybeGetStrAttr(attrs, "narHash"))
-                // FIXME: require SRI hash.
-                res->narHash = newHashAllowEmpty(*narHash, {});
+                res->narHash = Hash::parseSRI(*narHash);
             return res;
         }
     }
@@ -64,8 +63,8 @@ std::pair<Tree, std::shared_ptr<const Input>> Input::fetchTree(ref<Store> store)
     if (!tree.info.narHash)
     {
         auto pathOrCa = tree.info.ca
-            ? StorePathOrFullCA {*tree.info.ca}
-            : StorePathOrFullCA {tree.storePath};
+            ? StorePathOrCA {*tree.info.ca}
+            : StorePathOrCA {tree.storePath};
         tree.info.narHash = store->queryPathInfo(pathOrCa)->narHash;
     }
 

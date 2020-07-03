@@ -173,7 +173,7 @@ static std::string makeType(
     return std::move(type);
 }
 
-StorePath Store::bakeCaIfNeeded(StorePathOrFullCA path) const
+StorePath Store::bakeCaIfNeeded(StorePathOrCA path) const
 {
     return std::visit(overloaded {
         [this](std::reference_wrapper<const StorePath> storePath) {
@@ -187,10 +187,10 @@ StorePath Store::bakeCaIfNeeded(StorePathOrFullCA path) const
 
 StorePath Store::makeFixedOutputPath(std::string_view name, const FixedOutputInfo & info) const
 {
-    if (info.method == FileIngestionMethod::Git && *info.hash.type != htSHA1)
+    if (info.method == FileIngestionMethod::Git && info.hash.type != htSHA1)
         throw Error("Git file ingestion must use sha1 hash");
 
-    if (*info.hash.type == htSHA256 && info.method == FileIngestionMethod::Recursive) {
+    if (info.hash.type == htSHA256 && info.method == FileIngestionMethod::Recursive) {
         return makeStorePath(makeType(*this, "source", info.references), info.hash, name);
     } else {
         assert(info.references.references.size() == 0);
@@ -232,7 +232,7 @@ StorePath Store::makeFixedOutputPathFromCA(const ContentAddress & info) const
 std::pair<StorePath, Hash> Store::computeStorePathForPath(std::string_view name,
     const Path & srcPath, FileIngestionMethod method, HashType hashAlgo, PathFilter & filter) const
 {
-    Hash h;
+    Hash h { htSHA256 };
     switch (method) {
     case FileIngestionMethod::Recursive: {
         h = hashPath(hashAlgo, srcPath, filter).first;
@@ -247,14 +247,24 @@ std::pair<StorePath, Hash> Store::computeStorePathForPath(std::string_view name,
         break;
     }
     }
-    return std::make_pair(makeFixedOutputPath(name, FixedOutputInfo { method, h, {} }), h);
+    FixedOutputInfo caInfo {
+        {
+            .method = method,
+            .hash = h,
+        },
+        {},
+    };
+    return std::make_pair(makeFixedOutputPath(name, caInfo), h);
 }
 
 
 StorePath Store::computeStorePathForText(const string & name, const string & s,
     const StorePathSet & references) const
 {
-    return makeTextPath(name, TextInfo { hashString(htSHA256, s), references });
+    return makeTextPath(name, TextInfo {
+        { .hash = hashString(htSHA256, s) },
+        references,
+    });
 }
 
 
@@ -279,7 +289,17 @@ bool Store::PathInfoCacheValue::isKnownNow()
     return std::chrono::steady_clock::now() < time_point + ttl;
 }
 
-inline bool Store::isValidPath(StorePathOrFullCA storePath)
+StorePathSet Store::queryDerivationOutputs(const StorePath & path)
+{
+    auto outputMap = this->queryDerivationOutputMap(path);
+    StorePathSet outputPaths;
+    for (auto & i: outputMap) {
+        outputPaths.emplace(std::move(i.second));
+    }
+    return outputPaths;
+}
+
+inline bool Store::isValidPath(StorePathOrCA storePath)
 {
     std::string hashPart { bakeCaIfNeeded(storePath).hashPart() };
 
@@ -315,7 +335,7 @@ inline bool Store::isValidPath(StorePathOrFullCA storePath)
 
 /* Default implementation for stores that only implement
    queryPathInfoUncached(). */
-bool Store::isValidPathUncached(StorePathOrFullCA path)
+bool Store::isValidPathUncached(StorePathOrCA path)
 {
     try {
         queryPathInfo(path);
@@ -325,7 +345,8 @@ bool Store::isValidPathUncached(StorePathOrFullCA path)
     }
 }
 
-ref<const ValidPathInfo> Store::queryPathInfo(StorePathOrFullCA storePath)
+
+ref<const ValidPathInfo> Store::queryPathInfo(StorePathOrCA storePath)
 {
     std::promise<ref<const ValidPathInfo>> promise;
 
@@ -341,7 +362,7 @@ ref<const ValidPathInfo> Store::queryPathInfo(StorePathOrFullCA storePath)
     return promise.get_future().get();
 }
 
-void Store::queryPathInfo(StorePathOrFullCA pathOrCa,
+void Store::queryPathInfo(StorePathOrCA pathOrCa,
     Callback<ref<const ValidPathInfo>> callback) noexcept
 {
     std::string hashPart;
@@ -466,7 +487,7 @@ string Store::makeValidityRegistration(const StorePathSet & paths,
         auto info = queryPathInfo(i);
 
         if (showHash) {
-            s += info->narHash.to_string(Base16, false) + "\n";
+            s += info->narHash->to_string(Base16, false) + "\n";
             s += (format("%1%\n") % info->narSize).str();
         }
 
@@ -498,7 +519,7 @@ void Store::pathInfoToJSON(JSONPlaceholder & jsonOut, const StorePathSet & store
             auto info = queryPathInfo(storePath);
 
             jsonPath
-                .attr("narHash", info->narHash.to_string(hashBase, true))
+                .attr("narHash", info->narHash->to_string(hashBase, true))
                 .attr("narSize", info->narSize);
 
             {
@@ -541,7 +562,7 @@ void Store::pathInfoToJSON(JSONPlaceholder & jsonOut, const StorePathSet & store
                     if (!narInfo->url.empty())
                         jsonPath.attr("url", narInfo->url);
                     if (narInfo->fileHash)
-                        jsonPath.attr("downloadHash", narInfo->fileHash.to_string(Base32, true));
+                        jsonPath.attr("downloadHash", narInfo->fileHash->to_string(Base32, true));
                     if (narInfo->fileSize)
                         jsonPath.attr("downloadSize", narInfo->fileSize);
                     if (showClosureSize)
@@ -599,7 +620,7 @@ void Store::buildPaths(const std::vector<StorePathWithOutputs> & paths, BuildMod
 
 
 void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
-    StorePathOrFullCA storePath, RepairFlag repair, CheckSigsFlag checkSigs)
+    StorePathOrCA storePath, RepairFlag repair, CheckSigsFlag checkSigs)
 {
     auto srcUri = srcStore->getUri();
     auto dstUri = dstStore->getUri();
@@ -794,7 +815,7 @@ std::optional<ValidPathInfo> decodeValidPathInfo(const Store & store, std::istre
     if (hashGiven) {
         string s;
         getline(str, s);
-        info.narHash = Hash(s, htSHA256);
+        info.narHash = Hash::parseAny(s, htSHA256);
         getline(str, s);
         if (!string2Int(s, info.narSize)) throw Error("number expected");
     }
@@ -851,7 +872,7 @@ std::string ValidPathInfo::fingerprint(const Store & store) const
             store.printStorePath(path));
     return
         "1;" + store.printStorePath(path) + ";"
-        + narHash.to_string(Base32, true) + ";"
+        + narHash->to_string(Base32, true) + ";"
         + std::to_string(narSize) + ";"
         + concatStringsSep(",", store.printStorePathSet(referencesPossiblyToSelf()));
 }

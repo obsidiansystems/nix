@@ -30,7 +30,7 @@ typedef enum {
     wopSetOptions = 19,
     wopCollectGarbage = 20,
     wopQuerySubstitutablePathInfo = 21,
-    wopQueryDerivationOutputs = 22,
+    wopQueryDerivationOutputs = 22, // obsolete
     wopQueryAllValidPaths = 23,
     wopQueryFailedPaths = 24,
     wopClearFailedPaths = 25,
@@ -49,7 +49,8 @@ typedef enum {
     wopNarFromPath = 38,
     wopAddToStoreNar = 39,
     wopQueryMissing = 40,
-    wopSync = 41,
+    wopQueryDerivationOutputMap = 41,
+    wopSync = 42,
 } WorkerOp;
 
 
@@ -70,9 +71,10 @@ template<class T> T readStorePaths(const Store & store, Source & from);
 
 void writeStorePaths(const Store & store, Sink & out, const StorePathSet & paths);
 
-std::set<ContentAddress> readFullCaSet(const Store & store, Source & from);
+std::set<ContentAddress> readContentAddressSet(const Store & store, Source & from);
 
-void writeFullCaSet(const Store & store, Sink & out, const std::set<ContentAddress> & paths);
+void writeContentAddressSet(const Store & store, Sink & out, const std::set<ContentAddress> & paths);
 
+void writeOutputPathMap(const Store & store, Sink & out, const OutputPathMap & paths);
 
 }

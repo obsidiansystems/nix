@@ -66,9 +66,9 @@ private:
 
 public:
 
-    bool isValidPathUncached(StorePathOrFullCA path) override;
+    bool isValidPathUncached(StorePathOrCA path) override;
 
-    void queryPathInfoUncached(StorePathOrFullCA path,
+    void queryPathInfoUncached(StorePathOrCA path,
         Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override;
 
     std::optional<StorePath> queryPathFromHashPart(const std::string & hashPart) override
@@ -85,13 +85,13 @@ public:
     StorePath addTextToStore(const string & name, const string & s,
         const StorePathSet & references, RepairFlag repair) override;
 
-    void narFromPath(StorePathOrFullCA path, Sink & sink) override;
+    void narFromPath(StorePathOrCA path, Sink & sink) override;
 
     BuildResult buildDerivation(const StorePath & drvPath, const BasicDerivation & drv,
         BuildMode buildMode) override
     { unsupported("buildDerivation"); }
 
-    void ensurePath(StorePathOrFullCA path) override
+    void ensurePath(StorePathOrCA path) override
     { unsupported("ensurePath"); }
 
     ref<FSAccessor> getFSAccessor() override;

@@ -779,8 +779,10 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
         Hash h = newHashAllowEmpty(*outputHash, ht);
 
         auto outPath = state.store->makeFixedOutputPath(drvName, FixedOutputInfo {
-            ingestionMethod,
-            h,
+            {
+                .method = ingestionMethod,
+                .hash = h,
+            },
             {},
         });
         if (!jsonObject) drv.env["out"] = state.store->printStorePath(outPath);
@@ -1134,7 +1136,7 @@ static void prim_toFile(EvalState & state, const Pos & pos, Value * * args, Valu
 
 
 static void addPath(EvalState & state, const Pos & pos, const string & name, const Path & path_,
-    Value * filterFun, FileIngestionMethod method, const Hash & expectedHash, Value & v)
+    Value * filterFun, FileIngestionMethod method, const std::optional<Hash> expectedHash, Value & v)
 {
     const auto path = evalSettings.pureEval && expectedHash ?
         path_ :
@@ -1166,8 +1168,10 @@ static void addPath(EvalState & state, const Pos & pos, const string & name, con
     std::optional<StorePath> expectedStorePath;
     if (expectedHash)
         expectedStorePath = state.store->makeFixedOutputPath(name, FixedOutputInfo {
-            method,
-            expectedHash,
+            {
+                .method = method,
+                .hash = *expectedHash,
+            },
             {},
         });
     Path dstPath;
@@ -1203,7 +1207,7 @@ static void prim_filterSource(EvalState & state, const Pos & pos, Value * * args
             .nixCode = NixCode { .errPos = pos }
         });
 
-    addPath(state, pos, std::string(baseNameOf(path)), path, args[0], FileIngestionMethod::Recursive, Hash(), v);
+    addPath(state, pos, std::string(baseNameOf(path)), path, args[0], FileIngestionMethod::Recursive, std::nullopt, v);
 }
 
 static void prim_path(EvalState & state, const Pos & pos, Value * * args, Value & v)
@@ -1213,7 +1217,7 @@ static void prim_path(EvalState & state, const Pos & pos, Value * * args, Value 
     string name;
     Value * filterFun = nullptr;
     auto method = FileIngestionMethod::Recursive;
-    Hash expectedHash;
+    Hash expectedHash(htSHA256);
 
     for (auto & attr : *args[0]->attrs) {
         const string & n(attr.name);

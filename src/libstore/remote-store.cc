@@ -39,7 +39,7 @@ void writeStorePaths(const Store & store, Sink & out, const StorePathSet & paths
         out << store.printStorePath(i);
 }
 
-std::set<ContentAddress> readFullCaSet(const Store & store, Source & from)
+std::set<ContentAddress> readContentAddressSet(const Store & store, Source & from)
 {
     std::set<ContentAddress> paths;
     // TODO
@@ -49,7 +49,7 @@ std::set<ContentAddress> readFullCaSet(const Store & store, Source & from)
     return paths;
 }
 
-void writeFullCaSet(const Store & store, Sink & out, const std::set<ContentAddress> & paths)
+void writeContentAddressSet(const Store & store, Sink & out, const std::set<ContentAddress> & paths)
 {
     // TODO
     //out << paths.size();
@@ -59,6 +59,29 @@ void writeFullCaSet(const Store & store, Sink & out, const std::set<ContentAddre
     //}
 }
 
+std::map<string, StorePath> readOutputPathMap(const Store & store, Source & from)
+{
+    std::map<string, StorePath> pathMap;
+    auto rawInput = readStrings<Strings>(from);
+    if (rawInput.size() % 2)
+        throw Error("got an odd number of elements from the daemon when trying to read a output path map");
+    auto curInput = rawInput.begin();
+    while (curInput != rawInput.end()) {
+        auto thisKey = *curInput++;
+        auto thisValue = *curInput++;
+        pathMap.emplace(thisKey, store.parseStorePath(thisValue));
+    }
+    return pathMap;
+}
+
+void writeOutputPathMap(const Store & store, Sink & out, const std::map<string, StorePath> & pathMap)
+{
+    out << 2*pathMap.size();
+    for (auto & i : pathMap) {
+        out << i.first;
+        out << store.printStorePath(i.second);
+    }
+}
 
 /* TODO: Separate these store impls into different files, give them better names */
 RemoteStore::RemoteStore(const Params & params)
@@ -274,7 +297,7 @@ ConnectionHandle RemoteStore::getConnection()
 }
 
 
-bool RemoteStore::isValidPathUncached(StorePathOrFullCA pathOrCA)
+bool RemoteStore::isValidPathUncached(StorePathOrCA pathOrCA)
 {
     auto path = bakeCaIfNeeded(pathOrCA);
     auto conn(getConnection());
@@ -366,7 +389,7 @@ void RemoteStore::querySubstitutablePathInfos(const StorePathSet & paths, const 
             writeStorePaths(*this, conn->to, combine());
         } else {
             writeStorePaths(*this, conn->to, paths);
-            writeFullCaSet(*this, conn->to, caPaths);
+            writeContentAddressSet(*this, conn->to, caPaths);
         }
         conn.processStderr();
         size_t count = readNum<size_t>(conn->from);
@@ -385,7 +408,7 @@ void RemoteStore::querySubstitutablePathInfos(const StorePathSet & paths, const 
 }
 
 
-void RemoteStore::queryPathInfoUncached(StorePathOrFullCA pathOrCA,
+void RemoteStore::queryPathInfoUncached(StorePathOrCA pathOrCA,
     Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept
 {
     auto path = bakeCaIfNeeded(pathOrCA);
@@ -409,7 +432,7 @@ void RemoteStore::queryPathInfoUncached(StorePathOrFullCA pathOrCA,
             info = std::make_shared<ValidPathInfo>(StorePath(path));
             auto deriver = readString(conn->from);
             if (deriver != "") info->deriver = parseStorePath(deriver);
-            info->narHash = Hash(readString(conn->from), htSHA256);
+            info->narHash = Hash::parseAny(readString(conn->from), htSHA256);
             info->setReferencesPossiblyToSelf(readStorePaths<StorePathSet>(*this, conn->from));
             conn->from >> info->registrationTime >> info->narSize;
             if (GET_PROTOCOL_MINOR(conn->daemonVersion) >= 16) {
@@ -446,11 +469,23 @@ StorePathSet RemoteStore::queryValidDerivers(const StorePath & path)
 StorePathSet RemoteStore::queryDerivationOutputs(const StorePath & path)
 {
     auto conn(getConnection());
+    if (GET_PROTOCOL_MINOR(conn->daemonVersion) >= 0x16) {
+        return Store::queryDerivationOutputs(path);
+    }
     conn->to << wopQueryDerivationOutputs << printStorePath(path);
     conn.processStderr();
     return readStorePaths<StorePathSet>(*this, conn->from);
 }
 
+
+OutputPathMap RemoteStore::queryDerivationOutputMap(const StorePath & path)
+{
+    auto conn(getConnection());
+    conn->to << wopQueryDerivationOutputMap << printStorePath(path);
+    conn.processStderr();
+    return readOutputPathMap(*this, conn->from);
+
+}
 
 std::optional<StorePath> RemoteStore::queryPathFromHashPart(const std::string & hashPart)
 {
@@ -496,7 +531,7 @@ void RemoteStore::addToStore(const ValidPathInfo & info, Source & source,
         conn->to << wopAddToStoreNar
                  << printStorePath(info.path)
                  << (info.deriver ? printStorePath(*info.deriver) : "")
-                 << info.narHash.to_string(Base16, false);
+                 << info.narHash->to_string(Base16, false);
         writeStorePaths(*this, conn->to, info.referencesPossiblyToSelf());
         conn->to << info.registrationTime << info.narSize
                  << info.ultimate << info.sigs << renderLegacyContentAddress(info.ca)
@@ -609,7 +644,7 @@ BuildResult RemoteStore::buildDerivation(const StorePath & drvPath, const BasicD
 }
 
 
-void RemoteStore::ensurePath(StorePathOrFullCA pathOrCA)
+void RemoteStore::ensurePath(StorePathOrCA pathOrCA)
 {
     auto path = bakeCaIfNeeded(pathOrCA);
     auto conn(getConnection());

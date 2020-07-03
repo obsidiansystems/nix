@@ -78,8 +78,10 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
                 ContentAddress {
                     .name = std::string { path.name() },
                     .info = FixedOutputInfo {
-                        FileIngestionMethod::Recursive,
-                        narHash,
+                        {
+                            .method = FileIngestionMethod::Recursive,
+                            .hash = narHash,
+                        },
                         std::move(refs),
                     },
                 },

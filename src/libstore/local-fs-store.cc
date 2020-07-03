@@ -78,7 +78,7 @@ ref<FSAccessor> LocalFSStore::getFSAccessor()
             std::dynamic_pointer_cast<LocalFSStore>(shared_from_this())));
 }
 
-void LocalFSStore::narFromPath(const StorePathOrFullCA pathOrCA, Sink & sink)
+void LocalFSStore::narFromPath(const StorePathOrCA pathOrCA, Sink & sink)
 {
     auto p = this->bakeCaIfNeeded(pathOrCA);
     if (!isValidPath(pathOrCA))

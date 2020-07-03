@@ -150,7 +150,7 @@ struct BuildResult
 typedef std::variant<
     std::reference_wrapper<const StorePath>,
     std::reference_wrapper<const ContentAddress>
-> StorePathOrFullCA;
+> StorePathOrCA;
 
 class Store : public std::enable_shared_from_this<Store>, public Config
 {
@@ -262,7 +262,7 @@ public:
 
     StorePath makeFixedOutputPathFromCA(const ContentAddress & info) const;
 
-    StorePath bakeCaIfNeeded(StorePathOrFullCA path) const;
+    StorePath bakeCaIfNeeded(StorePathOrCA path) const;
 
     /* This is the preparatory part of addToStore(); it computes the
        store path to which srcPath is to be copied.  Returns the store
@@ -289,11 +289,11 @@ public:
         const StorePathSet & references) const;
 
     /* Check whether a path is valid. */
-    bool isValidPath(StorePathOrFullCA ca);
+    bool isValidPath(StorePathOrCA ca);
 
 protected:
 
-    virtual bool isValidPathUncached(StorePathOrFullCA ca);
+    virtual bool isValidPathUncached(StorePathOrCA ca);
 
 public:
 
@@ -312,15 +312,15 @@ public:
 
     /* Query information about a valid path. It is permitted to omit
        the name part of the store path. */
-    ref<const ValidPathInfo> queryPathInfo(StorePathOrFullCA path);
+    ref<const ValidPathInfo> queryPathInfo(StorePathOrCA path);
 
     /* Asynchronous version of queryPathInfo(). */
-    void queryPathInfo(StorePathOrFullCA path,
+    void queryPathInfo(StorePathOrCA path,
         Callback<ref<const ValidPathInfo>> callback) noexcept;
 
 protected:
 
-    virtual void queryPathInfoUncached(StorePathOrFullCA path,
+    virtual void queryPathInfoUncached(StorePathOrCA path,
         Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept = 0;
 
 public:
@@ -337,8 +337,11 @@ public:
     virtual StorePathSet queryValidDerivers(const StorePath & path) { return {}; };
 
     /* Query the outputs of the derivation denoted by `path'. */
-    virtual StorePathSet queryDerivationOutputs(const StorePath & path)
-    { unsupported("queryDerivationOutputs"); }
+    virtual StorePathSet queryDerivationOutputs(const StorePath & path);
+
+    /* Query the mapping outputName=>outputPath for the given derivation */
+    virtual OutputPathMap queryDerivationOutputMap(const StorePath & path)
+    { unsupported("queryDerivationOutputMap"); }
 
     /* Query the full store path given the hash part of a valid store
        path, or empty if the path doesn't exist. */
@@ -381,7 +384,7 @@ public:
         const StorePathSet & references, RepairFlag repair = NoRepair) = 0;
 
     /* Write a NAR dump of a store path. */
-    virtual void narFromPath(StorePathOrFullCA ca, Sink & sink) = 0;
+    virtual void narFromPath(StorePathOrCA ca, Sink & sink) = 0;
 
     /* For each path, if it's a derivation, build it.  Building a
        derivation means ensuring that the output paths are valid.  If
@@ -404,7 +407,7 @@ public:
     /* Ensure that a path is valid.  If it is not currently valid, it
        may be made valid by running a substitute (if defined for the
        path). */
-    virtual void ensurePath(StorePathOrFullCA ca) = 0;
+    virtual void ensurePath(StorePathOrCA ca) = 0;
 
     /* Add a store path as a temporary root of the garbage collector.
        The root disappears as soon as we exit. */
@@ -628,7 +631,7 @@ public:
 
     LocalFSStore(const Params & params);
 
-    void narFromPath(StorePathOrFullCA path, Sink & sink) override;
+    void narFromPath(StorePathOrCA path, Sink & sink) override;
 
     ref<FSAccessor> getFSAccessor() override;
 
@@ -650,7 +653,7 @@ public:
 
 /* Copy a path from one store to another. */
 void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
-    StorePathOrFullCA storePath,
+    StorePathOrCA storePath,
     RepairFlag repair = NoRepair, CheckSigsFlag checkSigs = CheckSigs);
 
 

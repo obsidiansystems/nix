@@ -61,7 +61,7 @@ struct CmdAddToStore : MixDryRun, StoreCommand
 
         auto narHash = hashString(htSHA256, *sink.s);
 
-        Hash hash;
+        Hash hash { htSHA256 }; // throwaway def to appease C++
         switch (ingestionMethod) {
         case FileIngestionMethod::Recursive: {
             hash = narHash;
@@ -84,8 +84,10 @@ struct CmdAddToStore : MixDryRun, StoreCommand
             ContentAddress {
                 .name = *namePart,
                 .info = FixedOutputInfo {
-                    std::move(ingestionMethod),
-                    std::move(hash),
+                    {
+                        .method = std::move(ingestionMethod),
+                        .hash = std::move(hash),
+                    },
                     {},
                 },
             },

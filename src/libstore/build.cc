@@ -297,7 +297,7 @@ public:
     GoalPtr makeDerivationGoal(const StorePath & drvPath, const StringSet & wantedOutputs, BuildMode buildMode = bmNormal);
     std::shared_ptr<DerivationGoal> makeBasicDerivationGoal(const StorePath & drvPath,
         const BasicDerivation & drv, BuildMode buildMode = bmNormal);
-    GoalPtr makeSubstitutionGoal(StorePathOrFullCA storePath, RepairFlag repair = NoRepair);
+    GoalPtr makeSubstitutionGoal(StorePathOrCA storePath, RepairFlag repair = NoRepair);
 
     /* Remove a dead goal. */
     void removeGoal(GoalPtr goal);
@@ -1207,7 +1207,7 @@ void DerivationGoal::haveDerivation()
     if (settings.useSubstitutes && parsedDrv->substitutesAllowed())
         for (auto & i : invalidOutputs) {
             auto optCA = getDerivationCA(*drv);
-            auto p = optCA ? StorePathOrFullCA { *optCA } : i;
+            auto p = optCA ? StorePathOrCA { *optCA } : i;
             addWaitee(worker.makeSubstitutionGoal(p, buildMode == bmRepair ? Repair : NoRepair));
         }
 
@@ -2734,7 +2734,7 @@ struct RestrictedStore : public LocalFSStore
         return paths;
     }
 
-    void queryPathInfoUncached(StorePathOrFullCA path,
+    void queryPathInfoUncached(StorePathOrCA path,
         Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override
     {
         if (goal.isAllowed(bakeCaIfNeeded(path))) {
@@ -2756,8 +2756,8 @@ struct RestrictedStore : public LocalFSStore
     void queryReferrers(const StorePath & path, StorePathSet & referrers) override
     { }
 
-    StorePathSet queryDerivationOutputs(const StorePath & path) override
-    { throw Error("queryDerivationOutputs"); }
+    OutputPathMap queryDerivationOutputMap(const StorePath & path) override
+    { throw Error("queryDerivationOutputMap"); }
 
     std::optional<StorePath> queryPathFromHashPart(const std::string & hashPart) override
     { throw Error("queryPathFromHashPart"); }
@@ -2791,7 +2791,7 @@ struct RestrictedStore : public LocalFSStore
         return path;
     }
 
-    void narFromPath(StorePathOrFullCA pathOrCA, Sink & sink) override
+    void narFromPath(StorePathOrCA pathOrCA, Sink & sink) override
     {
         auto path = bakeCaIfNeeded(pathOrCA);
         if (!goal.isAllowed(path))
@@ -2799,7 +2799,7 @@ struct RestrictedStore : public LocalFSStore
         LocalFSStore::narFromPath(pathOrCA, sink);
     }
 
-    void ensurePath(StorePathOrFullCA pathOrCA) override
+    void ensurePath(StorePathOrCA pathOrCA) override
     {
         auto path = bakeCaIfNeeded(pathOrCA);
         if (!goal.isAllowed(path))
@@ -3738,12 +3738,14 @@ void DerivationGoal::registerOutputs()
             /* Check the hash. In hash mode, move the path produced by
                the derivation to its content-addressed location. */
             Hash h2 = i.second.hash->method == FileIngestionMethod::Recursive
-                ? hashPath(*i.second.hash->hash.type, actualPath).first
-                : hashFile(*i.second.hash->hash.type, actualPath);
+                ? hashPath(i.second.hash->hash.type, actualPath).first
+                : hashFile(i.second.hash->hash.type, actualPath);
 
             auto dest = worker.store.makeFixedOutputPath(i.second.path.name(), FixedOutputInfo {
-                i.second.hash->method,
-                h2,
+                {
+                    .method = i.second.hash->method,
+                    .hash = h2,
+                },
                 {}, // TODO references
             });
 
@@ -3779,8 +3781,10 @@ void DerivationGoal::registerOutputs()
             ca = ContentAddress {
                 .name = std::string { i.second.path.name() },
                 .info = FixedOutputInfo {
-                    i.second.hash->method,
-                    h2,
+                    {
+                        .method = i.second.hash->method,
+                        .hash = h2,
+                    },
                     {},
                 },
             };
@@ -3796,8 +3800,10 @@ void DerivationGoal::registerOutputs()
            time.  The hash is stored in the database so that we can
            verify later on whether nobody has messed with the store. */
         debug("scanning for references inside '%1%'", path);
-        HashResult hash;
-        auto references = worker.store.parseStorePathSet(scanForReferences(actualPath, worker.store.printStorePathSet(referenceablePaths), hash));
+        // HashResult hash;
+        auto pathSetAndHash = scanForReferences(actualPath, worker.store.printStorePathSet(referenceablePaths));
+        auto references = worker.store.parseStorePathSet(pathSetAndHash.first);
+        HashResult hash = pathSetAndHash.second;
 
         if (buildMode == bmCheck) {
             if (!worker.store.isValidPath(i.second.path)) continue;
@@ -4440,7 +4446,7 @@ void SubstitutionGoal::tryNext()
 
     try {
         // FIXME: make async
-        auto p = ca ? StorePathOrFullCA { std::cref(*ca) } : std::cref(storePath);
+        auto p = ca ? StorePathOrCA { std::cref(*ca) } : std::cref(storePath);
         info = sub->queryPathInfo(p);
     } catch (InvalidPath &) {
         tryNext();
@@ -4559,7 +4565,7 @@ void SubstitutionGoal::tryToRun()
             Activity act(*logger, actSubstitute, Logger::Fields{worker.store.printStorePath(storePath), sub->getUri()});
             PushActivity pact(act.id);
 
-            auto p = ca ? StorePathOrFullCA { std::cref(*ca) } : std::cref(storePath);
+            auto p = ca ? StorePathOrCA { std::cref(*ca) } : std::cref(storePath);
 
             copyStorePath(ref<Store>(sub), ref<Store>(worker.store.shared_from_this()),
                 p, repair, sub->isTrusted ? NoCheckSigs : CheckSigs);
@@ -4695,7 +4701,7 @@ std::shared_ptr<DerivationGoal> Worker::makeBasicDerivationGoal(const StorePath 
 }
 
 
-GoalPtr Worker::makeSubstitutionGoal(StorePathOrFullCA path, RepairFlag repair)
+GoalPtr Worker::makeSubstitutionGoal(StorePathOrCA path, RepairFlag repair)
 {
     auto p = store.bakeCaIfNeeded(path);
     GoalPtr goal = substitutionGoals[p].lock(); // FIXME
@@ -5047,7 +5053,7 @@ bool Worker::pathContentsGood(const StorePath & path)
     if (!pathExists(store.printStorePath(path)))
         res = false;
     else {
-        HashResult current = hashPath(*info->narHash.type, store.printStorePath(path));
+        HashResult current = hashPath(info->narHash->type, store.printStorePath(path));
         Hash nullHash(htSHA256);
         res = info->narHash == nullHash || info->narHash == current.first;
     }
@@ -5144,7 +5150,7 @@ BuildResult LocalStore::buildDerivation(const StorePath & drvPath, const BasicDe
 }
 
 
-void LocalStore::ensurePath(StorePathOrFullCA path)
+void LocalStore::ensurePath(StorePathOrCA path)
 {
     /* If the path is already valid, we're done. */
     auto p = this->bakeCaIfNeeded(path);

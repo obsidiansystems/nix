@@ -459,7 +459,7 @@ private:
     void writeNarInfo(ref<NarInfo> narInfo)
     {
         auto json = nlohmann::json::object();
-        json["narHash"] = narInfo->narHash.to_string(Base32, true);
+        json["narHash"] = narInfo->narHash->to_string(Base32, true);
         json["narSize"] = narInfo->narSize;
 
         auto narMap = getIpfsDag(getIpfsPath())["nar"];
@@ -491,7 +491,7 @@ private:
         }
 
         if (narInfo->fileHash)
-            json["downloadHash"] = narInfo->fileHash.to_string(Base32, true);
+            json["downloadHash"] = narInfo->fileHash->to_string(Base32, true);
 
         json["downloadSize"] = narInfo->fileSize;
         json["compression"] = narInfo->compression;
@@ -662,7 +662,7 @@ public:
         stats.narInfoWrite++;
     }
 
-    bool isValidPathUncached(StorePathOrFullCA storePathOrCA) override
+    bool isValidPathUncached(StorePathOrCA storePathOrCA) override
     {
         auto storePath = this->bakeCaIfNeeded(storePathOrCA);
         auto ca = std::get_if<1>(&storePathOrCA);
@@ -682,7 +682,7 @@ public:
         return json["nar"].contains(storePath.to_string());
     }
 
-    void narFromPath(StorePathOrFullCA storePathOrCA, Sink & sink) override
+    void narFromPath(StorePathOrCA storePathOrCA, Sink & sink) override
     {
         auto info = queryPathInfo(storePathOrCA).cast<const NarInfo>();
 
@@ -723,7 +723,7 @@ public:
         stats.narReadBytes += narSize;
     }
 
-    void queryPathInfoUncached(StorePathOrFullCA storePathOrCa,
+    void queryPathInfoUncached(StorePathOrCA storePathOrCa,
         Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override
     {
         // TODO: properly use callbacks
@@ -770,7 +770,7 @@ public:
         json = getIpfsDag("/ipfs/" + narObjectHash);
 
         NarInfo narInfo { storePath };
-        narInfo.narHash = Hash((std::string) json["narHash"]);
+        narInfo.narHash = Hash::parseAnyPrefixed((std::string) json["narHash"]);
         narInfo.narSize = json["narSize"];
 
         for (auto & ref : json["references"].items())
@@ -799,7 +799,7 @@ public:
             narInfo.url = "ipfs://" + json["ipfsCid"]["/"].get<std::string>();
 
         if (json.find("downloadHash") != json.end())
-            narInfo.fileHash = Hash((std::string) json["downloadHash"]);
+            narInfo.fileHash = Hash::parseAnyPrefixed((std::string) json["downloadHash"]);
 
         if (json.find("downloadSize") != json.end())
             narInfo.fileSize = json["downloadSize"];
@@ -823,7 +823,7 @@ public:
            method for very large paths, but `copyPath' is mainly used for
            small files. */
         StringSink sink;
-        Hash h;
+        Hash h { htSHA256 }; // dummy initial value
         switch (method) {
         case FileIngestionMethod::Recursive:
             dumpPath(srcPath, sink, filter);
@@ -847,8 +847,10 @@ public:
             ContentAddress {
                 .name = name,
                 .info = FixedOutputInfo {
-                    method,
-                    h,
+                    {
+                        .method = method,
+                        .hash = h,
+                    },
                     {},
                 },
             },
@@ -917,7 +919,7 @@ public:
         BuildMode buildMode) override
     { unsupported("buildDerivation"); }
 
-    void ensurePath(StorePathOrFullCA ca) override
+    void ensurePath(StorePathOrCA ca) override
     { unsupported("ensurePath"); }
 
     std::optional<StorePath> queryPathFromHashPart(const std::string & hashPart) override

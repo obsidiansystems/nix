@@ -180,7 +180,7 @@ void BinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSource
         ((1.0 - (double) narCompressed->size() / nar->size()) * 100.0),
         duration);
 
-    narInfo->url = "nar/" + narInfo->fileHash.to_string(Base32, false) + ".nar"
+    narInfo->url = "nar/" + narInfo->fileHash->to_string(Base32, false) + ".nar"
         + (compression == "xz" ? ".xz" :
            compression == "bzip2" ? ".bz2" :
            compression == "br" ? ".br" :
@@ -262,7 +262,7 @@ void BinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSource
     stats.narInfoWrite++;
 }
 
-bool BinaryCacheStore::isValidPathUncached(StorePathOrFullCA storePath)
+bool BinaryCacheStore::isValidPathUncached(StorePathOrCA storePath)
 {
     // FIXME: this only checks whether a .narinfo with a matching hash
     // part exists. So ‘f4kb...-foo’ matches ‘f4kb...-bar’, even
@@ -270,7 +270,7 @@ bool BinaryCacheStore::isValidPathUncached(StorePathOrFullCA storePath)
     return fileExists(narInfoFileFor(bakeCaIfNeeded(storePath)));
 }
 
-void BinaryCacheStore::narFromPath(StorePathOrFullCA storePath, Sink & sink)
+void BinaryCacheStore::narFromPath(StorePathOrCA storePath, Sink & sink)
 {
     auto info = queryPathInfo(storePath).cast<const NarInfo>();
 
@@ -296,7 +296,7 @@ void BinaryCacheStore::narFromPath(StorePathOrFullCA storePath, Sink & sink)
     stats.narReadBytes += narSize;
 }
 
-void BinaryCacheStore::queryPathInfoUncached(StorePathOrFullCA storePath,
+void BinaryCacheStore::queryPathInfoUncached(StorePathOrCA storePath,
     Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept
 {
     auto uri = getUri();
@@ -338,7 +338,7 @@ StorePath BinaryCacheStore::addToStore(const string & name, const Path & srcPath
        method for very large paths, but `copyPath' is mainly used for
        small files. */
     StringSink sink;
-    Hash h;
+    std::optional<Hash> h;
     switch (method) {
     case FileIngestionMethod::Recursive:
         dumpPath(srcPath, sink, filter);
@@ -355,8 +355,10 @@ StorePath BinaryCacheStore::addToStore(const string & name, const Path & srcPath
     }
 
     ValidPathInfo info(makeFixedOutputPath(name, FixedOutputInfo {
-        method,
-        h,
+        {
+            .method = method,
+            .hash = *h,
+        },
         {},
     }));
 
