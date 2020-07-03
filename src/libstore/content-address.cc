@@ -20,7 +20,7 @@ std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
     abort();
 }
 
-std::string renderMiniContentAddress(MiniContentAddress ca) {
+std::string renderLegacyContentAddress(LegacyContentAddress ca) {
     return std::visit(overloaded {
         [](TextHash th) {
             return "text:"
@@ -34,7 +34,7 @@ std::string renderMiniContentAddress(MiniContentAddress ca) {
     }, ca);
 }
 
-MiniContentAddress parseMiniContentAddress(std::string_view rawCa) {
+LegacyContentAddress parseLegacyContentAddress(std::string_view rawCa) {
     auto prefixSeparator = rawCa.find(':');
     if (prefixSeparator != string::npos) {
         auto prefix = string(rawCa, 0, prefixSeparator);
@@ -42,7 +42,7 @@ MiniContentAddress parseMiniContentAddress(std::string_view rawCa) {
             auto hashTypeAndHash = rawCa.substr(prefixSeparator+1, string::npos);
             Hash hash = Hash(string(hashTypeAndHash));
             if (*hash.type != htSHA256) {
-                throw Error("parseMiniContentAddress: the text hash should have type SHA256");
+                throw Error("parseLegacyContentAddress: the text hash should have type SHA256");
             }
             return TextHash { hash };
         } else if (prefix == "fixed") {
@@ -67,23 +67,23 @@ MiniContentAddress parseMiniContentAddress(std::string_view rawCa) {
                 };
             }
         } else {
-            throw Error("parseMiniContentAddress: format not recognized; has to be text or fixed");
+            throw Error("parseLegacyContentAddress: format not recognized; has to be text or fixed");
         }
     } else {
         throw Error("Not a content address because it lacks an appropriate prefix");
     }
 };
 
-std::optional<MiniContentAddress> parseMiniContentAddressOpt(std::string_view rawCaOpt) {
-    return rawCaOpt == "" ? std::optional<MiniContentAddress> {} : parseMiniContentAddress(rawCaOpt);
+std::optional<LegacyContentAddress> parseLegacyContentAddressOpt(std::string_view rawCaOpt) {
+    return rawCaOpt == "" ? std::optional<LegacyContentAddress> {} : parseLegacyContentAddress(rawCaOpt);
 };
 
-std::string renderMiniContentAddress(std::optional<MiniContentAddress> ca) {
-    return ca ? renderMiniContentAddress(*ca) : "";
+std::string renderLegacyContentAddress(std::optional<LegacyContentAddress> ca) {
+    return ca ? renderLegacyContentAddress(*ca) : "";
 }
 
 
-void to_json(nlohmann::json& j, const MiniContentAddress & ca) {
+void to_json(nlohmann::json& j, const LegacyContentAddress & ca) {
     j = std::visit(overloaded {
         [](TextHash th) {
             return nlohmann::json {
@@ -102,7 +102,7 @@ void to_json(nlohmann::json& j, const MiniContentAddress & ca) {
     }, ca);
 }
 
-void from_json(const nlohmann::json& j, MiniContentAddress & ca) {
+void from_json(const nlohmann::json& j, LegacyContentAddress & ca) {
     std::string_view type = j.at("type").get<std::string_view>();
     if (type == "text") {
         ca = TextHash {
@@ -124,18 +124,18 @@ void from_json(const nlohmann::json& j, MiniContentAddress & ca) {
 
 // Needed until https://github.com/nlohmann/json/pull/2117
 
-void to_json(nlohmann::json& j, const std::optional<MiniContentAddress> & c) {
+void to_json(nlohmann::json& j, const std::optional<LegacyContentAddress> & c) {
     if (!c)
         j = nullptr;
     else
         to_json(j, *c);
 }
 
-void from_json(const nlohmann::json& j, std::optional<MiniContentAddress> & c) {
+void from_json(const nlohmann::json& j, std::optional<LegacyContentAddress> & c) {
     if (j.is_null())
         c = std::nullopt;
     else
-        c = j.get<MiniContentAddress>();
+        c = j.get<LegacyContentAddress>();
 }
 
 }

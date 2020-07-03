@@ -179,7 +179,7 @@ StorePath Store::bakeCaIfNeeded(StorePathOrFullCA path) const
         [this](std::reference_wrapper<const StorePath> storePath) {
             return StorePath {storePath};
         },
-        [this](std::reference_wrapper<const FullContentAddress> ca) {
+        [this](std::reference_wrapper<const ContentAddress> ca) {
             return makeFixedOutputPathFromCA(ca);
         },
     }, path);
@@ -215,7 +215,7 @@ StorePath Store::makeTextPath(std::string_view name, const TextInfo & info) cons
 }
 
 
-StorePath Store::makeFixedOutputPathFromCA(const FullContentAddress & info) const
+StorePath Store::makeFixedOutputPathFromCA(const ContentAddress & info) const
 {
     // New template
     return std::visit(overloaded {
@@ -508,7 +508,7 @@ void Store::pathInfoToJSON(JSONPlaceholder & jsonOut, const StorePathSet & store
             }
 
             if (info->ca)
-                jsonPath.attr("ca", renderMiniContentAddress(info->ca));
+                jsonPath.attr("ca", renderLegacyContentAddress(info->ca));
 
             std::pair<uint64_t, uint64_t> closureSizes;
 
@@ -622,11 +622,11 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
     uint64_t total = 0;
 
     // recompute store path on the chance dstStore does it differently
-    if (auto p = std::get_if<std::reference_wrapper<const FullContentAddress>>(&storePath)) {
+    if (auto p = std::get_if<std::reference_wrapper<const ContentAddress>>(&storePath)) {
         {
             ValidPathInfo infoCA {
                 *dstStore,
-                FullContentAddress { (FullContentAddress &) *p },
+                ContentAddress { (ContentAddress &) *p },
             };
             assert((PathReferences<StorePath> &)(*info) == (PathReferences<StorePath> &)infoCA);
         }
@@ -634,7 +634,7 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
             auto info2 = make_ref<ValidPathInfo>(*info);
             ValidPathInfo infoCA {
                 *dstStore,
-                FullContentAddress { (FullContentAddress &) *p },
+                ContentAddress { (ContentAddress &) *p },
             };
             if (dstStore->storeDir == srcStore->storeDir)
                 assert(info2->path == info2->path);
@@ -862,12 +862,12 @@ void ValidPathInfo::sign(const Store & store, const SecretKey & secretKey)
     sigs.insert(secretKey.signDetached(fingerprint(store)));
 }
 
-std::optional<FullContentAddress> ValidPathInfo::fullContentAddressOpt() const
+std::optional<ContentAddress> ValidPathInfo::fullContentAddressOpt() const
 {
     if (! ca)
         return std::nullopt;
 
-    return FullContentAddress {
+    return ContentAddress {
         .name = std::string { path.name() },
         .info = std::visit(overloaded {
             [&](TextHash th) {
@@ -932,7 +932,7 @@ Strings ValidPathInfo::shortRefs() const
 
 ValidPathInfo::ValidPathInfo(
     const Store & store,
-    FullContentAddress && info)
+    ContentAddress && info)
       : path(store.makeFixedOutputPathFromCA(info))
 {
     std::visit(overloaded {

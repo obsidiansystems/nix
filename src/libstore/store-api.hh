@@ -149,7 +149,7 @@ struct BuildResult
    addresses or work with regular store paths */
 typedef std::variant<
     std::reference_wrapper<const StorePath>,
-    std::reference_wrapper<const FullContentAddress>
+    std::reference_wrapper<const ContentAddress>
 > StorePathOrFullCA;
 
 class Store : public std::enable_shared_from_this<Store>, public Config
@@ -260,7 +260,7 @@ public:
 
     StorePath makeTextPath(std::string_view name, const TextInfo & info) const;
 
-    StorePath makeFixedOutputPathFromCA(const FullContentAddress & info) const;
+    StorePath makeFixedOutputPathFromCA(const ContentAddress & info) const;
 
     StorePath bakeCaIfNeeded(StorePathOrFullCA path) const;
 
@@ -352,7 +352,7 @@ public:
        does not have substitute info, it's omitted from the resulting
        ‘infos’ map. */
     virtual void querySubstitutablePathInfos(const StorePathSet & paths,
-        const std::set<FullContentAddress> & caPaths,
+        const std::set<ContentAddress> & caPaths,
         SubstitutablePathInfos & infos) { return; };
 
     /* Import a path into the store. */
@@ -760,6 +760,6 @@ std::optional<ValidPathInfo> decodeValidPathInfo(
 /* Split URI into protocol+hierarchy part and its parameter set. */
 std::pair<std::string, Store::Params> splitUriAndParams(const std::string & uri);
 
-std::optional<FullContentAddress> getDerivationCA(const BasicDerivation & drv);
+std::optional<ContentAddress> getDerivationCA(const BasicDerivation & drv);
 
 }

@@ -525,7 +525,7 @@ private:
     // f = base16
     // cid-version = 01
     // multicodec-packed-content-type = 1114
-    std::optional<std::string> getCidFromCA(FullContentAddress ca)
+    std::optional<std::string> getCidFromCA(ContentAddress ca)
     {
         if (std::holds_alternative<FixedOutputInfo>(ca.info)) {
             auto ca_ = std::get<FixedOutputInfo>(ca.info);
@@ -745,7 +745,7 @@ public:
                 if (size) {
                     NarInfo narInfo {
                         *this,
-                        FullContentAddress { (FullContentAddress &) *ca }
+                        ContentAddress { (ContentAddress &) *ca }
                     };
                     assert(narInfo.path == storePath);
                     narInfo.url = "ipfs://" + *cid;
@@ -844,7 +844,7 @@ public:
 
         ValidPathInfo info {
             *this,
-            FullContentAddress {
+            ContentAddress {
                 .name = name,
                 .info = FixedOutputInfo {
                     method,

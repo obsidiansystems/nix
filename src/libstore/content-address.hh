@@ -44,19 +44,19 @@ struct FixedOutputHash {
 typedef std::variant<
     TextHash, // for paths computed by makeTextPath() / addTextToStore
     FixedOutputHash // for path computed by makeFixedOutputPath
-> MiniContentAddress;
+> LegacyContentAddress;
 
 /* Compute the prefix to the hash algorithm which indicates how the files were
    ingested. */
 std::string makeFileIngestionPrefix(const FileIngestionMethod m);
 
-std::string renderMiniContentAddress(MiniContentAddress ca);
+std::string renderLegacyContentAddress(LegacyContentAddress ca);
 
-std::string renderMiniContentAddress(std::optional<MiniContentAddress> ca);
+std::string renderLegacyContentAddress(std::optional<LegacyContentAddress> ca);
 
-MiniContentAddress parseMiniContentAddress(std::string_view rawCa);
+LegacyContentAddress parseLegacyContentAddress(std::string_view rawCa);
 
-std::optional<MiniContentAddress> parseMiniContentAddressOpt(std::string_view rawCaOpt);
+std::optional<LegacyContentAddress> parseLegacyContentAddressOpt(std::string_view rawCaOpt);
 
 /*
  * References set
@@ -109,13 +109,13 @@ void PathReferences<Ref>::setReferencesPossiblyToSelf(const Ref & self, std::set
     references = refs;
 }
 
-void to_json(nlohmann::json& j, const MiniContentAddress & c);
-void from_json(const nlohmann::json& j, MiniContentAddress & c);
+void to_json(nlohmann::json& j, const LegacyContentAddress & c);
+void from_json(const nlohmann::json& j, LegacyContentAddress & c);
 
 // Needed until https://github.com/nlohmann/json/pull/211
 
-void to_json(nlohmann::json& j, const std::optional<MiniContentAddress> & c);
-void from_json(const nlohmann::json& j, std::optional<MiniContentAddress> & c);
+void to_json(nlohmann::json& j, const std::optional<LegacyContentAddress> & c);
+void from_json(const nlohmann::json& j, std::optional<LegacyContentAddress> & c);
 
 /*
  * Full content address
@@ -134,14 +134,14 @@ struct FixedOutputInfo : FixedOutputHash {
     PathReferences<StorePath> references;
 };
 
-struct FullContentAddress {
+struct ContentAddress {
     std::string name;
     std::variant<
         TextInfo,
         FixedOutputInfo
     > info;
 
-    bool operator < (const FullContentAddress & other) const
+    bool operator < (const ContentAddress & other) const
     {
         return name < other.name;
         // FIXME second field
