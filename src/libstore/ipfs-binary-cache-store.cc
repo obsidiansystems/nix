@@ -233,19 +233,24 @@ private:
         else return path;
     }
 
-    // FIXME: we shouldn’t need a separate to make an api call just to
-    // format cids
-    std::string ipfsCidFormat(std::string cid, std::optional<std::string> base)
+    const std::string base16Alpha = "0123456789abcdef";
+    std::string ipfsCidFormatBase16(std::string cid)
     {
-        auto uri(daemonUri + "/api/v0/cid/format?arg=" + cid);
-        if (base)
-            uri += "&b=" + *base;
-        auto req = FileTransferRequest(uri);
-        req.post = true;
-        req.tries = 1;
-        auto res = getFileTransfer()->upload(req);
-        auto json = nlohmann::json::parse(*res.data);
-        return (std::string) json["Formatted"];
+        if (cid[0] == 'f') return cid;
+        assert(cid[0] == 'b');
+        std::string newCid = "f";
+        unsigned short remainder;
+        for (int i = 1; i < cid.size(); i++) {
+            if (cid[i] >= 'a' && cid[i] <= 'z')
+                remainder = (remainder << 5) | (cid[i] - 'a');
+            else if (cid[i] >= '2' && cid[i] <= '7')
+                remainder = (remainder << 5) | (26 + cid[i] - '2');
+            else throw Error("unknown character: '%c'", cid[i]);;
+            if ((i % 4) == 0)
+                newCid += base16Alpha[(remainder >> 4) & 0xf];
+            newCid += base16Alpha[(remainder >> (i % 4)) & 0xf];
+        }
+        return newCid;
     }
 
 public:
@@ -660,7 +665,7 @@ public:
                 TeeSource savedNAR(narSource);
                 restorePath((Path) tmpDir + "/tmp", savedNAR);
 
-                auto key = ipfsCidFormat(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())), "base16");
+                auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())));
                 assert(std::string(key, 0, 9) == "f01781114");
 
                 auto hash = Hash::parseAny(std::string(key, 9), htSHA1);
@@ -672,14 +677,14 @@ public:
             auto fullCa = *info.fullContentAddressOpt();
             auto cid = getCidFromCA(fullCa);
 
-            auto cid_ = ipfsCidFormat(std::string(putIpfsDag(fullCa, "sha1"), 6), "base16");
+            auto cid_ = ipfsCidFormatBase16(std::string(putIpfsDag(fullCa, "sha1"), 6));
             assert(cid_ == cid);
 
             AutoDelete tmpDir(createTempDir(), true);
             TeeSource savedNAR(narSource);
             restorePath((Path) tmpDir + "/tmp", savedNAR);
 
-            auto key = ipfsCidFormat(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())), "base16");
+            auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())));
             assert(std::string(key, 0, 9) == "f01781114");
 
             auto hash_ = Hash::parseAny(std::string(key, 9), htSHA1);
