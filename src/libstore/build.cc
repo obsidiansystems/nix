@@ -5153,13 +5153,12 @@ BuildResult LocalStore::buildDerivation(const StorePath & drvPath, const BasicDe
 void LocalStore::ensurePath(StorePathOrCA path)
 {
     /* If the path is already valid, we're done. */
-    auto p = this->bakeCaIfNeeded(path);
-    if (isValidPath(p)) return;
+    if (isValidPath(path)) return;
 
     // primeCache(*this, {{path}});
 
     Worker worker(*this);
-    GoalPtr goal = worker.makeSubstitutionGoal(p, NoRepair);
+    GoalPtr goal = worker.makeSubstitutionGoal(path, NoRepair);
     Goals goals = {goal};
 
     worker.run(goals);
@@ -5168,8 +5167,10 @@ void LocalStore::ensurePath(StorePathOrCA path)
         if (goal->ex) {
             goal->ex->status = worker.exitStatus();
             throw *goal->ex;
-        } else
+        } else {
+            auto p = this->bakeCaIfNeeded(path);
             throw Error(worker.exitStatus(), "path '%s' does not exist and cannot be created", printStorePath(p));
+        }
     }
 }
 
