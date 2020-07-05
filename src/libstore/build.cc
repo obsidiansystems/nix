@@ -297,7 +297,7 @@ public:
     GoalPtr makeDerivationGoal(const StorePath & drvPath, const StringSet & wantedOutputs, BuildMode buildMode = bmNormal);
     std::shared_ptr<DerivationGoal> makeBasicDerivationGoal(const StorePath & drvPath,
         const BasicDerivation & drv, BuildMode buildMode = bmNormal);
-    GoalPtr makeSubstitutionGoal(StorePathOrCA storePath, RepairFlag repair = NoRepair);
+    GoalPtr makeSubstitutionGoal(StorePathOrCA storePathOrCA, RepairFlag repair = NoRepair);
 
     /* Remove a dead goal. */
     void removeGoal(GoalPtr goal);
@@ -2734,13 +2734,13 @@ struct RestrictedStore : public LocalFSStore
         return paths;
     }
 
-    void queryPathInfoUncached(StorePathOrCA path,
+    void queryPathInfoUncached(StorePathOrCA pathOrCA,
         Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override
     {
-        if (goal.isAllowed(bakeCaIfNeeded(path))) {
+        if (goal.isAllowed(bakeCaIfNeeded(pathOrCA))) {
             try {
                 /* Censor impure information. */
-                auto info = std::make_shared<ValidPathInfo>(*next->queryPathInfo(path));
+                auto info = std::make_shared<ValidPathInfo>(*next->queryPathInfo(pathOrCA));
                 info->deriver.reset();
                 info->registrationTime = 0;
                 info->ultimate = false;
@@ -4701,18 +4701,15 @@ std::shared_ptr<DerivationGoal> Worker::makeBasicDerivationGoal(const StorePath 
 }
 
 
-GoalPtr Worker::makeSubstitutionGoal(StorePathOrCA path, RepairFlag repair)
+GoalPtr Worker::makeSubstitutionGoal(StorePathOrCA pathOrCA, RepairFlag repair)
 {
-    auto p = store.bakeCaIfNeeded(path);
-    GoalPtr goal = substitutionGoals[p].lock(); // FIXME
+    auto path = store.bakeCaIfNeeded(pathOrCA);
+    GoalPtr goal = substitutionGoals[path].lock(); // FIXME
     if (!goal) {
-        auto optCA = std::get_if<1>(&path);
-        goal = std::make_shared<SubstitutionGoal>(
-            p,
-            *this,
-            repair,
-            optCA ? std::optional { *optCA } : std::nullopt);
-        substitutionGoals.insert_or_assign(p, goal);
+        auto ptrCA = std::get_if<1>(&pathOrCA);
+        auto optCA = ptrCA ? std::optional { *ptrCA } : std::nullopt;
+        goal = std::make_shared<SubstitutionGoal>(path, *this, repair, optCA);
+        substitutionGoals.insert_or_assign(path, goal);
         wakeUp(goal);
     }
     return goal;
@@ -5150,15 +5147,15 @@ BuildResult LocalStore::buildDerivation(const StorePath & drvPath, const BasicDe
 }
 
 
-void LocalStore::ensurePath(StorePathOrCA path)
+void LocalStore::ensurePath(StorePathOrCA pathOrCA)
 {
     /* If the path is already valid, we're done. */
-    if (isValidPath(path)) return;
+    if (isValidPath(pathOrCA)) return;
 
-    // primeCache(*this, {{path}});
+    // primeCache(*this, {{pathOrCA}});
 
     Worker worker(*this);
-    GoalPtr goal = worker.makeSubstitutionGoal(path, NoRepair);
+    GoalPtr goal = worker.makeSubstitutionGoal(pathOrCA, NoRepair);
     Goals goals = {goal};
 
     worker.run(goals);
@@ -5168,7 +5165,7 @@ void LocalStore::ensurePath(StorePathOrCA path)
             goal->ex->status = worker.exitStatus();
             throw *goal->ex;
         } else {
-            auto p = this->bakeCaIfNeeded(path);
+            auto p = this->bakeCaIfNeeded(pathOrCA);
             throw Error(worker.exitStatus(), "path '%s' does not exist and cannot be created", printStorePath(p));
         }
     }

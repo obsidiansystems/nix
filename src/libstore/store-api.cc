@@ -173,7 +173,7 @@ static std::string makeType(
     return std::move(type);
 }
 
-StorePath Store::bakeCaIfNeeded(StorePathOrCA path) const
+StorePath Store::bakeCaIfNeeded(StorePathOrCA storePathOrCA) const
 {
     return std::visit(overloaded {
         [this](std::reference_wrapper<const StorePath> storePath) {
@@ -182,7 +182,7 @@ StorePath Store::bakeCaIfNeeded(StorePathOrCA path) const
         [this](std::reference_wrapper<const ContentAddress> ca) {
             return makeFixedOutputPathFromCA(ca);
         },
-    }, path);
+    }, storePathOrCA);
 }
 
 StorePath Store::makeFixedOutputPath(std::string_view name, const FixedOutputInfo & info) const
@@ -299,9 +299,9 @@ StorePathSet Store::queryDerivationOutputs(const StorePath & path)
     return outputPaths;
 }
 
-inline bool Store::isValidPath(StorePathOrCA storePath)
+inline bool Store::isValidPath(StorePathOrCA storePathOrCA)
 {
-    std::string hashPart { bakeCaIfNeeded(storePath).hashPart() };
+    std::string hashPart { bakeCaIfNeeded(storePathOrCA).hashPart() };
 
     {
         auto state_(state.lock());
@@ -323,7 +323,7 @@ inline bool Store::isValidPath(StorePathOrCA storePath)
         }
     }
 
-    bool valid = isValidPathUncached(storePath);
+    bool valid = isValidPathUncached(storePathOrCA);
 
     if (diskCache && !valid)
         // FIXME: handle valid = true case.
@@ -335,10 +335,10 @@ inline bool Store::isValidPath(StorePathOrCA storePath)
 
 /* Default implementation for stores that only implement
    queryPathInfoUncached(). */
-bool Store::isValidPathUncached(StorePathOrCA path)
+bool Store::isValidPathUncached(StorePathOrCA storePathOrCA)
 {
     try {
-        queryPathInfo(path);
+        queryPathInfo(storePathOrCA);
         return true;
     } catch (InvalidPath &) {
         return false;
@@ -346,11 +346,11 @@ bool Store::isValidPathUncached(StorePathOrCA path)
 }
 
 
-ref<const ValidPathInfo> Store::queryPathInfo(StorePathOrCA storePath)
+ref<const ValidPathInfo> Store::queryPathInfo(StorePathOrCA storePathOrCA)
 {
     std::promise<ref<const ValidPathInfo>> promise;
 
-    queryPathInfo(storePath,
+    queryPathInfo(storePathOrCA,
         {[&](std::future<ref<const ValidPathInfo>> result) {
             try {
                 promise.set_value(result.get());
@@ -620,30 +620,30 @@ void Store::buildPaths(const std::vector<StorePathWithOutputs> & paths, BuildMod
 
 
 void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
-    StorePathOrCA storePath, RepairFlag repair, CheckSigsFlag checkSigs)
+    StorePathOrCA storePathOrCA, RepairFlag repair, CheckSigsFlag checkSigs)
 {
     auto srcUri = srcStore->getUri();
     auto dstUri = dstStore->getUri();
 
     // FIXME Use CA when we have it in messages below
 
-    auto actualStorePath = srcStore->bakeCaIfNeeded(storePath);
+    auto srcStorePath = srcStore->bakeCaIfNeeded(storePathOrCA);
 
     Activity act(*logger, lvlInfo, actCopyPath,
         srcUri == "local" || srcUri == "daemon"
-        ? fmt("copying path '%s' to '%s'", srcStore->printStorePath(actualStorePath), dstUri)
+        ? fmt("copying path '%s' to '%s'", srcStore->printStorePath(srcStorePath), dstUri)
           : dstUri == "local" || dstUri == "daemon"
-        ? fmt("copying path '%s' from '%s'", srcStore->printStorePath(actualStorePath), srcUri)
-          : fmt("copying path '%s' from '%s' to '%s'", srcStore->printStorePath(actualStorePath), srcUri, dstUri),
-        {srcStore->printStorePath(actualStorePath), srcUri, dstUri});
+        ? fmt("copying path '%s' from '%s'", srcStore->printStorePath(srcStorePath), srcUri)
+          : fmt("copying path '%s' from '%s' to '%s'", srcStore->printStorePath(srcStorePath), srcUri, dstUri),
+        {srcStore->printStorePath(srcStorePath), srcUri, dstUri});
     PushActivity pact(act.id);
 
-    auto info = srcStore->queryPathInfo(storePath);
+    auto info = srcStore->queryPathInfo(storePathOrCA);
 
     uint64_t total = 0;
 
     // recompute store path on the chance dstStore does it differently
-    if (auto p = std::get_if<std::reference_wrapper<const ContentAddress>>(&storePath)) {
+    if (auto p = std::get_if<std::reference_wrapper<const ContentAddress>>(&storePathOrCA)) {
         auto ca = static_cast<const ContentAddress &>(*p);
         {
             ValidPathInfo srcInfoCA { *srcStore, ContentAddress { ca } };
@@ -662,7 +662,7 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
 
     if (!info->narHash) {
         StringSink sink;
-        srcStore->narFromPath(storePath, sink);
+        srcStore->narFromPath(storePathOrCA, sink);
         auto info2 = make_ref<ValidPathInfo>(*info);
         info2->narHash = hashString(htSHA256, *sink.s);
         if (!info->narSize) info2->narSize = sink.s->size();
@@ -686,9 +686,9 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
             total += len;
             act.progress(total, info->narSize);
         });
-        srcStore->narFromPath(storePath, wrapperSink);
+        srcStore->narFromPath(storePathOrCA, wrapperSink);
     }, [&]() {
-           throw EndOfFile("NAR for '%s' fetched from '%s' is incomplete", srcStore->printStorePath(actualStorePath), srcStore->getUri());
+           throw EndOfFile("NAR for '%s' fetched from '%s' is incomplete", srcStore->printStorePath(srcStorePath), srcStore->getUri());
     });
 
     dstStore->addToStore(*info, *source, repair, checkSigs);

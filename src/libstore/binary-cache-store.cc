@@ -262,17 +262,17 @@ void BinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSource
     stats.narInfoWrite++;
 }
 
-bool BinaryCacheStore::isValidPathUncached(StorePathOrCA storePath)
+bool BinaryCacheStore::isValidPathUncached(StorePathOrCA storePathOrCA)
 {
     // FIXME: this only checks whether a .narinfo with a matching hash
     // part exists. So ‘f4kb...-foo’ matches ‘f4kb...-bar’, even
     // though they shouldn't. Not easily fixed.
-    return fileExists(narInfoFileFor(bakeCaIfNeeded(storePath)));
+    return fileExists(narInfoFileFor(bakeCaIfNeeded(storePathOrCA)));
 }
 
-void BinaryCacheStore::narFromPath(StorePathOrCA storePath, Sink & sink)
+void BinaryCacheStore::narFromPath(StorePathOrCA storePathOrCA, Sink & sink)
 {
-    auto info = queryPathInfo(storePath).cast<const NarInfo>();
+    auto info = queryPathInfo(storePathOrCA).cast<const NarInfo>();
 
     uint64_t narSize = 0;
 
@@ -296,17 +296,17 @@ void BinaryCacheStore::narFromPath(StorePathOrCA storePath, Sink & sink)
     stats.narReadBytes += narSize;
 }
 
-void BinaryCacheStore::queryPathInfoUncached(StorePathOrCA storePath,
+void BinaryCacheStore::queryPathInfoUncached(StorePathOrCA storePathOrCA,
     Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept
 {
     auto uri = getUri();
-    auto actualStorePath = bakeCaIfNeeded(storePath);
-    auto storePathS = printStorePath(actualStorePath);
+    auto storePath = bakeCaIfNeeded(storePathOrCA);
+    auto storePathS = printStorePath(storePath);
     auto act = std::make_shared<Activity>(*logger, lvlTalkative, actQueryPathInfo,
         fmt("querying info about '%s' on '%s'", storePathS, uri), Logger::Fields{storePathS, uri});
     PushActivity pact(act->id);
 
-    auto narInfoFile = narInfoFileFor(actualStorePath);
+    auto narInfoFile = narInfoFileFor(storePath);
 
     auto callbackPtr = std::make_shared<decltype(callback)>(std::move(callback));
 

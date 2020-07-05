@@ -262,7 +262,7 @@ public:
 
     StorePath makeFixedOutputPathFromCA(const ContentAddress & info) const;
 
-    StorePath bakeCaIfNeeded(StorePathOrCA path) const;
+    StorePath bakeCaIfNeeded(StorePathOrCA pathOrCA) const;
 
     /* This is the preparatory part of addToStore(); it computes the
        store path to which srcPath is to be copied.  Returns the store
@@ -312,15 +312,15 @@ public:
 
     /* Query information about a valid path. It is permitted to omit
        the name part of the store path. */
-    ref<const ValidPathInfo> queryPathInfo(StorePathOrCA path);
+    ref<const ValidPathInfo> queryPathInfo(StorePathOrCA pathOrCA);
 
     /* Asynchronous version of queryPathInfo(). */
-    void queryPathInfo(StorePathOrCA path,
+    void queryPathInfo(StorePathOrCA pathOrCA,
         Callback<ref<const ValidPathInfo>> callback) noexcept;
 
 protected:
 
-    virtual void queryPathInfoUncached(StorePathOrCA path,
+    virtual void queryPathInfoUncached(StorePathOrCA pathOrCA,
         Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept = 0;
 
 public:
@@ -631,7 +631,7 @@ public:
 
     LocalFSStore(const Params & params);
 
-    void narFromPath(StorePathOrCA path, Sink & sink) override;
+    void narFromPath(StorePathOrCA pathOrCA, Sink & sink) override;
 
     ref<FSAccessor> getFSAccessor() override;
 
@@ -653,7 +653,7 @@ public:
 
 /* Copy a path from one store to another. */
 void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
-    StorePathOrCA storePath,
+    StorePathOrCA storePathOrCA,
     RepairFlag repair = NoRepair, CheckSigsFlag checkSigs = CheckSigs);
 
 
