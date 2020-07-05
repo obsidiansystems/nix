@@ -59,8 +59,15 @@ std::pair<Tree, std::shared_ptr<const Input>> Input::fetchTree(ref<Store> store)
     if (tree.actualPath == "")
         tree.actualPath = store->toRealPath(tree.storePath);
 
+
     if (!tree.info.narHash)
-        tree.info.narHash = store->queryPathInfo(tree.storePath, tree.info.ca)->narHash;
+    {
+        auto pathOrCa = tree.info.ca
+            ? StorePathOrCA {*tree.info.ca}
+            : StorePathOrCA {tree.storePath};
+        tree.info.narHash = store->queryPathInfo(pathOrCa)->narHash;
+    }
+
 
     if (!tree.info.narHash) {
         HashSink hashSink(htSHA256);
@@ -92,7 +99,7 @@ std::optional<StorePath> trySubstitute(ref<Store> store, FileIngestionMethod ing
     auto substitutablePath = store->makeFixedOutputPathFromCA(ca);
 
     try {
-        store->ensurePath(substitutablePath, ca);
+        store->ensurePath(ca);
 
         debug("using substituted path '%s'", store->printStorePath(substitutablePath));
 

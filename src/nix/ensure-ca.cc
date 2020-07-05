@@ -24,10 +24,11 @@ struct CmdEnsureCA : StoreCommand
     {
         auto ca = parseContentAddress(caStr);
 
-        auto path = store->makeFixedOutputPathFromCA(ca);
-        store->ensurePath(path, ca);
+        store->ensurePath(ca);
 
-        std::cout << store->printStorePath(path) << std::endl;
+        std::cout
+            << store->printStorePath(store->makeFixedOutputPathFromCA(ca))
+            << std::endl;
     }
 };
 
