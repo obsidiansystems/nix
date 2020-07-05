@@ -644,23 +644,18 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
 
     // recompute store path on the chance dstStore does it differently
     if (auto p = std::get_if<std::reference_wrapper<const ContentAddress>>(&storePath)) {
+        auto ca = static_cast<const ContentAddress &>(*p);
         {
-            ValidPathInfo infoCA {
-                *dstStore,
-                ContentAddress { (ContentAddress &) *p },
-            };
-            assert((PathReferences<StorePath> &)(*info) == (PathReferences<StorePath> &)infoCA);
+            ValidPathInfo srcInfoCA { *srcStore, ContentAddress { ca } };
+            assert((PathReferences<StorePath> &)(*info) == (PathReferences<StorePath> &)srcInfoCA);
         }
         if (info->references.empty()) {
             auto info2 = make_ref<ValidPathInfo>(*info);
-            ValidPathInfo infoCA {
-                *dstStore,
-                ContentAddress { (ContentAddress &) *p },
-            };
+            ValidPathInfo dstInfoCA { *dstStore, ContentAddress { ca } };
             if (dstStore->storeDir == srcStore->storeDir)
                 assert(info2->path == info2->path);
-            info2->path = std::move(infoCA.path);
-            info2->ca = std::move(infoCA.ca);
+            info2->path = std::move(dstInfoCA.path);
+            info2->ca = std::move(dstInfoCA.ca);
             info = info2;
         }
     }

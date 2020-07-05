@@ -738,15 +738,13 @@ public:
         PushActivity pact(act->id);
 
 
-        if (auto ca = std::get_if<1>(&storePathOrCa)) {
-            auto cid = getCidFromCA(*ca);
+        if (auto p = std::get_if<1>(&storePathOrCa)) {
+            auto ca = static_cast<const ContentAddress &>(*p);
+            auto cid = getCidFromCA(ca);
             if (cid) {
                 auto size = ipfsBlockStat("/ipfs/" + *cid);
                 if (size) {
-                    NarInfo narInfo {
-                        *this,
-                        ContentAddress { (ContentAddress &) *ca }
-                    };
+                    NarInfo narInfo { *this, ContentAddress { ca } };
                     assert(narInfo.path == storePath);
                     narInfo.url = "ipfs://" + *cid;
                     (*callbackPtr)((std::shared_ptr<ValidPathInfo>)
