@@ -240,7 +240,7 @@ private:
         assert(cid[0] == 'b');
         std::string newCid = "f";
         unsigned short remainder;
-        for (int i = 1; i < cid.size(); i++) {
+        for (size_t i = 1; i < cid.size(); i++) {
             if (cid[i] >= 'a' && cid[i] <= 'z')
                 remainder = (remainder << 5) | (cid[i] - 'a');
             else if (cid[i] >= '2' && cid[i] <= '7')

@@ -94,6 +94,7 @@ public:
     bool binary(binary_t& val)
     {
         // no-op
+        return true;
     }
 
     bool boolean(bool val)
