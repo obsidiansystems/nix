@@ -662,8 +662,11 @@ public:
         stats.narInfoWrite++;
     }
 
-    bool isValidPathUncached(const StorePath & storePath, std::optional<ContentAddress> ca) override
+    bool isValidPathUncached(StorePathOrCA storePathOrCA) override
     {
+        auto storePath = this->bakeCaIfNeeded(storePathOrCA);
+        auto ca = std::get_if<1>(&storePathOrCA);
+
         if (ca) {
             auto cid = getCidFromCA(*ca);
             if (cid && ipfsBlockStat("/ipfs/" + *cid))
@@ -679,9 +682,9 @@ public:
         return json["nar"].contains(storePath.to_string());
     }
 
-    void narFromPath(const StorePath & storePath, Sink & sink, std::optional<ContentAddress> ca) override
+    void narFromPath(StorePathOrCA storePathOrCA, Sink & sink) override
     {
-        auto info = queryPathInfo(storePath, ca).cast<const NarInfo>();
+        auto info = queryPathInfo(storePathOrCA).cast<const NarInfo>();
 
         uint64_t narSize = 0;
 
@@ -720,10 +723,11 @@ public:
         stats.narReadBytes += narSize;
     }
 
-    void queryPathInfoUncached(const StorePath & storePath,
-        Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept override
+    void queryPathInfoUncached(StorePathOrCA storePathOrCa,
+        Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override
     {
         // TODO: properly use callbacks
+        auto storePath = bakeCaIfNeeded(storePathOrCa);
 
         auto callbackPtr = std::make_shared<decltype(callback)>(std::move(callback));
 
@@ -733,12 +737,14 @@ public:
             fmt("querying info about '%s' on '%s'", storePathS, uri), Logger::Fields{storePathS, uri});
         PushActivity pact(act->id);
 
-        if (ca) {
-            auto cid = getCidFromCA(*ca);
+
+        if (auto p = std::get_if<1>(&storePathOrCa)) {
+            auto ca = static_cast<const ContentAddress &>(*p);
+            auto cid = getCidFromCA(ca);
             if (cid) {
                 auto size = ipfsBlockStat("/ipfs/" + *cid);
                 if (size) {
-                    NarInfo narInfo { *this, ContentAddress { *ca } };
+                    NarInfo narInfo { *this, ContentAddress { ca } };
                     assert(narInfo.path == storePath);
                     narInfo.url = "ipfs://" + *cid;
                     (*callbackPtr)((std::shared_ptr<ValidPathInfo>)
@@ -911,7 +917,7 @@ public:
         BuildMode buildMode) override
     { unsupported("buildDerivation"); }
 
-    void ensurePath(const StorePath & path, std::optional<ContentAddress> ca) override
+    void ensurePath(StorePathOrCA ca) override
     { unsupported("ensurePath"); }
 
     std::optional<StorePath> queryPathFromHashPart(const std::string & hashPart) override

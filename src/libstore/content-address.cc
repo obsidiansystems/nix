@@ -22,10 +22,6 @@ std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
     abort();
 }
 
-// FIXME Put this somewhere?
-template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
-template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
-
 std::string renderLegacyContentAddress(LegacyContentAddress ca) {
     return std::visit(overloaded {
         [](TextHash th) {

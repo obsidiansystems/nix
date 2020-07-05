@@ -297,7 +297,7 @@ public:
     GoalPtr makeDerivationGoal(const StorePath & drvPath, const StringSet & wantedOutputs, BuildMode buildMode = bmNormal);
     std::shared_ptr<DerivationGoal> makeBasicDerivationGoal(const StorePath & drvPath,
         const BasicDerivation & drv, BuildMode buildMode = bmNormal);
-    GoalPtr makeSubstitutionGoal(const StorePath & storePath, RepairFlag repair = NoRepair, std::optional<ContentAddress> ca = std::nullopt);
+    GoalPtr makeSubstitutionGoal(StorePathOrCA storePath, RepairFlag repair = NoRepair);
 
     /* Remove a dead goal. */
     void removeGoal(GoalPtr goal);
@@ -1205,8 +1205,11 @@ void DerivationGoal::haveDerivation()
        through substitutes.  If that doesn't work, we'll build
        them. */
     if (settings.useSubstitutes && parsedDrv->substitutesAllowed())
-        for (auto & i : invalidOutputs)
-            addWaitee(worker.makeSubstitutionGoal(i, buildMode == bmRepair ? Repair : NoRepair, getDerivationCA(*drv)));
+        for (auto & i : invalidOutputs) {
+            auto optCA = getDerivationCA(*drv);
+            auto p = optCA ? StorePathOrCA { *optCA } : i;
+            addWaitee(worker.makeSubstitutionGoal(p, buildMode == bmRepair ? Repair : NoRepair));
+        }
 
     if (waitees.empty()) /* to prevent hang (no wake-up event) */
         outputsSubstituted();
@@ -2731,13 +2734,13 @@ struct RestrictedStore : public LocalFSStore
         return paths;
     }
 
-    void queryPathInfoUncached(const StorePath & path,
-        Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept override
+    void queryPathInfoUncached(StorePathOrCA path,
+        Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override
     {
-        if (goal.isAllowed(path)) {
+        if (goal.isAllowed(bakeCaIfNeeded(path))) {
             try {
                 /* Censor impure information. */
-                auto info = std::make_shared<ValidPathInfo>(*next->queryPathInfo(path, ca));
+                auto info = std::make_shared<ValidPathInfo>(*next->queryPathInfo(path));
                 info->deriver.reset();
                 info->registrationTime = 0;
                 info->ultimate = false;
@@ -2788,15 +2791,17 @@ struct RestrictedStore : public LocalFSStore
         return path;
     }
 
-    void narFromPath(const StorePath & path, Sink & sink, std::optional<ContentAddress> ca) override
+    void narFromPath(StorePathOrCA pathOrCA, Sink & sink) override
     {
+        auto path = bakeCaIfNeeded(pathOrCA);
         if (!goal.isAllowed(path))
             throw InvalidPath("cannot dump unknown path '%s' in recursive Nix", printStorePath(path));
-        LocalFSStore::narFromPath(path, sink, ca);
+        LocalFSStore::narFromPath(pathOrCA, sink);
     }
 
-    void ensurePath(const StorePath & path, std::optional<ContentAddress> ca) override
+    void ensurePath(StorePathOrCA pathOrCA) override
     {
+        auto path = bakeCaIfNeeded(pathOrCA);
         if (!goal.isAllowed(path))
             throw InvalidPath("cannot substitute unknown path '%s' in recursive Nix", printStorePath(path));
         /* Nothing to be done; 'path' must already be valid. */
@@ -3771,7 +3776,7 @@ void DerivationGoal::registerOutputs()
                 actualPath = actualDest;
             }
             else
-                assert(worker.store.parseStorePath(path) == dest);
+                assert(i.second.path == dest);
 
             ca = ContentAddress {
                 .name = std::string { i.second.path.name() },
@@ -3801,8 +3806,8 @@ void DerivationGoal::registerOutputs()
         HashResult hash = pathSetAndHash.second;
 
         if (buildMode == bmCheck) {
-            if (!worker.store.isValidPath(worker.store.parseStorePath(path))) continue;
-            ValidPathInfo info(*worker.store.queryPathInfo(worker.store.parseStorePath(path)));
+            if (!worker.store.isValidPath(i.second.path)) continue;
+            ValidPathInfo info(*worker.store.queryPathInfo(i.second.path));
             if (hash.first != info.narHash) {
                 worker.checkMismatch = true;
                 if (settings.runDiffHook || settings.keepFailed) {
@@ -3845,12 +3850,12 @@ void DerivationGoal::registerOutputs()
 
         if (curRound == nrRounds) {
             worker.store.optimisePath(actualPath); // FIXME: combine with scanForReferences()
-            worker.markContentsGood(worker.store.parseStorePath(path));
+            worker.markContentsGood(i.second.path);
         }
 
         auto info = ca
             ? ValidPathInfo { worker.store, ContentAddress { *ca } }
-            : ValidPathInfo { worker.store.parseStorePath(path) };
+            : ValidPathInfo { i.second.path };
         info.narHash = hash.first;
         info.narSize = hash.second;
         info.setReferencesPossiblyToSelf(std::move(references));
@@ -4433,16 +4438,16 @@ void SubstitutionGoal::tryNext()
     sub = subs.front();
     subs.pop_front();
 
-    auto subPath = storePath;
     if (ca) {
-        subPath = sub->makeFixedOutputPathFromCA(*ca);
+        auto subPath = sub->makeFixedOutputPathFromCA(*ca);
         if (sub->storeDir == worker.store.storeDir)
             assert(subPath == storePath);
     }
 
     try {
         // FIXME: make async
-        info = sub->queryPathInfo(subPath, ca);
+        auto p = ca ? StorePathOrCA { std::cref(*ca) } : std::cref(storePath);
+        info = sub->queryPathInfo(p);
     } catch (InvalidPath &) {
         tryNext();
         return;
@@ -4560,15 +4565,10 @@ void SubstitutionGoal::tryToRun()
             Activity act(*logger, actSubstitute, Logger::Fields{worker.store.printStorePath(storePath), sub->getUri()});
             PushActivity pact(act.id);
 
-            auto subPath = storePath;
-            if (ca) {
-                subPath = sub->makeFixedOutputPathFromCA(*ca);
-                if (sub->storeDir == worker.store.storeDir)
-                    assert(subPath == storePath);
-            }
+            auto p = ca ? StorePathOrCA { std::cref(*ca) } : std::cref(storePath);
 
             copyStorePath(ref<Store>(sub), ref<Store>(worker.store.shared_from_this()),
-                subPath, repair, sub->isTrusted ? NoCheckSigs : CheckSigs, ca);
+                p, repair, sub->isTrusted ? NoCheckSigs : CheckSigs);
 
             promise.set_value();
         } catch (...) {
@@ -4701,12 +4701,18 @@ std::shared_ptr<DerivationGoal> Worker::makeBasicDerivationGoal(const StorePath 
 }
 
 
-GoalPtr Worker::makeSubstitutionGoal(const StorePath & path, RepairFlag repair, std::optional<ContentAddress> ca)
+GoalPtr Worker::makeSubstitutionGoal(StorePathOrCA path, RepairFlag repair)
 {
-    GoalPtr goal = substitutionGoals[path].lock(); // FIXME
+    auto p = store.bakeCaIfNeeded(path);
+    GoalPtr goal = substitutionGoals[p].lock(); // FIXME
     if (!goal) {
-        goal = std::make_shared<SubstitutionGoal>(path, *this, repair, ca);
-        substitutionGoals.insert_or_assign(path, goal);
+        auto optCA = std::get_if<1>(&path);
+        goal = std::make_shared<SubstitutionGoal>(
+            p,
+            *this,
+            repair,
+            optCA ? std::optional { *optCA } : std::nullopt);
+        substitutionGoals.insert_or_assign(p, goal);
         wakeUp(goal);
     }
     return goal;
@@ -5144,15 +5150,15 @@ BuildResult LocalStore::buildDerivation(const StorePath & drvPath, const BasicDe
 }
 
 
-void LocalStore::ensurePath(const StorePath & path, std::optional<ContentAddress> ca)
+void LocalStore::ensurePath(StorePathOrCA path)
 {
     /* If the path is already valid, we're done. */
-    if (isValidPath(path, ca)) return;
+    if (isValidPath(path)) return;
 
     // primeCache(*this, {{path}});
 
     Worker worker(*this);
-    GoalPtr goal = worker.makeSubstitutionGoal(path, NoRepair, ca);
+    GoalPtr goal = worker.makeSubstitutionGoal(path, NoRepair);
     Goals goals = {goal};
 
     worker.run(goals);
@@ -5161,8 +5167,10 @@ void LocalStore::ensurePath(const StorePath & path, std::optional<ContentAddress
         if (goal->ex) {
             goal->ex->status = worker.exitStatus();
             throw *goal->ex;
-        } else
-            throw Error(worker.exitStatus(), "path '%s' does not exist and cannot be created", printStorePath(path));
+        } else {
+            auto p = this->bakeCaIfNeeded(path);
+            throw Error(worker.exitStatus(), "path '%s' does not exist and cannot be created", printStorePath(p));
+        }
     }
 }
 

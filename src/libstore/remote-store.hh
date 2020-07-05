@@ -35,15 +35,15 @@ public:
 
     /* Implementations of abstract store API methods. */
 
-    bool isValidPathUncached(const StorePath & path, std::optional<ContentAddress> ca) override;
+    bool isValidPathUncached(StorePathOrCA path) override;
 
     StorePathSet queryValidPaths(const StorePathSet & paths,
         SubstituteFlag maybeSubstitute = NoSubstitute) override;
 
     StorePathSet queryAllValidPaths() override;
 
-    void queryPathInfoUncached(const StorePath & path,
-        Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept override;
+    void queryPathInfoUncached(StorePathOrCA,
+        Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override;
 
     void queryReferrers(const StorePath & path, StorePathSet & referrers) override;
 
@@ -76,7 +76,7 @@ public:
     BuildResult buildDerivation(const StorePath & drvPath, const BasicDerivation & drv,
         BuildMode buildMode) override;
 
-    void ensurePath(const StorePath & path, std::optional<ContentAddress> ca) override;
+    void ensurePath(StorePathOrCA path) override;
 
     void addTempRoot(const StorePath & path) override;
 
