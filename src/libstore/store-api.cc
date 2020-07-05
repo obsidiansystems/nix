@@ -299,7 +299,7 @@ StorePathSet Store::queryDerivationOutputs(const StorePath & path)
     return outputPaths;
 }
 
-inline bool Store::isValidPath(StorePathOrCA storePath)
+bool Store::isValidPath(StorePathOrCA storePath)
 {
     std::string hashPart { bakeCaIfNeeded(storePath).hashPart() };
 
