@@ -233,19 +233,24 @@ private:
         else return path;
     }
 
-    // FIXME: we shouldn’t need a separate to make an api call just to
-    // format cids
-    std::string ipfsCidFormat(std::string cid, std::optional<std::string> base)
+    const std::string base16Alpha = "0123456789abcdef";
+    std::string ipfsCidFormatBase16(std::string cid)
     {
-        auto uri(daemonUri + "/api/v0/cid/format?arg=" + cid);
-        if (base)
-            uri += "&b=" + *base;
-        auto req = FileTransferRequest(uri);
-        req.post = true;
-        req.tries = 1;
-        auto res = getFileTransfer()->upload(req);
-        auto json = nlohmann::json::parse(*res.data);
-        return (std::string) json["Formatted"];
+        if (cid[0] == 'f') return cid;
+        assert(cid[0] == 'b');
+        std::string newCid = "f";
+        unsigned short remainder;
+        for (size_t i = 1; i < cid.size(); i++) {
+            if (cid[i] >= 'a' && cid[i] <= 'z')
+                remainder = (remainder << 5) | (cid[i] - 'a');
+            else if (cid[i] >= '2' && cid[i] <= '7')
+                remainder = (remainder << 5) | (26 + cid[i] - '2');
+            else throw Error("unknown character: '%c'", cid[i]);;
+            if ((i % 4) == 0)
+                newCid += base16Alpha[(remainder >> 4) & 0xf];
+            newCid += base16Alpha[(remainder >> (i % 4)) & 0xf];
+        }
+        return newCid;
     }
 
 public:
@@ -479,7 +484,7 @@ private:
     void writeNarInfo(ref<NarInfo> narInfo)
     {
         auto json = nlohmann::json::object();
-        json["narHash"] = narInfo->narHash.to_string(Base32, true);
+        json["narHash"] = narInfo->narHash->to_string(Base32, true);
         json["narSize"] = narInfo->narSize;
 
         auto narMap = getIpfsDag(getIpfsPath())["nar"];
@@ -510,7 +515,7 @@ private:
         }
 
         if (narInfo->fileHash)
-            json["downloadHash"] = narInfo->fileHash.to_string(Base32, true);
+            json["downloadHash"] = narInfo->fileHash->to_string(Base32, true);
 
         json["downloadSize"] = narInfo->fileSize;
         json["compression"] = narInfo->compression;
@@ -555,7 +560,7 @@ private:
             }
         } else if (std::holds_alternative<IPFSInfo>(ca.info)) {
             auto path = makeFixedOutputPathFromCA(ca);
-            Hash hash(path.hashPart(), htSHA1);
+            auto hash = Hash::parseAny(path.hashPart(), htSHA1);
             return "f01711114" + hash.to_string(Base16, false);
         }
 
@@ -610,7 +615,7 @@ private:
             // unrewrite modulus
             std::string offset;
             std::string result = *sink2.s;
-            int i = result.size() - 1;
+            size_t i = result.size() - 1;
             for (; i > 0; i--) {
                 char c = result.data()[i];
                 if (!(c >= '0' && c <= '9') && c != '|')
@@ -660,10 +665,10 @@ public:
                 TeeSource savedNAR(narSource);
                 restorePath((Path) tmpDir + "/tmp", savedNAR);
 
-                auto key = ipfsCidFormat(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())), "base16");
+                auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())));
                 assert(std::string(key, 0, 9) == "f01781114");
 
-                Hash hash(std::string(key, 9), htSHA1);
+                auto hash = Hash::parseAny(std::string(key, 9), htSHA1);
                 assert(hash == ca_.hash);
 
                 return;
@@ -672,17 +677,17 @@ public:
             auto fullCa = *info.fullContentAddressOpt();
             auto cid = getCidFromCA(fullCa);
 
-            auto cid_ = ipfsCidFormat(std::string(putIpfsDag(fullCa, "sha1"), 6), "base16");
+            auto cid_ = ipfsCidFormatBase16(std::string(putIpfsDag(fullCa, "sha1"), 6));
             assert(cid_ == cid);
 
             AutoDelete tmpDir(createTempDir(), true);
             TeeSource savedNAR(narSource);
             restorePath((Path) tmpDir + "/tmp", savedNAR);
 
-            auto key = ipfsCidFormat(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())), "base16");
+            auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())));
             assert(std::string(key, 0, 9) == "f01781114");
 
-            Hash hash_(std::string(key, 9), htSHA1);
+            auto hash_ = Hash::parseAny(std::string(key, 9), htSHA1);
             assert(hash_ == std::get<IPFSHash>(*info.ca).hash);
 
             return;
@@ -745,8 +750,11 @@ public:
         stats.narInfoWrite++;
     }
 
-    bool isValidPathUncached(const StorePath & storePath, std::optional<ContentAddress> ca) override
+    bool isValidPathUncached(StorePathOrCA storePathOrCA) override
     {
+        auto storePath = this->bakeCaIfNeeded(storePathOrCA);
+        auto ca = std::get_if<1>(&storePathOrCA);
+
         if (ca) {
             auto cid = getCidFromCA(*ca);
             if (cid && ipfsBlockStat("/ipfs/" + *cid))
@@ -762,9 +770,9 @@ public:
         return json["nar"].contains(storePath.to_string());
     }
 
-    void narFromPath(const StorePath & storePath, Sink & sink, std::optional<ContentAddress> ca) override
+    void narFromPath(StorePathOrCA storePathOrCA, Sink & sink) override
     {
-        auto info = queryPathInfo(storePath, ca).cast<const NarInfo>();
+        auto info = queryPathInfo(storePathOrCA).cast<const NarInfo>();
 
         uint64_t narSize = 0;
 
@@ -774,8 +782,10 @@ public:
         });
 
         // ugh... we have to convert git data to nar.
-        if (hasPrefix(info->url, "ipfs://f01781114")) {
+        if (info->url[7] != 'Q' && hasPrefix(ipfsCidFormatBase16(std::string(info->url, 7)), "f0178")) {
             AutoDelete tmpDir(createTempDir(), true);
+            // FIXME this is wrong, just doing so it builds
+            auto storePath = bakeCaIfNeeded(storePathOrCA);
             auto source = getGitObject("/ipfs/" + std::string(info->url, 7), std::string(storePath.hashPart()));
             restoreGit((Path) tmpDir + "/tmp", *source, storeDir, storeDir,
                 [this, storePath] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
@@ -801,10 +811,11 @@ public:
         stats.narReadBytes += narSize;
     }
 
-    void queryPathInfoUncached(const StorePath & storePath,
-        Callback<std::shared_ptr<const ValidPathInfo>> callback, std::optional<ContentAddress> ca) noexcept override
+    void queryPathInfoUncached(StorePathOrCA storePathOrCa,
+        Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override
     {
         // TODO: properly use callbacks
+        auto storePath = bakeCaIfNeeded(storePathOrCa);
 
         auto callbackPtr = std::make_shared<decltype(callback)>(std::move(callback));
 
@@ -814,16 +825,27 @@ public:
             fmt("querying info about '%s' on '%s'", storePathS, uri), Logger::Fields{storePathS, uri});
         PushActivity pact(act->id);
 
-        if (ca) {
-            auto cid = getCidFromCA(*ca);
+        if (auto p = std::get_if<1>(&storePathOrCa)) {
+            ContentAddress ca = static_cast<const ContentAddress &>(*p);
+            auto cid = getCidFromCA(ca);
             if (cid && ipfsBlockStat("/ipfs/" + *cid)) {
                 std::string url("ipfs://" + *cid);
-                if (hasPrefix(*cid, "f01711114")) {
+                if (hasPrefix(ipfsCidFormatBase16(*cid), "f0171")) {
                     auto json = getIpfsDag("/ipfs/" + *cid);
-                    ca = json;
-                    url = "ipfs://" + (std::string) json["cid"];
+                    url = "ipfs://" + (std::string) json.at("cid").at("/");
+
+                    json.at("cid").at("/") = ipfsCidFormatBase16(json.at("cid").at("/"));
+                    for (auto & ref : json.at("references").at("references"))
+                        ref.at("cid").at("/") = ipfsCidFormatBase16(ref.at("cid").at("/"));
+
+                    // Dummy value to set tag bit.
+                    ca = ContentAddress {
+                        .name = "t e m p",
+                        TextInfo { { .hash = Hash { htSHA256 } } },
+                    };
+                    from_json(json, ca);
                 }
-                NarInfo narInfo { *this, ContentAddress { *ca } };
+                NarInfo narInfo { *this, ContentAddress { ca } };
                 assert(narInfo.path == storePath);
                 narInfo.url = url;
                 (*callbackPtr)((std::shared_ptr<ValidPathInfo>)
@@ -846,7 +868,7 @@ public:
         json = getIpfsDag("/ipfs/" + narObjectHash);
 
         NarInfo narInfo { storePath };
-        narInfo.narHash = Hash((std::string) json["narHash"]);
+        narInfo.narHash = Hash::parseAnyPrefixed((std::string) json["narHash"]);
         narInfo.narSize = json["narSize"];
 
         for (auto & ref : json["references"].items())
@@ -872,7 +894,7 @@ public:
             narInfo.url = "ipfs://" + json["ipfsCid"]["/"].get<std::string>();
 
         if (json.find("downloadHash") != json.end())
-            narInfo.fileHash = Hash((std::string) json["downloadHash"]);
+            narInfo.fileHash = Hash::parseAnyPrefixed((std::string) json["downloadHash"]);
 
         if (json.find("downloadSize") != json.end())
             narInfo.fileSize = json["downloadSize"];
@@ -896,7 +918,7 @@ public:
            method for very large paths, but `copyPath' is mainly used for
            small files. */
         StringSink sink;
-        Hash h;
+        Hash h { htSHA256 }; // dummy initial value
         switch (method) {
         case FileIngestionMethod::Recursive:
             dumpPath(srcPath, sink, filter);
@@ -920,9 +942,11 @@ public:
             ContentAddress {
                 .name = name,
                 .info = FixedOutputInfo {
-                    method,
-                    h,
-					{},
+                    {
+                        .method = method,
+                        .hash = h,
+                    },
+                    {},
                 },
             },
         };
@@ -990,7 +1014,7 @@ public:
         BuildMode buildMode) override
     { unsupported("buildDerivation"); }
 
-    void ensurePath(const StorePath & path, std::optional<ContentAddress> ca) override
+    void ensurePath(StorePathOrCA ca) override
     { unsupported("ensurePath"); }
 
     std::optional<StorePath> queryPathFromHashPart(const std::string & hashPart) override

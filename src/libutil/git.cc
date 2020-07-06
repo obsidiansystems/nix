@@ -240,7 +240,7 @@ GitMode dumpGitWithCustomHash(std::function<std::unique_ptr<AbstractHashSink>(vo
                 if (perm == GitMode::Directory)
                     name += "/";
 
-                entries[name] = std::pair { perm, hash };
+                entries.insert_or_assign(name, std::pair { perm, hash });
             }
         }
         perm = dumpGitTree(entries, sink);

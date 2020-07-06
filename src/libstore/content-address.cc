@@ -1,11 +1,13 @@
 #include <nlohmann/json.hpp>
 
+#include "args.hh"
 #include "content-address.hh"
+#include "parser.hh"
 
 namespace nix {
 
 std::string FixedOutputHash::printMethodAlgo() const {
-    return makeFileIngestionPrefix(method) + printHashType(*hash.type);
+    return makeFileIngestionPrefix(method) + printHashType(hash.type);
 }
 
 std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
@@ -19,10 +21,6 @@ std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
     }
     abort();
 }
-
-// FIXME Put this somewhere?
-template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
-template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 std::string renderLegacyContentAddress(LegacyContentAddress ca) {
     return std::visit(overloaded {
@@ -43,48 +41,53 @@ std::string renderLegacyContentAddress(LegacyContentAddress ca) {
 }
 
 LegacyContentAddress parseLegacyContentAddress(std::string_view rawCa) {
-    auto prefixSeparator = rawCa.find(':');
-    if (prefixSeparator != string::npos) {
-        auto prefix = string(rawCa, 0, prefixSeparator);
-        if (prefix == "text") {
-            auto hashTypeAndHash = rawCa.substr(prefixSeparator+1, string::npos);
-            Hash hash = Hash(string(hashTypeAndHash));
-            if (*hash.type != htSHA256) {
-                throw Error("the text hash should have type SHA256");
-            }
-            return TextHash { hash };
-        } else if (prefix == "fixed") {
-            auto methodAndHash = rawCa.substr(prefixSeparator+1, string::npos);
-            if (methodAndHash.substr(0, 2) == "r:") {
-                std::string_view hashRaw = methodAndHash.substr(2, string::npos);
-                return FixedOutputHash {
-                    .method = FileIngestionMethod::Recursive,
-                    .hash = Hash(string(hashRaw)),
-                };
-            } else if (methodAndHash.substr(0, 4) == "git:") {
-                std::string_view hashRaw = methodAndHash.substr(4, string::npos);
-                return FixedOutputHash {
-                    .method = FileIngestionMethod::Git,
-                    .hash = Hash(string(hashRaw)),
-                };
-            } else {
-                std::string_view hashRaw = methodAndHash;
-                return FixedOutputHash {
-                    .method = FileIngestionMethod::Flat,
-                    .hash = Hash(string(hashRaw)),
-                };
-            }
-        } else if (prefix == "ipfs-git") {
-            Hash hash = Hash(rawCa.substr(prefixSeparator+1, string::npos));
-            if (*hash.type != htSHA1)
-                throw Error("the ipfs hash should have type SHA1");
-            return IPFSHash { hash };
-        } else {
-            throw Error("format not recognized; has to be text or fixed");
-        }
-    } else {
-        throw Error("Not a content address because it lacks an appropriate prefix");
+    auto rest = rawCa;
+
+    std::string_view prefix;
+    {
+        auto optPrefix = splitPrefixTo(rest, ':');
+        if (!optPrefix)
+            throw UsageError("not a content address because it is not in the form \"<prefix>:<rest>\": %s", rawCa);
+        prefix = *optPrefix;
     }
+
+    auto parseHashType_ = [&](){
+        auto hashTypeRaw = splitPrefixTo(rest, ':');
+        if (!hashTypeRaw)
+            throw UsageError("content address hash must be in form \"<algo>:<hash>\", but found: %s", rawCa);
+        HashType hashType = parseHashType(*hashTypeRaw);
+        return std::move(hashType);
+    };
+
+    // Switch on prefix
+    if (prefix == "text") {
+        // No parsing of the method, "text" only support flat.
+        HashType hashType = parseHashType_();
+        if (hashType != htSHA256)
+            throw Error("text content address hash should use %s, but instead uses %s",
+                printHashType(htSHA256), printHashType(hashType));
+        return TextHash {
+            .hash = Hash::parseNonSRIUnprefixed(rest, std::move(hashType)),
+        };
+    } else if (prefix == "fixed") {
+        // Parse method
+        auto method = FileIngestionMethod::Flat;
+        if (splitPrefix(rest, "r:"))
+            method = FileIngestionMethod::Recursive;
+        else if (splitPrefix(rest, "git:"))
+            method = FileIngestionMethod::Git;
+        HashType hashType = parseHashType_();
+        return FixedOutputHash {
+            .method = method,
+            .hash = Hash::parseNonSRIUnprefixed(rest, std::move(hashType)),
+        };
+    } else if (prefix == "ipfs-git") {
+        Hash hash = Hash::parseAnyPrefixed(rest);
+        if (hash.type != htSHA1)
+            throw Error("the ipfs hash should have type SHA1");
+        return IPFSGitTreeReference { .hash = hash };
+    } else
+        throw UsageError("content address prefix \"%s\" is unrecognized. Recogonized prefixes are \"text\" or \"fixed\"", prefix);
 };
 
 std::optional<LegacyContentAddress> parseLegacyContentAddressOpt(std::string_view rawCaOpt) {
@@ -220,7 +223,7 @@ void to_json(nlohmann::json& j, const LegacyContentAddress & ca) {
             return nlohmann::json {
                 { "type", "fixed" },
                 { "method", foh.method == FileIngestionMethod::Flat ? "flat" : "recursive" },
-                { "algo", printHashType(*foh.hash.type) },
+                { "algo", printHashType(foh.hash.type) },
                 { "hash", foh.hash.to_string(Base32, false) },
             };
         },
@@ -237,7 +240,7 @@ void from_json(const nlohmann::json& j, LegacyContentAddress & ca) {
     std::string_view type = j.at("type").get<std::string_view>();
     if (type == "text") {
         ca = TextHash {
-            .hash = Hash { j.at("hash").get<std::string_view>(), htSHA256 },
+            .hash = Hash::parseNonSRIUnprefixed(j.at("hash").get<std::string_view>(), htSHA256),
         };
     } else if (type == "fixed") {
         std::string_view methodRaw = j.at("method").get<std::string_view>();
@@ -247,7 +250,7 @@ void from_json(const nlohmann::json& j, LegacyContentAddress & ca) {
         auto hashAlgo = parseHashType(j.at("algo").get<std::string>());
         ca = FixedOutputHash {
             .method = method,
-            .hash = Hash { j.at("hash").get<std::string_view>(), hashAlgo },
+            .hash = Hash::parseNonSRIUnprefixed(j.at("hash").get<std::string_view>(), hashAlgo),
         };
     } else
         throw Error("invalid type: %s", type);
@@ -269,7 +272,7 @@ void to_json(nlohmann::json& j, const ContentAddress & ca)
             { "qtype", "ipfs" },
             { "name", ca.name },
             { "references", info.references },
-            { "cid", "f01781114" + info.hash.to_string(Base16, false) }
+            { "cid", nlohmann::json { { "/", "f01781114" + info.hash.to_string(Base16, false) } } }
         };
     } else throw Error("cannot convert to json");
 }
@@ -278,13 +281,13 @@ void from_json(const nlohmann::json& j, ContentAddress & ca)
 {
     std::string_view type = j.at("qtype").get<std::string_view>();
     if (type == "ipfs") {
-        auto cid = j.at("cid").get<std::string_view>();
+        auto cid = j.at("cid").at("/").get<std::string_view>();
         if (cid.substr(0, 9) != "f01781114")
             throw Error("cid '%s' is wrong type for ipfs hash", cid);
         ca = ContentAddress {
             .name = j.at("name"),
             .info = IPFSInfo {
-                Hash { cid.substr(9), htSHA1 },
+                Hash::parseAny(cid.substr(9), htSHA1),
                 j.at("references").get<PathReferences<StorePath>>(),
             },
         };
@@ -296,10 +299,10 @@ void to_json(nlohmann::json& j, const PathReferences<StorePath> & references)
 {
     auto refs = nlohmann::json::array();
     for (auto & i : references.references) {
-        Hash hash { i.hashPart(), htSHA1 };
+        auto hash = Hash::parseAny(i.hashPart(), htSHA1);
         refs.push_back(nlohmann::json {
             { "name", i.name() },
-            { "cid", "f01781114" + hash.to_string(Base16, false) }
+            { "cid", nlohmann::json {{ "/", "f01711114" + hash.to_string(Base16, false) }} }
         });
     }
 
@@ -318,10 +321,10 @@ void from_json(const nlohmann::json& j, PathReferences<StorePath> & references)
     StorePathSet refs;
     for (auto & ref : j.at("references")) {
         auto name = ref.at("name").get<std::string>();
-        auto cid = ref.at("cid").get<std::string>();
-        if (cid.substr(0, 9) != "f01781114")
+        auto cid = ref.at("cid").at("/").get<std::string>();
+        if (cid.substr(0, 9) != "f01711114")
             throw Error("cid '%s' is wrong type for ipfs hash", cid);
-        Hash hash { cid.substr(9), htSHA1 };
+        auto hash = Hash::parseAny(cid.substr(9), htSHA1);
         refs.insert(StorePath(hash, name));
     }
     references = PathReferences<StorePath> {
@@ -340,10 +343,13 @@ void to_json(nlohmann::json& j, const std::optional<LegacyContentAddress> & c) {
 }
 
 void from_json(const nlohmann::json& j, std::optional<LegacyContentAddress> & c) {
-    if (j.is_null())
+    if (j.is_null()) {
         c = std::nullopt;
-    else
-        c = j.get<LegacyContentAddress>();
+    } else {
+        // Dummy value to set tag bit.
+        c = TextHash { .hash = Hash { htSHA256 } };
+        from_json(j, *c);
+    }
 }
 
 }

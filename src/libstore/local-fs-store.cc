@@ -21,7 +21,8 @@ struct LocalStoreAccessor : public FSAccessor
     Path toRealPath(const Path & path)
     {
         Path storePath = store->toStorePath(path);
-        if (!store->isValidPath(store->parseStorePath(storePath)))
+        auto p = store->parseStorePath(storePath);
+        if (!store->isValidPath(p))
             throw InvalidPath("path '%1%' is not a valid store path", storePath);
         return store->getRealStoreDir() + std::string(path, store->storeDir.size());
     }
@@ -77,11 +78,12 @@ ref<FSAccessor> LocalFSStore::getFSAccessor()
             std::dynamic_pointer_cast<LocalFSStore>(shared_from_this())));
 }
 
-void LocalFSStore::narFromPath(const StorePath & path, Sink & sink, std::optional<ContentAddress> ca)
+void LocalFSStore::narFromPath(const StorePathOrCA pathOrCA, Sink & sink)
 {
-    if (!isValidPath(path))
-        throw Error("path '%s' is not valid", printStorePath(path));
-    dumpPath(getRealStoreDir() + std::string(printStorePath(path), storeDir.size()), sink);
+    auto p = this->bakeCaIfNeeded(pathOrCA);
+    if (!isValidPath(pathOrCA))
+        throw Error("path '%s' is not valid", printStorePath(p));
+    dumpPath(getRealStoreDir() + std::string(printStorePath(p), storeDir.size()), sink);
 }
 
 const string LocalFSStore::drvsLogDir = "drvs";
