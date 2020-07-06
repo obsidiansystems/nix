@@ -78,6 +78,8 @@ nix-build check.nix -A hashmismatch --no-out-link || status=$?
 [ "$status" = "102" ]
 
 echo -n > ./dummy
+sync
+
 nix-build check.nix -A hashmismatch --no-out-link
 echo 'Hello World' > ./dummy
 
