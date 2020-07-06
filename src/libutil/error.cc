@@ -355,13 +355,13 @@ std::ostream& showErrorInfo(std::ostream &out, const ErrorInfo &einfo, bool show
 
         for (auto iter = einfo.traces.rbegin(); iter != einfo.traces.rend(); ++iter)
         {
-            try {
-                out << std::endl << prefix;
-                out << ANSI_BLUE << "trace: " << ANSI_NORMAL << iter->hint.str();
+            out << std::endl << prefix;
+            out << ANSI_BLUE << "trace: " << ANSI_NORMAL << iter->hint.str();
 
+            if (iter->pos) {
+                auto pos = iter->pos.value();
                 nl = true;
-                if (*iter->pos) {
-                    auto pos = iter->pos.value();
+                if (pos) {
                     out << std::endl << prefix;
 
                     printAtPos(prefix, pos, out);
@@ -373,7 +373,7 @@ std::ostream& showErrorInfo(std::ostream &out, const ErrorInfo &einfo, bool show
                         out << std::endl << prefix;
                     }
                 }
-            } catch(const std::bad_optional_access& e) {
+            } else {
                 out << iter->hint.str() << std::endl;
             }
         }
