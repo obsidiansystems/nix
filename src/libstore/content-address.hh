@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nlohmann/json.hpp>
+#include <memory>
 #include <variant>
 
 #include "hash.hh"
@@ -40,8 +41,6 @@ struct IPFSHash {
 template<template <typename> class Ref>
 struct IPFSGitTreeNodeT;
 
-typedef IPFSHash<IPFSGitTreeNodeT<IPFSHash>> IPFSGitTreeReference;
-
 /*
   We've accumulated several types of content-addressed paths over the years;
   fixed-output derivations support multiple hash algorithms and serialisation
@@ -56,7 +55,7 @@ typedef IPFSHash<IPFSGitTreeNodeT<IPFSHash>> IPFSGitTreeReference;
 typedef std::variant<
     TextHash, // for paths computed by makeTextPath() / addTextToStore
     FixedOutputHash, // for path computed by makeFixedOutputPath
-    IPFSGitTreeReference
+    IPFSHash<IPFSGitTreeNodeT<IPFSHash>>
 > LegacyContentAddress;
 
 /* Compute the prefix to the hash algorithm which indicates how the files were
@@ -159,11 +158,21 @@ struct IPFSGitTreeNodeT {
 
 typedef IPFSGitTreeNodeT<IPFSHash> IPFSGitTreeNode;
 
+/* The point of this is to store data that hasn't yet been put in IPFS
+   so we don't have a dangling hash. If someday Nix was more integrated
+   with IPFS such that it always had at least IPFS offline/local
+   storage, we wouldn't need this. */
+template<typename Deref>
+struct IPFSHashWithOptValue : IPFSHash<Deref> {
+	// N.B. shared_ptr is nullable
+    std::shared_ptr<Deref> value;
+};
+
 // FIXME names
 typedef std::variant<
     TextInfo,
     FixedOutputInfo,
-    IPFSGitTreeReference
+    IPFSHashWithOptValue<IPFSGitTreeNodeT<IPFSHashWithOptValue>>
 > ContentAddressWithoutName;
 
 template<typename Underlying>
