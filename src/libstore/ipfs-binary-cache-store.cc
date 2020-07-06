@@ -8,6 +8,7 @@
 #include "compression.hh"
 #include "git.hh"
 #include "names.hh"
+#include "references.hh"
 
 namespace nix {
 
@@ -128,9 +129,12 @@ public:
 
 private:
 
-    std::string putIpfsDag(nlohmann::json data)
+    std::string putIpfsDag(nlohmann::json data, std::optional<std::string> hash = std::nullopt)
     {
-        auto req = FileTransferRequest(daemonUri + "/api/v0/dag/put");
+        auto uri(daemonUri + "/api/v0/dag/put");
+        if (hash)
+            uri += "?hash=" + *hash;
+        auto req = FileTransferRequest(uri);
         req.data = std::make_shared<string>(data.dump());
         req.post = true;
         req.tries = 1;
@@ -221,7 +225,6 @@ private:
         return json["Path"];
     }
 
-public:
     Path formatPathAsProtocol(Path path) {
         if (hasPrefix(path, "/ipfs/"))
             return "ipfs://" + path.substr(strlen("/ipfs/"), string::npos);
@@ -229,6 +232,28 @@ public:
             return "ipns://" + path.substr(strlen("/ipfs/"), string::npos);
         else return path;
     }
+
+    const std::string base16Alpha = "0123456789abcdef";
+    std::string ipfsCidFormatBase16(std::string cid)
+    {
+        if (cid[0] == 'f') return cid;
+        assert(cid[0] == 'b');
+        std::string newCid = "f";
+        unsigned short remainder;
+        for (size_t i = 1; i < cid.size(); i++) {
+            if (cid[i] >= 'a' && cid[i] <= 'z')
+                remainder = (remainder << 5) | (cid[i] - 'a');
+            else if (cid[i] >= '2' && cid[i] <= '7')
+                remainder = (remainder << 5) | (26 + cid[i] - '2');
+            else throw Error("unknown character: '%c'", cid[i]);;
+            if ((i % 4) == 0)
+                newCid += base16Alpha[(remainder >> 4) & 0xf];
+            newCid += base16Alpha[(remainder >> (i % 4)) & 0xf];
+        }
+        return newCid;
+    }
+
+public:
 
     // IPNS publish can be slow, we try to do it rarely.
     void sync() override
@@ -476,7 +501,6 @@ private:
             json["deriver"] = printStorePath(*narInfo->deriver);
 
         json["registrationTime"] = narInfo->registrationTime;
-        json["ultimate"] = narInfo->ultimate;
 
         json["sigs"] = nlohmann::json::array();
         for (auto & sig : narInfo->sigs)
@@ -521,6 +545,7 @@ private:
     // <cidv1> ::= <multibase-prefix><cid-version><multicodec-packed-content-type><multihash-content-address>
     // f = base16
     // cid-version = 01
+    // codec = 78 (git codec) / 71 (dag codec)
     // multicodec-packed-content-type = 1114
     std::optional<std::string> getCidFromCA(ContentAddress ca)
     {
@@ -530,12 +555,16 @@ private:
                 assert(ca_.hash.type == htSHA1);
                 return "f01781114" + ca_.hash.to_string(Base16, false);
             }
+        } else if (std::holds_alternative<IPFSInfo>(ca.info)) {
+            auto path = makeFixedOutputPathFromCA(ca);
+            auto hash = Hash::parseAny(path.hashPart(), htSHA1);
+            return "f01711114" + hash.to_string(Base16, false);
         }
 
         return std::nullopt;
     }
 
-    void putIpfsGitBlock(std::string s)
+    std::string putIpfsGitBlock(std::string s)
     {
         auto uri = daemonUri + "/api/v0/block/put?format=git-raw&mhtype=sha1";
 
@@ -543,41 +572,76 @@ private:
         req.data = std::make_shared<string>(s);
         req.post = true;
         req.tries = 1;
-        getFileTransfer()->upload(req);
+        auto res = getFileTransfer()->upload(req);
+        auto json = nlohmann::json::parse(*res.data);
+        return (std::string) json["Key"];
     }
 
-    void addGit(Path path)
+    std::string addGit(Path path, std::string modulus)
     {
         struct stat st;
         if (lstat(path.c_str(), &st))
             throw SysError("getting attributes of path '%1%'", path);
 
-        if (S_ISREG(st.st_mode)) {
-            StringSink sink;
-            dumpGitBlob(path, st, sink);
-            putIpfsGitBlock(*sink.s);
-        } else if (S_ISDIR(st.st_mode)) {
+        if (S_ISDIR(st.st_mode)) {
             for (auto & i : readDirectory(path))
-                addGit(path + "/" + i.name);
-            StringSink sink;
-            dumpGit(htSHA1, path, sink);
-            putIpfsGitBlock(*sink.s);
-        } else throw Error("file '%1%' has an unsupported type", path);
+                addGit(path + "/" + i.name, modulus);
+        }
+
+        StringSink sink;
+        RewritingSink rewritingSink(modulus, std::string(modulus.size(), 0), sink);
+
+        dumpGitWithCustomHash([&]{ return std::make_unique<HashModuloSink>(htSHA1, modulus); }, path, rewritingSink);
+
+        rewritingSink.flush();
+
+        for (auto & pos : rewritingSink.matches) {
+            auto s = fmt("|%d", pos);
+            sink((unsigned char *) s.data(), s.size());
+        }
+
+        return putIpfsGitBlock(*sink.s);
+    }
+
+    std::unique_ptr<Source> getGitObject(std::string path, std::string hashPart)
+    {
+        return sinkToSource([path, hashPart, this](Sink & sink) {
+            StringSink sink2;
+            getIpfsBlock(path, sink2);
+
+            // unrewrite modulus
+            std::string offset;
+            std::string result = *sink2.s;
+            size_t i = result.size() - 1;
+            for (; i > 0; i--) {
+                char c = result.data()[i];
+                if (!(c >= '0' && c <= '9') && c != '|')
+                    break;
+                if (c == '|') {
+                    int pos = stoi(offset);
+                    assert(pos > 0 && pos + hashPart.size() < i);
+                    assert(std::string(result, pos, hashPart.size()) == std::string(hashPart.size(), 0));
+                    std::copy(hashPart.begin(), hashPart.end(), result.begin() + pos);
+                    offset = "";
+                } else
+                    offset = c + offset;
+            }
+            result.erase(i + 1);
+
+            sink(result);
+        });
     }
 
     void getGitEntry(ParseSink & sink, const Path & path,
         const Path & realStoreDir, const Path & storeDir,
-        int perm, std::string name, Hash hash)
+        int perm, std::string name, Hash hash, std::string hashPart)
     {
-        auto url = "ipfs://f01781114" + hash.to_string(Base16, false);
-        auto source = sinkToSource([&](Sink & sink) {
-            getIpfsBlock("/ipfs/" + std::string(url, 7), sink);
-        });
-        parseGitInternal(sink, *source, path + "/" + name, realStoreDir, storeDir,
-            [this] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
+        auto source = getGitObject("/ipfs/f01781114" + hash.to_string(Base16, false), hashPart);
+        parseGitWithPath(sink, *source, path + "/" + name, realStoreDir, storeDir,
+            [hashPart, this] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
                 int perm, std::string name, Hash hash) {
-                this->getGitEntry(sink, path, realStoreDir, storeDir, perm, name, hash);
-            });
+                getGitEntry(sink, path, realStoreDir, storeDir, perm, name, hash, hashPart);
+            }, perm);
     }
 
 
@@ -597,9 +661,33 @@ public:
                 AutoDelete tmpDir(createTempDir(), true);
                 TeeSource savedNAR(narSource);
                 restorePath((Path) tmpDir + "/tmp", savedNAR);
-                addGit((Path) tmpDir + "/tmp");
+
+                auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())));
+                assert(std::string(key, 0, 9) == "f01781114");
+
+                auto hash = Hash::parseAny(std::string(key, 9), htSHA1);
+                assert(hash == ca_.hash);
+
                 return;
             }
+        } else if (info.ca && std::holds_alternative<IPFSHash>(*info.ca)) {
+            auto fullCa = *info.fullContentAddressOpt();
+            auto cid = getCidFromCA(fullCa);
+
+            auto cid_ = ipfsCidFormatBase16(std::string(putIpfsDag(fullCa, "sha1"), 6));
+            assert(cid_ == cid);
+
+            AutoDelete tmpDir(createTempDir(), true);
+            TeeSource savedNAR(narSource);
+            restorePath((Path) tmpDir + "/tmp", savedNAR);
+
+            auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())));
+            assert(std::string(key, 0, 9) == "f01781114");
+
+            auto hash_ = Hash::parseAny(std::string(key, 9), htSHA1);
+            assert(hash_ == std::get<IPFSHash>(*info.ca).hash);
+
+            return;
         }
 
         if (trustless)
@@ -691,15 +779,15 @@ public:
         });
 
         // ugh... we have to convert git data to nar.
-        if (hasPrefix(info->url, "ipfs://f01781114")) {
+        if (info->url[7] != 'Q' && hasPrefix(ipfsCidFormatBase16(std::string(info->url, 7)), "f0178")) {
             AutoDelete tmpDir(createTempDir(), true);
-            auto source = sinkToSource([&](Sink & sink) {
-                getIpfsBlock("/ipfs/" + std::string(info->url, 7), sink);
-            });
+            // FIXME this is wrong, just doing so it builds
+            auto storePath = bakeCaIfNeeded(storePathOrCA);
+            auto source = getGitObject("/ipfs/" + std::string(info->url, 7), std::string(storePath.hashPart()));
             restoreGit((Path) tmpDir + "/tmp", *source, storeDir, storeDir,
-                [this] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
+                [this, storePath] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
                     int perm, std::string name, Hash hash) {
-                    this->getGitEntry(sink, path, realStoreDir, storeDir, perm, name, hash);
+                    getGitEntry(sink, path, realStoreDir, storeDir, perm, name, hash, std::string(storePath.hashPart()));
                 });
             dumpPath((Path) tmpDir + "/tmp", wrapperSink);
             return;
@@ -734,20 +822,32 @@ public:
             fmt("querying info about '%s' on '%s'", storePathS, uri), Logger::Fields{storePathS, uri});
         PushActivity pact(act->id);
 
-
         if (auto p = std::get_if<1>(&storePathOrCa)) {
-            auto ca = static_cast<const ContentAddress &>(*p);
+            ContentAddress ca = static_cast<const ContentAddress &>(*p);
             auto cid = getCidFromCA(ca);
-            if (cid) {
-                auto size = ipfsBlockStat("/ipfs/" + *cid);
-                if (size) {
-                    NarInfo narInfo { *this, ContentAddress { ca } };
-                    assert(narInfo.path == storePath);
-                    narInfo.url = "ipfs://" + *cid;
-                    (*callbackPtr)((std::shared_ptr<ValidPathInfo>)
-                        std::make_shared<NarInfo>(narInfo));
-                    return;
+            if (cid && ipfsBlockStat("/ipfs/" + *cid)) {
+                std::string url("ipfs://" + *cid);
+                if (hasPrefix(ipfsCidFormatBase16(*cid), "f0171")) {
+                    auto json = getIpfsDag("/ipfs/" + *cid);
+                    url = "ipfs://" + (std::string) json.at("cid").at("/");
+
+                    json.at("cid").at("/") = ipfsCidFormatBase16(json.at("cid").at("/"));
+                    for (auto & ref : json.at("references").at("references"))
+                        ref.at("cid").at("/") = ipfsCidFormatBase16(ref.at("cid").at("/"));
+
+                    // Dummy value to set tag bit.
+                    ca = ContentAddress {
+                        .name = "t e m p",
+                        TextInfo { { .hash = Hash { htSHA256 } } },
+                    };
+                    from_json(json, ca);
                 }
+                NarInfo narInfo { *this, ContentAddress { ca } };
+                assert(narInfo.path == storePath);
+                narInfo.url = url;
+                (*callbackPtr)((std::shared_ptr<ValidPathInfo>)
+                    std::make_shared<NarInfo>(narInfo));
+                return;
             }
         }
 
@@ -782,9 +882,6 @@ public:
 
         if (json.find("registrationTime") != json.end())
             narInfo.registrationTime = json["registrationTime"];
-
-        if (json.find("ultimate") != json.end())
-            narInfo.ultimate = json["ultimate"];
 
         if (json.find("sigs") != json.end())
             for (auto & sig : json["sigs"])

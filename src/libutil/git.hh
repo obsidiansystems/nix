@@ -10,6 +10,7 @@ enum struct GitMode {
     Directory,
     Executable,
     Regular,
+    Symlink,
 };
 
 void addGitEntry(ParseSink & sink, const Path & path,
@@ -35,8 +36,15 @@ Hash dumpGitHash(HashType ht, const Path & path, PathFilter & filter = defaultPa
 
 void dumpGit(HashType ht, const Path & path, Sink & sink, PathFilter & filter = defaultPathFilter);
 
-void parseGitInternal(ParseSink & sink, Source & source, const Path & path,
+void parseGitWithPath(ParseSink & sink, Source & source, const Path & path,
     const Path & realStoreDir, const Path & storeDir,
-    std::function<void (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir, int perm, std::string name, Hash hash)> addEntry);
+    std::function<void (ParseSink & sink, const Path & path,
+        const Path & realStoreDir, const Path & storeDir, int perm, std::string name, Hash hash)> addEntry, int perm = 100644);
+
+Hash dumpGitHashWithCustomHash(std::function<std::unique_ptr<AbstractHashSink>(void)> genHashSink,
+    const Path & path, PathFilter & filter = defaultPathFilter);
+
+GitMode dumpGitWithCustomHash(std::function<std::unique_ptr<AbstractHashSink>(void)> genHashSink,
+    const Path & path, Sink & sink, PathFilter & filter = defaultPathFilter);
 
 }

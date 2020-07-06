@@ -7,6 +7,7 @@
 #include "json.hh"
 #include "derivations.hh"
 #include "url.hh"
+#include "references.hh"
 
 #include <future>
 
@@ -214,6 +215,38 @@ StorePath Store::makeTextPath(std::string_view name, const TextInfo & info) cons
         name);
 }
 
+static std::vector<uint8_t> packMultihash(std::string cid)
+{
+    std::vector<uint8_t> result;
+    assert(cid[0] == 'f');
+    result.push_back(0x00);
+    result.push_back(std::stoi(cid.substr(1, 2), nullptr, 16));
+    result.push_back(std::stoi(cid.substr(3, 2), nullptr, 16));
+    result.push_back(std::stoi(cid.substr(5, 2), nullptr, 16));
+    result.push_back(std::stoi(cid.substr(7, 2), nullptr, 16));
+    Hash hash = Hash::parseAny(cid.substr(9), htSHA1);
+    for (unsigned int i = 0; i < hash.hashSize; i++)
+        result.push_back(hash.hash[i]);
+    return result;
+}
+
+static StorePath makeIPFSPath(const ContentAddress & info)
+{
+    nlohmann::json j = info;
+
+    // replace {"/": ...} with packed multihash
+    // ipfs converts automatically between the two
+    j.at("cid") = nlohmann::json::binary(packMultihash(j.at("cid").at("/").get<std::string>()), 42);
+    for (auto & ref : j.at("references").at("references"))
+        ref.at("cid") = nlohmann::json::binary(packMultihash(ref.at("cid").at("/").get<std::string>()), 42);
+
+    std::vector<std::uint8_t> cbor = nlohmann::json::to_cbor(j);
+    Hash hash = hashString(htSHA1, std::string(cbor.begin(), cbor.end()));
+
+    // note this only works because sha1 is size 20
+    return StorePath(hash, info.name);
+}
+
 
 StorePath Store::makeFixedOutputPathFromCA(const ContentAddress & info) const
 {
@@ -224,6 +257,9 @@ StorePath Store::makeFixedOutputPathFromCA(const ContentAddress & info) const
         },
         [&](FixedOutputInfo foi) {
             return makeFixedOutputPath(info.name, foi);
+        },
+        [&](IPFSInfo io) {
+            return makeIPFSPath(info);
         }
     }, info.info);
 }
@@ -664,7 +700,15 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
         StringSink sink;
         srcStore->narFromPath(storePath, sink);
         auto info2 = make_ref<ValidPathInfo>(*info);
-        info2->narHash = hashString(htSHA256, *sink.s);
+
+        std::unique_ptr<AbstractHashSink> hashSink;
+        if (!info->ca || !info->hasSelfReference)
+            hashSink = std::make_unique<HashSink>(htSHA256);
+        else
+            hashSink = std::make_unique<HashModuloSink>(htSHA256, std::string(info->path.hashPart()));
+        (*hashSink)((unsigned char *) sink.s->data(), sink.s->size());
+        info2->narHash = hashSink->finish().first;
+
         if (!info->narSize) info2->narSize = sink.s->size();
         if (info->ultimate) info2->ultimate = false;
         info = info2;
@@ -890,12 +934,17 @@ std::optional<ContentAddress> ValidPathInfo::fullContentAddressOpt() const
                 TextInfo info { th };
                 assert(!hasSelfReference);
                 info.references = references;
-                return std::variant<TextInfo, FixedOutputInfo> { info };
+                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo> { info };
             },
             [&](FixedOutputHash foh) {
                 FixedOutputInfo info { foh };
                 info.references = static_cast<PathReferences<StorePath>>(*this);
-                return std::variant<TextInfo, FixedOutputInfo> { info };
+                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo> { info };
+            },
+            [&](IPFSHash io) {
+                IPFSInfo info { io };
+                info.references = static_cast<PathReferences<StorePath>>(*this);
+                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo> { info };
             },
         }, *ca),
     };
@@ -959,6 +1008,10 @@ ValidPathInfo::ValidPathInfo(
         [this](FixedOutputInfo foi) {
             *(static_cast<PathReferences<StorePath> *>(this)) = foi.references;
             this->ca = FixedOutputHash { (FixedOutputHash) std::move(foi) };
+        },
+        [this](IPFSInfo foi) {
+            *(static_cast<PathReferences<StorePath> *>(this)) = foi.references;
+            this->ca = IPFSHash { (IPFSHash) std::move(foi) };
         },
     }, std::move(info.info));
 }

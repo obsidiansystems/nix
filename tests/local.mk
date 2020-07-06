@@ -33,7 +33,8 @@ nix_tests = \
   post-hook.sh \
   function-trace.sh \
   recursive.sh \
-  ipfs.sh
+  ipfs.sh \
+  ensure-ca.sh
   # parallel.sh
 
 install-tests += $(foreach x, $(nix_tests), tests/$(x))

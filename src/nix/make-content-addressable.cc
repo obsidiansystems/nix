@@ -3,14 +3,20 @@
 #include "references.hh"
 #include "common-args.hh"
 #include "json.hh"
+#include "git.hh"
+#include "archive.hh"
 
 using namespace nix;
 
 struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
 {
+    bool ipfsContent;
+
     CmdMakeContentAddressable()
     {
         realiseMode = Build;
+
+        mkFlag(0, "ipfs", "use ipfs/ipld addressing", &ipfsContent);
     }
 
     std::string description() override
@@ -73,17 +79,43 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
 
             auto narHash = hashModuloSink.finish().first;
 
+            // ugh... we have to convert nar data to git.
+            std::optional<Hash> gitHash;
+            if (ipfsContent) {
+                AutoDelete tmpDir(createTempDir(), true);
+                StringSource source(*sink.s);
+                restorePath((Path) tmpDir + "/tmp", source);
+
+                gitHash = dumpGitHashWithCustomHash([&]{ return std::make_unique<HashModuloSink>(htSHA1, oldHashPart); }, (Path) tmpDir + "/tmp");
+
+                StringSink sink_;
+                RewritingSink rewritingSink(oldHashPart, std::string(oldHashPart.size(), 0), sink_);
+                dumpGit(htSHA1, (Path) tmpDir + "/tmp", rewritingSink);
+
+                rewritingSink.flush();
+
+                for (auto & pos : rewritingSink.matches) {
+                    auto s = fmt("|%d", pos);
+                    sink_((unsigned char *) s.data(), s.size());
+                }
+            }
+
             ValidPathInfo info {
                 *store,
                 ContentAddress {
                     .name = std::string { path.name() },
-                    .info = FixedOutputInfo {
-                        {
-                            .method = FileIngestionMethod::Recursive,
-                            .hash = narHash,
-                        },
-                        std::move(refs),
-                    },
+                    .info = ipfsContent ?
+                      std::variant<TextInfo, FixedOutputInfo, IPFSInfo> {IPFSInfo {
+                          { .hash = *gitHash },
+                          std::move(refs),
+                      }}
+                    : std::variant<TextInfo, FixedOutputInfo, IPFSInfo> {FixedOutputInfo {
+                          {
+                              .method = FileIngestionMethod::Recursive,
+                              .hash = narHash,
+                          },
+                          std::move(refs),
+                      }},
                 },
             };
             info.narHash = narHash;

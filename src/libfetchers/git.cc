@@ -123,7 +123,7 @@ struct GitInput : Input
                     ingestionMethod,
                     *treeHash,
                     {},
-                }
+                },
             };
 
         // try to substitute

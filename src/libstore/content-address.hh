@@ -30,6 +30,10 @@ struct FixedOutputHash {
     std::string printMethodAlgo() const;
 };
 
+struct IPFSHash {
+    Hash hash;
+};
+
 /*
   We've accumulated several types of content-addressed paths over the years;
   fixed-output derivations support multiple hash algorithms and serialisation
@@ -43,7 +47,8 @@ struct FixedOutputHash {
 */
 typedef std::variant<
     TextHash, // for paths computed by makeTextPath() / addTextToStore
-    FixedOutputHash // for path computed by makeFixedOutputPath
+    FixedOutputHash, // for path computed by makeFixedOutputPath
+    IPFSHash
 > LegacyContentAddress;
 
 /* Compute the prefix to the hash algorithm which indicates how the files were
@@ -134,11 +139,17 @@ struct FixedOutputInfo : FixedOutputHash {
     PathReferences<StorePath> references;
 };
 
+struct IPFSInfo : IPFSHash {
+    // References for the paths
+    PathReferences<StorePath> references;
+};
+
 struct ContentAddress {
     std::string name;
     std::variant<
         TextInfo,
-        FixedOutputInfo
+        FixedOutputInfo,
+        IPFSInfo
     > info;
 
     bool operator < (const ContentAddress & other) const
@@ -146,7 +157,16 @@ struct ContentAddress {
         return name < other.name;
         // FIXME second field
     }
-
 };
+
+std::string renderContentAddress(ContentAddress ca);
+
+ContentAddress parseContentAddress(std::string_view rawCa);
+
+void to_json(nlohmann::json& j, const ContentAddress & c);
+void from_json(const nlohmann::json& j, ContentAddress & c);
+
+void to_json(nlohmann::json& j, const PathReferences<StorePath> & c);
+void from_json(const nlohmann::json& j, PathReferences<StorePath> & c);
 
 }
