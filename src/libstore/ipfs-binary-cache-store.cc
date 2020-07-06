@@ -465,12 +465,9 @@ private:
         auto narMap = getIpfsDag(getIpfsPath())["nar"];
 
         json["references"] = nlohmann::json::object();
-        json["hasSelfReference"] = false;
+        json["hasSelfReference"] = narInfo->hasSelfReference;
         for (auto & ref : narInfo->references) {
-            if (ref == narInfo->path)
-                json["hasSelfReference"] = true;
-            else
-                json["references"].emplace(ref.to_string(), narMap[(std::string) ref.to_string()]);
+            json["references"].emplace(ref.to_string(), narMap[(std::string) ref.to_string()]);
         }
 
         json["ca"] = narInfo->ca;
@@ -775,7 +772,7 @@ public:
             narInfo.references.insert(StorePath(ref.key()));
 
         if (json["hasSelfReference"])
-            narInfo.references.insert(storePath);
+            narInfo.hasSelfReference = json["hasSelfReference"];
 
         if (json.find("ca") != json.end())
             json["ca"].get_to(narInfo.ca);
