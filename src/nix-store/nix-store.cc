@@ -372,8 +372,8 @@ static void opQuery(Strings opFlags, Strings opArgs)
                 for (auto & j : maybeUseOutputs(store->followLinksToStorePath(i), useOutput, forceRealise)) {
                     auto info = store->queryPathInfo(j);
                     if (query == qHash) {
-                        assert(info->narHash && info->narHash->type == htSHA256);
-                        cout << fmt("%s\n", info->narHash->to_string(Base32, true));
+                        assert(info->narHash && info->narHash.type == htSHA256);
+                        cout << fmt("%s\n", info->narHash.to_string(Base32, true));
                     } else if (query == qSize)
                         cout << fmt("%d\n", info->narSize);
                 }
@@ -725,7 +725,7 @@ static void opVerifyPath(Strings opFlags, Strings opArgs)
         auto path = store->followLinksToStorePath(i);
         printMsg(lvlTalkative, "checking path '%s'...", store->printStorePath(path));
         auto info = store->queryPathInfo(path);
-        HashSink sink(info->narHash->type);
+        HashSink sink(info->narHash.type);
         store->narFromPath(path, sink);
         auto current = sink.finish();
         if (current.first != info->narHash) {
@@ -734,7 +734,7 @@ static void opVerifyPath(Strings opFlags, Strings opArgs)
                 .hint = hintfmt(
                     "path '%s' was modified! expected hash '%s', got '%s'",
                     store->printStorePath(path),
-                    info->narHash->to_string(Base32, true),
+                    info->narHash.to_string(Base32, true),
                     current.first.to_string(Base32, true))
             });
             status = 1;
@@ -864,7 +864,7 @@ static void opServe(Strings opFlags, Strings opArgs)
                         out << info->narSize // downloadSize
                             << info->narSize;
                         if (GET_PROTOCOL_MINOR(clientVersion) >= 4)
-                            out << (info->narHash ? info->narHash->to_string(Base32, true) : "")
+                            out << (info->narHash ? info->narHash.to_string(Base32, true) : "")
                                 << renderContentAddress(info->ca)
                                 << info->sigs;
                     } catch (InvalidPath &) {
@@ -946,11 +946,13 @@ static void opServe(Strings opFlags, Strings opArgs)
                 if (!writeAllowed) throw Error("importing paths is not allowed");
 
                 auto path = readString(in);
-                ValidPathInfo info(store->parseStorePath(path));
+                ValidPathInfo info {
+                    store->parseStorePath(path),
+                    Hash(readString(in), htSHA256),
+                };
                 auto deriver = readString(in);
                 if (deriver != "")
                     info.deriver = store->parseStorePath(deriver);
-                info.narHash = Hash(readString(in), htSHA256);
                 info.references = readStorePaths<StorePathSet>(*store, in);
                 in >> info.registrationTime >> info.narSize >> info.ultimate;
                 info.sigs = readStrings<StringSet>(in);

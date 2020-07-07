@@ -15,8 +15,12 @@ struct NarInfo : ValidPathInfo
     std::string system;
 
     NarInfo() = delete;
-    NarInfo(StorePath && path) : ValidPathInfo(std::move(path)) { }
-    NarInfo(const ValidPathInfo & info) : ValidPathInfo(info) { }
+    NarInfo(StorePath && path, Hash narHash)
+    	: ValidPathInfo(std::move(path), narHash)
+    { }
+    NarInfo(const ValidPathInfo & info, Hash narHash)
+    	: ValidPathInfo(info, narHash)
+    { }
     NarInfo(const Store & store, const std::string & s, const std::string & whence);
 
     std::string to_string(const Store & store) const;
