@@ -106,7 +106,7 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
                     .name = std::string { path.name() },
                     .info = ipfsContent ?
                       std::variant<TextInfo, FixedOutputInfo, IPFSInfo> {IPFSInfo {
-                          { .hash = *gitHash },
+                          .hash = *gitHash,
                           std::move(refs),
                       }}
                     : std::variant<TextInfo, FixedOutputInfo, IPFSInfo> {FixedOutputInfo {

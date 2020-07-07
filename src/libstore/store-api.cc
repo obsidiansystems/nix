@@ -942,7 +942,7 @@ std::optional<ContentAddress> ValidPathInfo::fullContentAddressOpt() const
                 return std::variant<TextInfo, FixedOutputInfo, IPFSInfo> { info };
             },
             [&](IPFSHash io) {
-                IPFSInfo info { io };
+                IPFSInfo info { .hash = io.hash };
                 info.references = static_cast<PathReferences<StorePath>>(*this);
                 return std::variant<TextInfo, FixedOutputInfo, IPFSInfo> { info };
             },
@@ -1011,7 +1011,7 @@ ValidPathInfo::ValidPathInfo(
         },
         [this](IPFSInfo foi) {
             *(static_cast<PathReferences<StorePath> *>(this)) = foi.references;
-            this->ca = IPFSHash { (IPFSHash) std::move(foi) };
+            this->ca = IPFSHash { foi.hash };
         },
     }, std::move(info.info));
 }

@@ -139,7 +139,8 @@ struct FixedOutputInfo : FixedOutputHash {
     PathReferences<StorePath> references;
 };
 
-struct IPFSInfo : IPFSHash {
+struct IPFSInfo {
+    Hash hash;
     // References for the paths
     PathReferences<StorePath> references;
 };

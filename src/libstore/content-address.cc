@@ -204,7 +204,7 @@ ContentAddress parseContentAddress(std::string_view rawCa)
             return ContentAddress {
                 .name = name,
                 .info = IPFSInfo {
-                    {.hash = ca_.hash,},
+                    .hash = ca_.hash,
                     .references = PathReferences<StorePath> {
                         .references = references,
                         .hasSelfReference = hasSelfReference,
