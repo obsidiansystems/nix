@@ -338,22 +338,14 @@ StorePath BinaryCacheStore::addToStore(const string & name, const Path & srcPath
        method for very large paths, but `copyPath' is mainly used for
        small files. */
     StringSink sink;
-    std::optional<Hash> h;
     if (method == FileIngestionMethod::Recursive) {
         dumpPath(srcPath, sink, filter);
-        h = hashString(hashAlgo, *sink.s);
     } else {
         auto s = readFile(srcPath);
         dumpString(s, sink);
-        h = hashString(hashAlgo, s);
     }
 
-    ValidPathInfo info(makeFixedOutputPath(method, *h, name));
-
-    auto source = StringSource { *sink.s };
-    addToStore(info, source, repair, CheckSigs, nullptr);
-
-    return std::move(info.path);
+    return addToStoreFromDump(*sink.s, name, method, hashAlgo, repair);
 }
 
 StorePath BinaryCacheStore::addTextToStore(const string & name, const string & s,
