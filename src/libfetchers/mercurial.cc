@@ -119,6 +119,7 @@ struct MercurialInput : Input
                 return {Tree {
                     .actualPath = store->printStorePath(storePath),
                     .storePath = std::move(storePath),
+                    .info = TreeInfo {.narHash = *(store->queryPathInfo(storePath)->narHash)}
                 }, input};
             }
         }
@@ -144,6 +145,7 @@ struct MercurialInput : Input
                     .actualPath = store->toRealPath(storePath),
                     .storePath = std::move(storePath),
                     .info = TreeInfo {
+                        .narHash = *(store->queryPathInfo(storePath)->narHash),
                         .revCount = getIntAttr(infoAttrs, "revCount"),
                     },
                 },

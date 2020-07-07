@@ -11,7 +11,7 @@ namespace nix::fetchers {
 
 struct TreeInfo
 {
-    std::optional<Hash> narHash;
+    Hash narHash;
     std::optional<uint64_t> revCount;
     std::optional<time_t> lastModified;
 

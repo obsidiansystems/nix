@@ -80,6 +80,7 @@ struct PathInput : Input
                     .actualPath = store->toRealPath(*storePath),
                     .storePath = std::move(*storePath),
                     .info = TreeInfo {
+                    .narHash = *(store->queryPathInfo(*storePath)->narHash),
                         .revCount = revCount,
                         .lastModified = lastModified
                     }

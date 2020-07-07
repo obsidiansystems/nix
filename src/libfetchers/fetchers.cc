@@ -60,7 +60,7 @@ std::pair<Tree, std::shared_ptr<const Input>> Input::fetchTree(ref<Store> store)
         tree.actualPath = store->toRealPath(tree.storePath);
 
     if (!tree.info.narHash)
-        tree.info.narHash = store->queryPathInfo(tree.storePath)->narHash;
+        tree.info.narHash = *(store->queryPathInfo(tree.storePath)->narHash);
 
     if (input->narHash)
         assert(input->narHash == tree.info.narHash);

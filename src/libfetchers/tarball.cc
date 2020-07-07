@@ -124,6 +124,7 @@ Tree downloadTarball(
             .actualPath = store->toRealPath(cached->storePath),
             .storePath = std::move(cached->storePath),
             .info = TreeInfo {
+                .narHash = *(store->queryPathInfo(cached->storePath)->narHash),
                 .lastModified = getIntAttr(cached->infoAttrs, "lastModified"),
             },
         };
@@ -164,6 +165,7 @@ Tree downloadTarball(
         .actualPath = store->toRealPath(*unpackedStorePath),
         .storePath = std::move(*unpackedStorePath),
         .info = TreeInfo {
+            .narHash = *(store->queryPathInfo(*unpackedStorePath)->narHash),
             .lastModified = lastModified,
         },
     };

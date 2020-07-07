@@ -120,6 +120,7 @@ struct GitInput : Input
                     .actualPath = store->toRealPath(storePath),
                     .storePath = std::move(storePath),
                     .info = TreeInfo {
+                        .narHash = *(store->queryPathInfo(storePath)->narHash),
                         .revCount = shallow ? std::nullopt : std::optional(getIntAttr(infoAttrs, "revCount")),
                         .lastModified = getIntAttr(infoAttrs, "lastModified"),
                     },
@@ -203,6 +204,7 @@ struct GitInput : Input
                     .info = TreeInfo {
                         // FIXME: maybe we should use the timestamp of the last
                         // modified dirty file?
+                        .narHash = *(store->queryPathInfo(storePath)->narHash),
                         .lastModified = haveCommits ? std::stoull(runProgram("git", true, { "-C", actualUrl, "log", "-1", "--format=%ct", "HEAD" })) : 0,
                     }
                 };

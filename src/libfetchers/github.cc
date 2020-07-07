@@ -95,6 +95,7 @@ struct GitHubInput : Input
                     .actualPath = store->toRealPath(res->second),
                     .storePath = std::move(res->second),
                     .info = TreeInfo {
+                        .narHash = *(store->queryPathInfo(res->second)->narHash),
                         .lastModified = getIntAttr(res->first, "lastModified"),
                     },
                 },
