@@ -272,7 +272,7 @@ void to_json(nlohmann::json& j, const ContentAddress & ca)
             { "qtype", "ipfs" },
             { "name", ca.name },
             { "references", info.references },
-            { "cid", nlohmann::json { { "/", "f01781114" + info.hash.to_string(Base16, false) } } }
+            { "cid", to_json(info) },
         };
     } else throw Error("cannot convert to json");
 }
@@ -281,29 +281,35 @@ void from_json(const nlohmann::json& j, ContentAddress & ca)
 {
     std::string_view type = j.at("qtype").get<std::string_view>();
     if (type == "ipfs") {
-        auto cid = j.at("cid").at("/").get<std::string_view>();
-        if (cid.substr(0, 9) != "f01781114")
-            throw Error("cid '%s' is wrong type for ipfs hash", cid);
         ca = ContentAddress {
             .name = j.at("name"),
-            .info = IPFSInfo {
-                Hash::parseAny(cid.substr(9), htSHA1),
-                j.at("references").get<PathReferences<StorePath>>(),
-            },
+            .info = from_json(j.at("cid")),
         };
     } else
         throw Error("invalid type: %s", type);
 }
 
-void to_json(nlohmann::json& j, const PathReferences<StorePath> & references)
+// TODO should be sha-256 for this
+
+void to_json(nlohmann::json& j, const IPFSHash<IPFSGitTreeNode<IpfsHash>> & c) {
+    j = { "/", "f01781114" + c.hash.to_string(Base16, false) };
+}
+
+void from_json(const nlohmann::json& j, IPFSHash<IPFSGitTreeNode<IpfsHash>> & c) {
+    auto cid = j.at("/").get<std::string_view>();
+    if (cid.substr(0, 9) != "f01781114")
+        throw Error("cid '%s' is wrong type for ipfs hash", cid);
+    c = IPFSHash<IPFSGitTreeNode<IPFSHash>> {
+        Hash::parseAny(cid.substr(9), htSHA1),
+    };
+}
+
+template<typename T>
+void to_json(nlohmann::json& j, const PathReferences<T> & references)
 {
     auto refs = nlohmann::json::array();
     for (auto & i : references.references) {
-        auto hash = Hash::parseAny(i.hashPart(), htSHA1);
-        refs.push_back(nlohmann::json {
-            { "name", i.name() },
-            { "cid", nlohmann::json {{ "/", "f01711114" + hash.to_string(Base16, false) }} }
-        });
+        refs.push_back(to_json(i));
     }
 
     // FIXME: ipfs sort order is weird, it always puts references
@@ -316,17 +322,13 @@ void to_json(nlohmann::json& j, const PathReferences<StorePath> & references)
     };
 }
 
-void from_json(const nlohmann::json& j, PathReferences<StorePath> & references)
+template<typename T>
+void from_json(const nlohmann::json& j, PathReferences<T> & references)
 {
-    StorePathSet refs;
-    for (auto & ref : j.at("references")) {
-        auto name = ref.at("name").get<std::string>();
-        auto cid = ref.at("cid").at("/").get<std::string>();
-        if (cid.substr(0, 9) != "f01711114")
-            throw Error("cid '%s' is wrong type for ipfs hash", cid);
-        auto hash = Hash::parseAny(cid.substr(9), htSHA1);
-        refs.insert(StorePath(hash, name));
-    }
+	std::vector<T> raw;
+	nlohmann::from_json(j.at("references"), raw);
+	std::set refs;
+	std::copy(raw, refs);
     references = PathReferences<StorePath> {
         .references = refs,
         .hasSelfReference = j.at("zhasSelfReference").get<bool>(),

@@ -1,10 +1,10 @@
 #pragma once
 
 #include <nlohmann/json.hpp>
-#include <memory>
 #include <variant>
 
 #include "hash.hh"
+#include "ipfs.hh"
 #include "path.hh"
 
 namespace nix {
@@ -31,15 +31,8 @@ struct FixedOutputHash {
     std::string printMethodAlgo() const;
 };
 
-// Deref is a phantom parameter that just signifies what the hash should
-// dereference too.
-template<typename Deref>
-struct IPFSHash {
-    Hash hash;
-};
-
 template<template <typename> class Ref>
-struct IPFSGitTreeNodeT;
+struct IPFSGitTreeNode;
 
 /*
   We've accumulated several types of content-addressed paths over the years;
@@ -55,7 +48,7 @@ struct IPFSGitTreeNodeT;
 typedef std::variant<
     TextHash, // for paths computed by makeTextPath() / addTextToStore
     FixedOutputHash, // for path computed by makeFixedOutputPath
-    IPFSHash<IPFSGitTreeNodeT<IPFSHash>>
+    IPFSHash<IPFSGitTreeNode<IPFSHash>>
 > LegacyContentAddress;
 
 /* Compute the prefix to the hash algorithm which indicates how the files were
@@ -150,29 +143,17 @@ template<typename Underlying>
 struct ContentAddressT;
 
 template<template <typename> class Ref>
-struct IPFSGitTreeNodeT {
+struct IPFSGitTreeNode {
 	Hash gitTree;
     // References for the paths
-    PathReferences<ContentAddressT<Ref<IPFSGitTreeNodeT<Ref>>>> references;
-};
-
-typedef IPFSGitTreeNodeT<IPFSHash> IPFSGitTreeNode;
-
-/* The point of this is to store data that hasn't yet been put in IPFS
-   so we don't have a dangling hash. If someday Nix was more integrated
-   with IPFS such that it always had at least IPFS offline/local
-   storage, we wouldn't need this. */
-template<typename Deref>
-struct IPFSHashWithOptValue : IPFSHash<Deref> {
-	// N.B. shared_ptr is nullable
-    std::shared_ptr<Deref> value;
+    PathReferences<ContentAddressT<Ref<IPFSGitTreeNode<Ref>>>> references;
 };
 
 // FIXME names
 typedef std::variant<
     TextInfo,
     FixedOutputInfo,
-    IPFSHashWithOptValue<IPFSGitTreeNodeT<IPFSHashWithOptValue>>
+    IPFSHashWithOptValue<IPFSGitTreeNode<IPFSHashWithOptValue>>
 > ContentAddressWithoutName;
 
 template<typename Underlying>
@@ -193,10 +174,17 @@ std::string renderContentAddress(ContentAddress ca);
 
 ContentAddress parseContentAddress(std::string_view rawCa);
 
-void to_json(nlohmann::json& j, const ContentAddress & c);
-void from_json(const nlohmann::json& j, ContentAddress & c);
+template<template <typename> class Ref>
+void to_json(nlohmann::json& j, const IPFSGitTreeNode<Ref> & c);
+template<template <typename> class Ref>
+void from_json(const nlohmann::json& j, IPFSGitTreeNode<Ref> & c);
 
-void to_json(nlohmann::json& j, const PathReferences<StorePath> & c);
-void from_json(const nlohmann::json& j, PathReferences<StorePath> & c);
+void to_json(nlohmann::json& j, const IPFSHash<IPFSGitTreeNode<IPFSHash>> & c);
+void from_json(const nlohmann::json& j, IPFSHash<IPFSGitTreeNode<IPFSHash>> & c);
+
+template<typename T>
+void to_json(nlohmann::json& j, const PathReferences<T> & c);
+template<typename T>
+void from_json(const nlohmann::json& j, PathReferences<T> & c);
 
 }
