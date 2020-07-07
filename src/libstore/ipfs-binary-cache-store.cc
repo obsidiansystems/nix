@@ -603,49 +603,51 @@ private:
         return putIpfsGitBlock(*sink.s);
     }
 
-    std::unique_ptr<Source> getGitObject(std::string path, std::string hashPart)
+    std::unique_ptr<Source> getGitObject(std::string path, std::string hashPart, bool hasSelfReference)
     {
-        return sinkToSource([path, hashPart, this](Sink & sink) {
+        return sinkToSource([path, hashPart, hasSelfReference, this](Sink & sink) {
             StringSink sink2;
             getIpfsBlock(path, sink2);
 
-            // unrewrite modulus
-            std::string offset;
             std::string result = *sink2.s;
-            size_t i = result.size() - 1;
-            for (; i > 0; i--) {
-                char c = result.data()[i];
-                if (!(c >= '0' && c <= '9') && c != '|')
-                    break;
-                if (c == '|') {
-                    int pos;
-                    try {
-                        pos = stoi(offset);
-                    } catch (std::invalid_argument& e) {
+            if (hasSelfReference) {
+                // unrewrite modulus
+                std::string offset;
+                size_t i = result.size() - 1;
+                for (; i > 0; i--) {
+                    char c = result.data()[i];
+                    if (!(c >= '0' && c <= '9') && c != '|')
                         break;
-                    }
-                    assert(pos > 0 && pos + hashPart.size() < i);
-                    assert(std::string(result, pos, hashPart.size()) == std::string(hashPart.size(), 0));
-                    std::copy(hashPart.begin(), hashPart.end(), result.begin() + pos);
-                    offset = "";
-                } else
-                    offset = c + offset;
+                    if (c == '|') {
+                        int pos;
+                        try {
+                            pos = stoi(offset);
+                        } catch (std::invalid_argument& e) {
+                            break;
+                        }
+                        assert(pos > 0 && pos + hashPart.size() < i);
+                        assert(std::string(result, pos, hashPart.size()) == std::string(hashPart.size(), 0));
+                        std::copy(hashPart.begin(), hashPart.end(), result.begin() + pos);
+                        offset = "";
+                    } else
+                        offset = c + offset;
+                }
+                result.erase(i + 1);
             }
-            result.erase(i + 1);
-
             sink(result);
         });
     }
 
     void getGitEntry(ParseSink & sink, const Path & path,
         const Path & realStoreDir, const Path & storeDir,
-        int perm, std::string name, Hash hash, std::string hashPart)
+        int perm, std::string name, Hash hash, std::string hashPart,
+        bool hasSelfReference)
     {
-        auto source = getGitObject("/ipfs/f01781114" + hash.to_string(Base16, false), hashPart);
+        auto source = getGitObject("/ipfs/f01781114" + hash.to_string(Base16, false), hashPart, hasSelfReference);
         parseGitWithPath(sink, *source, path + "/" + name, realStoreDir, storeDir,
-            [hashPart, this] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
+            [hashPart, this, hasSelfReference] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
                 int perm, std::string name, Hash hash) {
-                getGitEntry(sink, path, realStoreDir, storeDir, perm, name, hash, hashPart);
+                getGitEntry(sink, path, realStoreDir, storeDir, perm, name, hash, hashPart, hasSelfReference);
             }, perm);
     }
 
@@ -788,11 +790,12 @@ public:
             AutoDelete tmpDir(createTempDir(), true);
             // FIXME this is wrong, just doing so it builds
             auto storePath = bakeCaIfNeeded(storePathOrCA);
-            auto source = getGitObject("/ipfs/" + std::string(info->url, 7), std::string(storePath.hashPart()));
+            auto hasSelfReference = info->hasSelfReference;
+            auto source = getGitObject("/ipfs/" + std::string(info->url, 7), std::string(storePath.hashPart()), hasSelfReference);
             restoreGit((Path) tmpDir + "/tmp", *source, storeDir, storeDir,
-                [this, storePath] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
+                [this, storePath, hasSelfReference] (ParseSink & sink, const Path & path, const Path & realStoreDir, const Path & storeDir,
                     int perm, std::string name, Hash hash) {
-                    getGitEntry(sink, path, realStoreDir, storeDir, perm, name, hash, std::string(storePath.hashPart()));
+                    getGitEntry(sink, path, realStoreDir, storeDir, perm, name, hash, std::string(storePath.hashPart()), hasSelfReference);
                 });
             dumpPath((Path) tmpDir + "/tmp", wrapperSink);
             return;

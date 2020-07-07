@@ -61,6 +61,8 @@ rec {
       openssl sqlite
       libarchive
       boost
+
+      # PR: https://github.com/nlohmann/json/pull/2244
       (nlohmann_json.overrideAttrs (_: rec {
         version = "3.8.0post";
         src = fetchFromGitHub {
@@ -70,6 +72,7 @@ rec {
           sha256 = "12l7dsm2q45lkicwr4y9iv6b72z59683yg8mg0lcbacpaqh0566f";
         };
       }))
+
       gmock
     ]
     ++ lib.optionals stdenv.isLinux [libseccomp utillinuxMinimal]
