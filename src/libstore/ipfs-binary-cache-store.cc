@@ -619,7 +619,12 @@ private:
                     if (!(c >= '0' && c <= '9') && c != '|')
                         break;
                     if (c == '|') {
-                        int pos = stoi(offset);
+                        int pos;
+                        try {
+                            pos = stoi(offset);
+                        } catch (std::invalid_argument& e) {
+                            break;
+                        }
                         assert(pos > 0 && pos + hashPart.size() < i);
                         assert(std::string(result, pos, hashPart.size()) == std::string(hashPart.size(), 0));
                         std::copy(hashPart.begin(), hashPart.end(), result.begin() + pos);

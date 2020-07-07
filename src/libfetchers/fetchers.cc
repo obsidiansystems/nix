@@ -71,7 +71,7 @@ std::pair<Tree, std::shared_ptr<const Input>> Input::fetchTree(ref<Store> store)
 
     if (!tree.info.narHash) {
         HashSink hashSink(htSHA256);
-        dumpPath(tree.actualPath, hashSink);
+        store->narFromPath(tree.storePath, hashSink);
         tree.info.narHash = hashSink.finish().first;
     }
 

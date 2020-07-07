@@ -426,12 +426,22 @@ struct GitInput : Input
         auto storePath = store->addToStore(name, tmpDir, ingestionMethod, htSHA256, filter);
 
         // verify treeHash is what we actually obtained in the nix store
-        if (ingestionMethod == FileIngestionMethod::Git && input->treeHash) {
-            auto path = store->toRealPath(store->printStorePath(storePath));
-            auto gotHash = dumpGitHash(htSHA1, path);
-            if (gotHash != input->treeHash)
-                throw Error("Git hash mismatch in input '%s' (%s), expected '%s', got '%s'",
-                    to_string(), path, input->treeHash->gitRev(), gotHash.gitRev());
+        if (ingestionMethod == FileIngestionMethod::Git) {
+            auto gotHash = dumpGitHash(htSHA1, tmpDir);
+            if (input->treeHash) {
+                if (gotHash != input->treeHash)
+                    throw Error("Git hash mismatch in input '%s' (%s), expected '%s', got '%s'",
+                        to_string(), store->printStorePath(storePath), input->treeHash->gitRev(), gotHash.gitRev());
+            } else {
+                ca = ContentAddress {
+                    .name = name,
+                    .info = FixedOutputInfo {
+                        ingestionMethod,
+                        gotHash,
+                        {},
+                    },
+                };
+            }
         }
 
         Attrs infoAttrs({});
