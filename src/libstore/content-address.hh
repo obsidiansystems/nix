@@ -181,8 +181,10 @@ void to_json(nlohmann::json& j, const IPFSGitTreeNodeT<Ref> & c);
 template<template <typename> class Ref>
 void from_json(const nlohmann::json& j, IPFSGitTreeNodeT<Ref> & c);
 
-void to_json(nlohmann::json& j, const IPFSHash<IPFSGitTreeNode> & c);
-void from_json(const nlohmann::json& j, IPFSHash<IPFSGitTreeNode> & c);
+template<typename T>
+void to_json(nlohmann::json& j, const ContentAddressT<T> & c);
+template<typename T>
+void from_json(const nlohmann::json& j, ContentAddressT<T> & c);
 
 template<typename T>
 void to_json(nlohmann::json& j, const PathReferences<T> & c);

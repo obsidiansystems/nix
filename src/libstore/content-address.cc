@@ -10,6 +10,7 @@ std::string FixedOutputHash::printMethodAlgo() const {
     return makeFileIngestionPrefix(method) + printHashType(hash.type);
 }
 
+
 std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
     switch (m) {
     case FileIngestionMethod::Flat:
@@ -22,6 +23,7 @@ std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
     abort();
 }
 
+
 std::string renderLegacyContentAddress(LegacyContentAddress ca) {
     return std::visit(overloaded {
         [](TextHash th) {
@@ -29,15 +31,30 @@ std::string renderLegacyContentAddress(LegacyContentAddress ca) {
                 + th.hash.to_string(Base32, true);
         },
         [](FixedOutputHash fsh) {
-             return "fixed:"
-                 + makeFileIngestionPrefix(fsh.method)
-                 + fsh.hash.to_string(Base32, true);
+            return "fixed:"
+                + makeFileIngestionPrefix(fsh.method)
+                + fsh.hash.to_string(Base32, true);
         },
-        [](IPFSHash fsh) {
-             return "ipfs-git:"
-                 + fsh.hash.to_string(Base32, true);
+        [](IPFSHash<IPFSGitTreeNode> ih) {
+            // FIXME do Base-32 for consistency
+            return "ipfs-git:" + ih.to_string();
         }
     }, ca);
+}
+
+static HashType parseHashType_(std::string_view & rest) {
+    auto hashTypeRaw = splitPrefixTo(rest, ':');
+    if (!hashTypeRaw)
+        throw UsageError("hash must be in form \"<algo>:<hash>\", but found: %s", rest);
+    return parseHashType(*hashTypeRaw);
+};
+
+static FileIngestionMethod parseFileIngestionMethod_(std::string_view & rest) {
+    if (splitPrefix(rest, "r:"))
+        return FileIngestionMethod::Recursive;
+    else if (splitPrefix(rest, "git:"))
+        return FileIngestionMethod::Git;
+    return FileIngestionMethod::Flat;
 }
 
 LegacyContentAddress parseLegacyContentAddress(std::string_view rawCa) {
@@ -47,22 +64,14 @@ LegacyContentAddress parseLegacyContentAddress(std::string_view rawCa) {
     {
         auto optPrefix = splitPrefixTo(rest, ':');
         if (!optPrefix)
-            throw UsageError("not a content address because it is not in the form \"<prefix>:<rest>\": %s", rawCa);
+            throw UsageError("not a path-info content address because it is not in the form \"<prefix>:<rest>\": %s", rawCa);
         prefix = *optPrefix;
     }
-
-    auto parseHashType_ = [&](){
-        auto hashTypeRaw = splitPrefixTo(rest, ':');
-        if (!hashTypeRaw)
-            throw UsageError("content address hash must be in form \"<algo>:<hash>\", but found: %s", rawCa);
-        HashType hashType = parseHashType(*hashTypeRaw);
-        return std::move(hashType);
-    };
 
     // Switch on prefix
     if (prefix == "text") {
         // No parsing of the method, "text" only support flat.
-        HashType hashType = parseHashType_();
+        HashType hashType = parseHashType_(rest);
         if (hashType != htSHA256)
             throw Error("text content address hash should use %s, but instead uses %s",
                 printHashType(htSHA256), printHashType(hashType));
@@ -70,24 +79,19 @@ LegacyContentAddress parseLegacyContentAddress(std::string_view rawCa) {
             .hash = Hash::parseNonSRIUnprefixed(rest, std::move(hashType)),
         };
     } else if (prefix == "fixed") {
-        // Parse method
-        auto method = FileIngestionMethod::Flat;
-        if (splitPrefix(rest, "r:"))
-            method = FileIngestionMethod::Recursive;
-        else if (splitPrefix(rest, "git:"))
-            method = FileIngestionMethod::Git;
-        HashType hashType = parseHashType_();
+        auto method = parseFileIngestionMethod_(rest);
+        HashType hashType = parseHashType_(rest);
         return FixedOutputHash {
             .method = method,
             .hash = Hash::parseNonSRIUnprefixed(rest, std::move(hashType)),
         };
     } else if (prefix == "ipfs-git") {
-        Hash hash = Hash::parseAnyPrefixed(rest);
-        if (hash.type != htSHA1)
-            throw Error("the ipfs hash should have type SHA1");
-        return IPFSGitTreeReference { .hash = hash };
+        auto hash = IPFSHash<IPFSGitTreeNode>::from_string(rest);
+        if (hash.hash.type != htSHA256)
+            throw Error("This IPFS hash should have type SHA-256: %s", hash.to_string());
+        return hash;
     } else
-        throw UsageError("content address prefix \"%s\" is unrecognized. Recogonized prefixes are \"text\" or \"fixed\"", prefix);
+        throw UsageError("path-info content address prefix \"%s\" is unrecognized. Recogonized prefixes are \"text\", \"fixed\", or \"ipfs-git\"", prefix);
 };
 
 std::optional<LegacyContentAddress> parseLegacyContentAddressOpt(std::string_view rawCaOpt) {
@@ -98,118 +102,127 @@ std::string renderLegacyContentAddress(std::optional<LegacyContentAddress> ca) {
     return ca ? renderLegacyContentAddress(*ca) : "";
 }
 
+
+// FIXME Deduplicate with store-api.cc path computation
 std::string renderContentAddress(ContentAddress ca)
 {
-    return "full:" + ca.name + ":" + std::visit(overloaded {
-        [](TextInfo th) {
-            std::string result = "refs," + std::to_string(th.references.size());
-            for (auto & i : th.references) {
-                result += ":";
-                result += i.to_string();
-            }
-            result += ":" + renderLegacyContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {TextHash {
-                    .hash = th.hash,
-                }});
-            return result;
-        },
-        [](FixedOutputInfo fsh) {
-            std::string result = "refs," + std::to_string(fsh.references.references.size() + (fsh.references.hasSelfReference ? 1 : 0));
-            for (auto & i : fsh.references.references) {
-                result += ":";
-                result += i.to_string();
-            }
-            if (fsh.references.hasSelfReference) result += ":self";
-            result += ":" + renderLegacyContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {FixedOutputHash {
-                    .method = fsh.method,
-                    .hash = fsh.hash
-                }});
-            return result;
-        },
-        [](IPFSInfo fsh) {
-            std::string result = "refs," + std::to_string(fsh.references.references.size() + (fsh.references.hasSelfReference ? 1 : 0));
-            for (auto & i : fsh.references.references) {
-                result += ":";
-                result += i.to_string();
-            }
-            if (fsh.references.hasSelfReference) result += ":self";
-            result += ":" + renderLegacyContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {IPFSHash {
-                    .hash = fsh.hash
-                }});
-            return result;
+    std::string result = ca.name;
+
+    auto dumpRefs = [&](auto references, bool hasSelfReference) {
+        result += "refs:";
+        result += std::to_string(references.size());
+        for (auto & i : references) {
+            result += ":";
+            result += i.to_string();
         }
+        if (hasSelfReference) result += ":self";
+    };
+
+    std::visit(overloaded {
+        [&](TextInfo th) {
+            result += "text:";
+            dumpRefs(th.references, false);
+            result += ":" + renderLegacyContentAddress(LegacyContentAddress {TextHash {
+                .hash = th.hash,
+            }});
+        },
+        [&](FixedOutputInfo fsh) {
+            result += "fixed:";
+            dumpRefs(fsh.references.references, fsh.references.hasSelfReference);
+            result += ":" + renderLegacyContentAddress(LegacyContentAddress {FixedOutputHash {
+                .method = fsh.method,
+                .hash = fsh.hash
+            }});
+        },
+        [&](IPFSHashWithOptValue<IPFSGitTreeNode> ih) {
+            result += "ipfs-git:";
+            result += ih.to_string();
+        },
     }, ca.info);
 
+    return result;
 }
+
 
 ContentAddress parseContentAddress(std::string_view rawCa)
 {
-    auto prefixSeparator = rawCa.find(':');
-    if (prefixSeparator == string::npos)
-        throw Error("unknown ca: '%s'", rawCa);
-    auto rest = rawCa.substr(prefixSeparator + 1);
+    auto rest = rawCa;
 
-    if (hasPrefix(rawCa, "full:")) {
-        prefixSeparator = rest.find(':');
-        auto name = std::string(rest.substr(0, prefixSeparator));
-        rest = rest.substr(prefixSeparator + 1);
+    std::string_view name;
+    std::string_view tag;
+    {
+        auto optPrefix = splitPrefixTo(rest, ':');
+        auto optName = splitPrefixTo(rest, ':');
+        if (!(optPrefix && optName))
+            throw UsageError("not a content address because it is not in the form \"<name>:<tag>:<rest>\": %s", rawCa);
+        tag = *optPrefix;
+        name = *optName;
+    }
 
-        if (!hasPrefix(rest, "refs,"))
-            throw Error("could not parse ca '%s'", rawCa);
-        prefixSeparator = rest.find(':');
-        if (prefixSeparator == string::npos)
-            throw Error("unknown ca: '%s'", rawCa);
-        auto numReferences = std::stoi(std::string(rest.substr(5, prefixSeparator)));
-        rest = rest.substr(prefixSeparator + 1);
-
-        bool hasSelfReference = false;
-        StorePathSet references;
-        for (int i = 0; i < numReferences; i++) {
-            prefixSeparator = rest.find(':');
-            if (prefixSeparator == string::npos)
-                throw Error("unexpected end of string in '%s'", rest);
-            auto s = std::string(rest, 0, prefixSeparator);
-            if (s == "self")
-                hasSelfReference = true;
-            else
-                references.insert(StorePath(s));
-            rest = rest.substr(prefixSeparator + 1);
+    auto parseRefs = [&]() -> PathReferences<StorePath> {
+        if (!splitPrefix(rest, "refs"))
+            throw Error("Invalid CA \"%s\", \"%s\" should begin with \"refs:\"", rawCa, rest);
+        PathReferences<StorePath> ret;
+        size_t numReferences = 0;
+        {
+            auto countRaw = splitPrefixTo(rest, ':');
+            if (!countRaw)
+                throw UsageError("Invalid count");
+            numReferences = std::stoi(std::string { *countRaw });
         }
-        LegacyContentAddress ca = parseLegacyContentAddress(rest);
-        if (std::holds_alternative<TextHash>(ca)) {
-            auto ca_ = std::get<TextHash>(ca);
-            if (hasSelfReference)
-                throw Error("text content address cannot have self reference");
-            return ContentAddress {
-                .name = name,
-                .info = TextInfo {
-                    {.hash = ca_.hash,},
-                    .references = references,
-                },
-            };
-        } else if (std::holds_alternative<FixedOutputHash>(ca)) {
-            auto ca_ = std::get<FixedOutputHash>(ca);
-            return ContentAddress {
-                .name = name,
-                .info = FixedOutputInfo {
-                    {.method = ca_.method,
-                     .hash = ca_.hash,},
-                    .references = PathReferences<StorePath> {
-                        .references = references,
-                        .hasSelfReference = hasSelfReference,
-                    },
-                },
-            };
-        } else if (std::holds_alternative<IPFSHash>(ca)) {
-            auto ca_ = std::get<IPFSHash>(ca);
-            return ContentAddress {
-                .name = name,
-                .info = IPFSGitTreeReference {
-                    .hash = ca_.hash,
-                },
-            };
-        } else throw Error("unknown content address type");
-    } else throw Error("unknown ca: '%s'", rawCa);
+        for (size_t i = 0; i < numReferences; i++) {
+            auto s = splitPrefixTo(rest, ':');
+            if (!s)
+                throw UsageError("Missing reference no. %d", i);
+            ret.references.insert(StorePath(*s));
+        }
+        if (splitPrefix(rest, "self:"))
+            ret.hasSelfReference = true;
+        return ret;
+    };
+
+    // Dummy value
+    ContentAddressWithoutName info = TextInfo { Hash(htSHA256), {} };
+
+    // Switch on tag
+    if (tag == "text") {
+        auto refs = parseRefs();
+        if (refs.hasSelfReference)
+            throw UsageError("Text content addresses cannot have self references");
+        auto hashType = parseHashType_(rest);
+        if (hashType != htSHA256)
+            throw Error("Text content address hash should use %s, but instead uses %s",
+                printHashType(htSHA256), printHashType(hashType));
+        info = TextInfo {
+            {
+                .hash = Hash::parseNonSRIUnprefixed(rest, std::move(hashType)),
+            },
+            refs.references,
+        };
+    } else if (tag == "fixed") {
+        auto refs = parseRefs();
+        auto method = parseFileIngestionMethod_(rest);
+        auto hashType = parseHashType_(rest);
+        info = FixedOutputInfo {
+            {
+                .method = method,
+                .hash = Hash::parseNonSRIUnprefixed(rest, std::move(hashType)),
+            },
+            refs,
+        };
+    } else if (tag == "ipfs-git") {
+        info = IPFSHashWithOptValue<IPFSGitTreeNode> {
+            IPFSHash<IPFSGitTreeNode>::from_string(rest)
+        };
+    } else
+        throw UsageError("content address tag \"%s\" is unrecognized. Recogonized tages are \"text\", \"fixed\", or \"ipfs-git\"", tag);
+
+    return ContentAddress {
+        .name = std::string { name },
+        .info = info,
+    };
 }
+
 
 void to_json(nlohmann::json& j, const LegacyContentAddress & ca) {
     j = std::visit(overloaded {
@@ -227,10 +240,10 @@ void to_json(nlohmann::json& j, const LegacyContentAddress & ca) {
                 { "hash", foh.hash.to_string(Base32, false) },
             };
         },
-        [](IPFSHash foh) {
+        [](IPFSHash<IPFSGitTreeNode> ih) {
             return nlohmann::json {
                 { "type", "ipfs" },
-                { "hash", foh.hash.to_string(Base32, false) },
+                { "hash", ih },
             };
         }
     }, ca);
@@ -256,85 +269,6 @@ void from_json(const nlohmann::json& j, LegacyContentAddress & ca) {
         throw Error("invalid type: %s", type);
 }
 
-// f01781114 is the cid prefix for a base16 cbor sha1. This hash
-// stores the ContentAddress information. The hash (without the cid
-// prefix) will be put directly in the store path hash.
-
-void to_json(nlohmann::json& j, const ContentAddress & ca)
-{
-    if (std::holds_alternative<IPFSInfo>(ca.info)) {
-        auto info = std::get<IPFSInfo>(ca.info);
-
-        // FIXME: ipfs sort order is weird, it always puts type before
-        // references, so we rename it to qtype so it always comes
-        // before references
-        j = nlohmann::json {
-            { "qtype", "ipfs" },
-            { "name", ca.name },
-            { "references", info.references },
-            { "cid", to_json(info) },
-        };
-    } else throw Error("cannot convert to json");
-}
-
-void from_json(const nlohmann::json& j, ContentAddress & ca)
-{
-    std::string_view type = j.at("qtype").get<std::string_view>();
-    if (type == "ipfs") {
-        ca = ContentAddress {
-            .name = j.at("name"),
-            .info = from_json(j.at("cid")),
-        };
-    } else
-        throw Error("invalid type: %s", type);
-}
-
-// TODO should be sha-256 for this
-
-void to_json(nlohmann::json& j, const IPFSHash<IPFSGitTreeNode<IpfsHash>> & c) {
-    j = { "/", "f01781114" + c.hash.to_string(Base16, false) };
-}
-
-void from_json(const nlohmann::json& j, IPFSHash<IPFSGitTreeNode<IpfsHash>> & c) {
-    auto cid = j.at("/").get<std::string_view>();
-    if (cid.substr(0, 9) != "f01781114")
-        throw Error("cid '%s' is wrong type for ipfs hash", cid);
-    c = IPFSHash<IPFSGitTreeNode<IPFSHash>> {
-        Hash::parseAny(cid.substr(9), htSHA1),
-    };
-}
-
-template<typename T>
-void to_json(nlohmann::json& j, const PathReferences<T> & references)
-{
-    auto refs = nlohmann::json::array();
-    for (auto & i : references.references) {
-        refs.push_back(to_json(i));
-    }
-
-    // FIXME: ipfs sort order is weird, it always puts references
-    // before hasSelfReference, so we rename it to zhasSelfReferences
-    // so it always comes after references
-
-    j = nlohmann::json {
-        { "zhasSelfReference", references.hasSelfReference },
-        { "references", refs }
-    };
-}
-
-template<typename T>
-void from_json(const nlohmann::json& j, PathReferences<T> & references)
-{
-	std::vector<T> raw;
-	nlohmann::from_json(j.at("references"), raw);
-	std::set refs;
-	std::copy(raw, refs);
-    references = PathReferences<StorePath> {
-        .references = refs,
-        .hasSelfReference = j.at("zhasSelfReference").get<bool>(),
-    };
-}
-
 // Needed until https://github.com/nlohmann/json/pull/2117
 
 void to_json(nlohmann::json& j, const std::optional<LegacyContentAddress> & c) {
@@ -353,5 +287,78 @@ void from_json(const nlohmann::json& j, std::optional<LegacyContentAddress> & c)
         from_json(j, *c);
     }
 }
+
+template<typename T>
+void to_json(nlohmann::json& j, const ContentAddressT<T> & c)
+{
+    j = nlohmann::json {
+        { "name", c.name },
+        { "info", c.info },
+    };
+}
+
+template<typename T>
+void from_json(const nlohmann::json& j, ContentAddressT<T> & c)
+{
+    c.name = j.at("name");
+    from_json(j.at("info"), c.info);
+}
+
+template<template <typename> class Ref>
+void to_json(nlohmann::json& j, const IPFSGitTreeNodeT<Ref> & c)
+{
+    // FIXME: ipfs sort order is weird, it always puts type before
+    // references, so we rename it to qtype so it always comes
+    // before references
+    j = nlohmann::json {
+        { "gitTree", IPFSHash<void> { c.gitTree } },
+        { "zreferences", c.references },
+    };
+}
+
+template<template <typename> class Ref>
+void from_json(const nlohmann::json& j, IPFSGitTreeNodeT<Ref> & c)
+{
+    IPFSHash<void> temp {
+        .hash = Hash { htSHA256 }, // dummy val
+    };
+    from_json(j.at("gitTree"), temp);
+    c.gitTree = std::move(temp.hash);
+    from_json(j.at("zreferences"), c.references);
+}
+
+template<typename T>
+void to_json(nlohmann::json& j, const PathReferences<T> & references)
+{
+    // FIXME: ipfs sort order is weird, it always puts references
+    // before hasSelfReference, so we rename it to zhasSelfReferences
+    // so it always comes after references
+
+    j = nlohmann::json {
+        { "zhasSelfReference", references.hasSelfReference },
+        { "references", references.references }
+    };
+}
+
+template<typename T>
+void from_json(const nlohmann::json& j, PathReferences<T> & references)
+{
+    std::set<T> refs;
+    nlohmann::from_json(j.at("references"), refs);
+    references = PathReferences<T> {
+        .references = refs,
+        .hasSelfReference = j.at("zhasSelfReference").get<bool>(),
+    };
+}
+
+template
+void to_json(nlohmann::json& j, const IPFSHash<IPFSGitTreeNode> & c);
+template
+void from_json(const nlohmann::json& j, IPFSHash<IPFSGitTreeNode> & c);
+
+template
+void to_json(nlohmann::json& j, const IPFSGitTreeNode & c);
+template
+void from_json(const nlohmann::json& j, IPFSGitTreeNode & c);
 
 }
