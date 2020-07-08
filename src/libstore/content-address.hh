@@ -169,6 +169,10 @@ struct ContentAddress {
     }
 };
 
+std::string renderContentAddress(ContentAddress ca);
+
+ContentAddress parseContentAddress(std::string_view rawCa);
+
 void to_json(nlohmann::json& j, const ContentAddress & c);
 void from_json(const nlohmann::json& j, ContentAddress & c);
 
