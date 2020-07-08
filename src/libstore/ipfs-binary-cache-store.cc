@@ -108,8 +108,8 @@ nlohmann::json IPFSBinaryCacheStore::getIpfsDag(std::string objectPath)
     return json;
 }
 
-    // Given a ipns path, checks if it corresponds to a DNSLink path, and in
-    // case returns the domain
+// Given a ipns path, checks if it corresponds to a DNSLink path, and in
+// case returns the domain
 std::optional<string> IPFSBinaryCacheStore::isDNSLinkPath(std::string path)
 {
     if (path.find("/ipns/") != 0)
@@ -161,7 +161,7 @@ std::optional<uint64_t> IPFSBinaryCacheStore::ipfsBlockStat(std::string ipfsPath
     return std::nullopt;
 }
 
-    // Resolve the IPNS name to an IPFS object
+// Resolve the IPNS name to an IPFS object
 std::string IPFSBinaryCacheStore::resolveIPNSName(std::string ipnsPath) {
     debug("Resolving IPFS object of '%s', this could take a while.", ipnsPath);
     auto uri = daemonUri + "/api/v0/name/resolve?arg=" + getFileTransfer()->urlEncode(ipnsPath);
