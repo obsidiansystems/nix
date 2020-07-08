@@ -511,11 +511,10 @@ std::optional<std::string> IPFSBinaryCacheStore::getCidFromCA(ContentAddress ca)
             assert(ca_.hash.type == htSHA1);
             return "f01781114" + ca_.hash.to_string(Base16, false);
         }
-    } else if (std::holds_alternative<IPFSInfo>(ca.info)) {
-        auto path = makeFixedOutputPathFromCA(ca);
-        auto hash = Hash::parseAny(path.hashPart(), htSHA1);
-        return "f01711114" + hash.to_string(Base16, false);
-    }
+    } else if (std::holds_alternative<IPFSInfo>(ca.info))
+        return computeIPFSCid(ca);
+    else if (std::holds_alternative<IPFSCid>(ca.info))
+        return std::get<IPFSCid>(ca.info).cid;
 
     return std::nullopt;
 }
@@ -613,49 +612,6 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
 
     if (!repair && isValidPath(info.path)) return;
 
-    // Note this doesn’t require a IPFS store, it just goes in the
-    // global namespace.
-    if (info.ca && std::holds_alternative<FixedOutputHash>(*info.ca)) {
-        auto ca_ = std::get<FixedOutputHash>(*info.ca);
-        if (ca_.method == FileIngestionMethod::Git) {
-            AutoDelete tmpDir(createTempDir(), true);
-            TeeSource savedNAR(narSource);
-            restorePath((Path) tmpDir + "/tmp", savedNAR);
-
-            auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())));
-            assert(std::string(key, 0, 9) == "f01781114");
-
-            auto hash = Hash::parseAny(std::string(key, 9), htSHA1);
-            assert(hash == ca_.hash);
-
-            return;
-        }
-    } else if (info.ca && std::holds_alternative<IPFSHash>(*info.ca)) {
-        auto fullCa = *info.fullContentAddressOpt();
-        auto cid = getCidFromCA(fullCa);
-
-        auto cid_ = ipfsCidFormatBase16(std::string(putIpfsDag(fullCa, "sha1"), 6));
-        assert(cid_ == cid);
-
-        AutoDelete tmpDir(createTempDir(), true);
-        TeeSource savedNAR(narSource);
-        restorePath((Path) tmpDir + "/tmp", savedNAR);
-
-        auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())));
-        assert(std::string(key, 0, 9) == "f01781114");
-
-        auto hash_ = Hash::parseAny(std::string(key, 9), htSHA1);
-        assert(hash_ == std::get<IPFSHash>(*info.ca).hash);
-
-        return;
-    }
-
-    if (trustless)
-        throw Error("cannot add '%s' to store because of trustless mode", printStorePath(info.path));
-
-    // FIXME: See if we can use the original source to reduce memory usage.
-    auto nar = make_ref<std::string>(narSource.drain());
-
     /* Verify that all references are valid. This may do some .narinfo
        reads, but typically they'll already be cached. */
     for (auto & ref : info.references)
@@ -666,6 +622,79 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
             throw Error("cannot add '%s' to the binary cache because the reference '%s' is not valid",
                 printStorePath(info.path), printStorePath(ref));
         }
+
+    // Note this doesn’t require a IPFS store, it just goes in the
+    // global namespace.
+    if (info.ca && std::holds_alternative<FixedOutputHash>(*info.ca)) {
+        auto ca_ = std::get<FixedOutputHash>(*info.ca);
+        if (ca_.method == FileIngestionMethod::Git) {
+            auto nar = make_ref<std::string>(narSource.drain());
+
+            AutoDelete tmpDir(createTempDir(), true);
+            StringSource savedNAR(*nar);
+            restorePath((Path) tmpDir + "/tmp", savedNAR);
+
+            auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())));
+            assert(std::string(key, 0, 9) == "f01781114");
+
+            auto hash = Hash::parseAny(std::string(key, 9), htSHA1);
+            assert(hash == ca_.hash);
+
+            auto narInfo = make_ref<NarInfo>(info);;
+            narInfo->narSize = nar->size();
+            narInfo->narHash = hashString(htSHA256, *nar);
+            narInfo->url = "ipfs://" + key;
+
+            {
+                auto hashPart = narInfo->path.hashPart();
+                auto state_(this->state.lock());
+                state_->pathInfoCache.upsert(
+                    std::string { hashPart },
+                    PathInfoCacheValue { .value = std::shared_ptr<NarInfo>(narInfo) });
+            }
+
+            return;
+        }
+    } else if (info.ca && std::holds_alternative<IPFSHash>(*info.ca)) {
+        auto fullCa = *info.fullContentAddressOpt(*this);
+        auto cid = getCidFromCA(fullCa);
+
+        auto cid_ = ipfsCidFormatBase16(std::string(putIpfsDag(fullCa, "sha2-256"), 6));
+        assert(cid_ == cid);
+
+        auto nar = make_ref<std::string>(narSource.drain());
+
+        AutoDelete tmpDir(createTempDir(), true);
+        StringSource savedNAR(*nar);
+        restorePath((Path) tmpDir + "/tmp", savedNAR);
+
+        auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())));
+        assert(std::string(key, 0, 9) == "f01781114");
+
+        auto hash_ = Hash::parseAny(std::string(key, 9), htSHA1);
+        assert(hash_ == std::get<IPFSHash>(*info.ca).hash);
+
+        auto narInfo = make_ref<NarInfo>(info);;
+        narInfo->narSize = nar->size();
+        narInfo->narHash = hashString(htSHA256, *nar);
+        narInfo->url = "ipfs://" + key;
+
+        {
+            auto hashPart = narInfo->path.hashPart();
+            auto state_(this->state.lock());
+            state_->pathInfoCache.upsert(
+                std::string { hashPart },
+                PathInfoCacheValue { .value = std::shared_ptr<NarInfo>(narInfo) });
+        }
+
+        return;
+    }
+
+    if (trustless)
+        throw Error("cannot add '%s' to store because of trustless mode", printStorePath(info.path));
+
+    // FIXME: See if we can use the original source to reduce memory usage.
+    auto nar = make_ref<std::string>(narSource.drain());
 
     assert(nar->compare(0, narMagic.size(), narMagic) == 0);
 
@@ -783,8 +812,8 @@ void IPFSBinaryCacheStore::queryPathInfoUncached(StorePathOrCA storePathOrCa,
         fmt("querying info about '%s' on '%s'", storePathS, uri), Logger::Fields{storePathS, uri});
     PushActivity pact(act->id);
 
-    if (auto p = std::get_if<1>(&storePathOrCa)) {
-        ContentAddress ca = static_cast<const ContentAddress &>(*p);
+    if (auto ca_ = std::get_if<1>(&storePathOrCa)) {
+        ContentAddress ca = static_cast<const ContentAddress &>(*ca_);
         auto cid = getCidFromCA(ca);
         if (cid && ipfsBlockStat("/ipfs/" + *cid)) {
             std::string url("ipfs://" + *cid);

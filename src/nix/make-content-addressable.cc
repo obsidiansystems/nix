@@ -79,45 +79,41 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
 
             auto narHash = hashModuloSink.finish().first;
 
+            ContentAddress ca {
+                .name = std::string { path.name() },
+                .info = FixedOutputInfo {
+                    {
+                        .method = FileIngestionMethod::Recursive,
+                        .hash = narHash,
+                    },
+                    refs,
+                },
+            };
+
             // ugh... we have to convert nar data to git.
-            std::optional<Hash> gitHash;
             if (ipfsContent) {
                 AutoDelete tmpDir(createTempDir(), true);
                 StringSource source(*sink.s);
                 restorePath((Path) tmpDir + "/tmp", source);
 
-                gitHash = dumpGitHashWithCustomHash([&]{ return std::make_unique<HashModuloSink>(htSHA1, oldHashPart); }, (Path) tmpDir + "/tmp");
+                Hash gitHash = dumpGitHashWithCustomHash([&]{ return std::make_unique<HashModuloSink>(htSHA1, oldHashPart); }, (Path) tmpDir + "/tmp");
 
-                StringSink sink_;
-                RewritingSink rewritingSink(oldHashPart, std::string(oldHashPart.size(), 0), sink_);
-                dumpGit(htSHA1, (Path) tmpDir + "/tmp", rewritingSink);
-
-                rewritingSink.flush();
-
-                for (auto & pos : rewritingSink.matches) {
-                    auto s = fmt("|%d", pos);
-                    sink_((unsigned char *) s.data(), s.size());
+                std::set<IPFSRef> ipfsRefs;
+                for (auto & ref : refs.references) {
+                    auto ca_ = store->queryPathInfo(ref)->fullContentAddressOpt(*store);
+                    assert(ca_);
+                    ipfsRefs.insert(IPFSRef(computeIPFSCid(*ca_), ref.name()));
                 }
+                ca.info = IPFSInfo {
+                    .hash = gitHash,
+                    PathReferences<IPFSRef> {
+                        .references = ipfsRefs,
+                        .hasSelfReference = refs.hasSelfReference,
+                    },
+                };
             }
 
-            ValidPathInfo info {
-                *store,
-                ContentAddress {
-                    .name = std::string { path.name() },
-                    .info = ipfsContent ?
-                      std::variant<TextInfo, FixedOutputInfo, IPFSInfo> {IPFSInfo {
-                          { .hash = *gitHash },
-                          std::move(refs),
-                      }}
-                    : std::variant<TextInfo, FixedOutputInfo, IPFSInfo> {FixedOutputInfo {
-                          {
-                              .method = FileIngestionMethod::Recursive,
-                              .hash = narHash,
-                          },
-                          std::move(refs),
-                      }},
-                },
-            };
+            ValidPathInfo info { *store, ContentAddress { ca } };
             info.narHash = narHash;
             info.narSize = sink.s->size();
 

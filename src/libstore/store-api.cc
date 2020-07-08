@@ -215,6 +215,21 @@ StorePath Store::makeTextPath(std::string_view name, const TextInfo & info) cons
         name);
 }
 
+static HashType getMultiHashTag(int tag)
+{
+    switch (tag) {
+    case 0x11: {
+        return htSHA1;
+    }
+    case 0x12: {
+        return htSHA256;
+    }
+    default: {
+        throw Error("tag '%i' is an unknown hash type", tag);
+    }
+    }
+}
+
 static std::vector<uint8_t> packMultihash(std::string cid)
 {
     std::vector<uint8_t> result;
@@ -224,13 +239,14 @@ static std::vector<uint8_t> packMultihash(std::string cid)
     result.push_back(std::stoi(cid.substr(3, 2), nullptr, 16));
     result.push_back(std::stoi(cid.substr(5, 2), nullptr, 16));
     result.push_back(std::stoi(cid.substr(7, 2), nullptr, 16));
-    Hash hash = Hash::parseAny(cid.substr(9), htSHA1);
+    HashType ht = getMultiHashTag(std::stoi(cid.substr(5, 2), nullptr, 16));
+    Hash hash = Hash::parseAny(cid.substr(9), ht);
     for (unsigned int i = 0; i < hash.hashSize; i++)
         result.push_back(hash.hash[i]);
     return result;
 }
 
-static StorePath makeIPFSPath(const ContentAddress & info)
+Hash computeIPFSHash(const ContentAddress & info, HashType ht)
 {
     nlohmann::json j = info;
 
@@ -241,12 +257,33 @@ static StorePath makeIPFSPath(const ContentAddress & info)
         ref.at("cid") = nlohmann::json::binary(packMultihash(ref.at("cid").at("/").get<std::string>()), 42);
 
     std::vector<std::uint8_t> cbor = nlohmann::json::to_cbor(j);
-    Hash hash = hashString(htSHA1, std::string(cbor.begin(), cbor.end()));
-
-    // note this only works because sha1 is size 20
-    return StorePath(hash, info.name);
+    return hashString(ht, std::string(cbor.begin(), cbor.end()));
 }
 
+std::string computeIPFSCid(const ContentAddress & info)
+{
+    return "f01711220" + computeIPFSHash(info, htSHA256).to_string(Base16, false);
+}
+
+StorePath Store::makeIPFSPath(IPFSRef ref) const
+{
+    string type = "ipfs";
+
+    // copy pase from makeStorePath
+    string s = type + ":" + ref.first + ":" + storeDir + ":" + std::string(ref.second);
+    auto h = compressHash(hashString(htSHA256, s), 20);
+    return StorePath(h, ref.second);
+}
+
+StorePath Store::makeIPFSPath(std::string cid, std::string name) const
+{
+    return makeIPFSPath(IPFSRef(cid, name));
+}
+
+StorePath Store::makeIPFSPath(const ContentAddress & info) const
+{
+    return makeIPFSPath(computeIPFSCid(info), info.name);
+}
 
 StorePath Store::makeFixedOutputPathFromCA(const ContentAddress & info) const
 {
@@ -260,6 +297,9 @@ StorePath Store::makeFixedOutputPathFromCA(const ContentAddress & info) const
         },
         [&](IPFSInfo io) {
             return makeIPFSPath(info);
+        },
+        [&](IPFSCid ic) {
+            return makeIPFSPath(ic.cid, info.name);
         }
     }, info.info);
 }
@@ -681,10 +721,10 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
     // recompute store path on the chance dstStore does it differently
     if (auto p = std::get_if<std::reference_wrapper<const ContentAddress>>(&storePath)) {
         auto ca = static_cast<const ContentAddress &>(*p);
-        {
-            ValidPathInfo srcInfoCA { *srcStore, ContentAddress { ca } };
-            assert((PathReferences<StorePath> &)(*info) == (PathReferences<StorePath> &)srcInfoCA);
-        }
+        // {
+        //     ValidPathInfo srcInfoCA { *srcStore, ContentAddress { ca } };
+        //     assert((PathReferences<StorePath> &)(*info) == (PathReferences<StorePath> &)srcInfoCA);
+        // }
         if (info->references.empty()) {
             auto info2 = make_ref<ValidPathInfo>(*info);
             ValidPathInfo dstInfoCA { *dstStore, ContentAddress { ca } };
@@ -776,7 +816,7 @@ std::map<StorePath, StorePath> copyPaths(ref<Store> srcStore, ref<Store> dstStor
             auto info = srcStore->queryPathInfo(storePath);
             auto storePathForDst = storePath;
             if (info->ca && info->references.empty() && !info->hasSelfReference) {
-                storePathForDst = dstStore->makeFixedOutputPathFromCA(*info->fullContentAddressOpt());
+                storePathForDst = dstStore->makeFixedOutputPathFromCA(*info->fullContentAddressOpt(*srcStore));
                 if (dstStore->storeDir == srcStore->storeDir)
                     assert(storePathForDst == storePath);
                 if (storePathForDst != storePath)
@@ -804,7 +844,7 @@ std::map<StorePath, StorePath> copyPaths(ref<Store> srcStore, ref<Store> dstStor
 
             auto storePathForDst = storePath;
             if (info->ca && info->references.empty() && !info->hasSelfReference) {
-                storePathForDst = dstStore->makeFixedOutputPathFromCA(*info->fullContentAddressOpt());
+                storePathForDst = dstStore->makeFixedOutputPathFromCA(*info->fullContentAddressOpt(*srcStore));
                 if (dstStore->storeDir == srcStore->storeDir)
                     assert(storePathForDst == storePath);
                 if (storePathForDst != storePath)
@@ -922,7 +962,7 @@ void ValidPathInfo::sign(const Store & store, const SecretKey & secretKey)
     sigs.insert(secretKey.signDetached(fingerprint(store)));
 }
 
-std::optional<ContentAddress> ValidPathInfo::fullContentAddressOpt() const
+std::optional<ContentAddress> ValidPathInfo::fullContentAddressOpt(Store & store) const
 {
     if (! ca)
         return std::nullopt;
@@ -934,25 +974,29 @@ std::optional<ContentAddress> ValidPathInfo::fullContentAddressOpt() const
                 TextInfo info { th };
                 assert(!hasSelfReference);
                 info.references = references;
-                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo> { info };
+                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo, IPFSCid> { info };
             },
             [&](FixedOutputHash foh) {
                 FixedOutputInfo info { foh };
                 info.references = static_cast<PathReferences<StorePath>>(*this);
-                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo> { info };
+                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo, IPFSCid> { info };
             },
             [&](IPFSHash io) {
-                IPFSInfo info { io };
-                info.references = static_cast<PathReferences<StorePath>>(*this);
-                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo> { info };
+                IPFSInfo info { .hash = io.hash };
+                info.references.hasSelfReference = this->hasSelfReference;
+                for (auto & ref : this->references) {
+                    auto ca = *store.queryPathInfo(ref)->fullContentAddressOpt(store);
+                    info.references.references.insert(IPFSRef(computeIPFSCid(ca), ref.name()));
+                }
+                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo, IPFSCid> { info };
             },
         }, *ca),
     };
 }
 
-bool ValidPathInfo::isContentAddressed(const Store & store) const
+bool ValidPathInfo::isContentAddressed(Store & store) const
 {
-    auto fullCaOpt = fullContentAddressOpt();
+    auto fullCaOpt = fullContentAddressOpt(store);
 
     if (! fullCaOpt)
         return false;
@@ -968,7 +1012,7 @@ bool ValidPathInfo::isContentAddressed(const Store & store) const
 }
 
 
-size_t ValidPathInfo::checkSignatures(const Store & store, const PublicKeys & publicKeys) const
+size_t ValidPathInfo::checkSignatures(Store & store, const PublicKeys & publicKeys) const
 {
     if (isContentAddressed(store)) return maxSigs;
 
@@ -1009,9 +1053,14 @@ ValidPathInfo::ValidPathInfo(
             *(static_cast<PathReferences<StorePath> *>(this)) = foi.references;
             this->ca = FixedOutputHash { (FixedOutputHash) std::move(foi) };
         },
-        [this](IPFSInfo foi) {
-            *(static_cast<PathReferences<StorePath> *>(this)) = foi.references;
-            this->ca = IPFSHash { (IPFSHash) std::move(foi) };
+        [this, &store](IPFSInfo foi) {
+            this->hasSelfReference = foi.references.hasSelfReference;
+            for (auto & ref : foi.references.references)
+                this->references.insert(store.makeIPFSPath(ref));
+            this->ca = IPFSHash { foi.hash };
+        },
+        [](IPFSCid foi) {
+            throw Error("cannot make a valid path from a cid");
         },
     }, std::move(info.info));
 }

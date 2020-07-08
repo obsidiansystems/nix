@@ -73,10 +73,10 @@ struct ValidPathInfo : PathReferences<StorePath>
 
     void sign(const Store & store, const SecretKey & secretKey);
 
-    std::optional<ContentAddress> fullContentAddressOpt() const;
+    std::optional<ContentAddress> fullContentAddressOpt(Store & store) const;
 
     /* Return true iff the path is verifiably content-addressed. */
-    bool isContentAddressed(const Store & store) const;
+    bool isContentAddressed(Store & store) const;
 
     /* Functions to view references + hasSelfReference as one set, mainly for
        compatibility's sake. */
@@ -89,7 +89,7 @@ struct ValidPathInfo : PathReferences<StorePath>
     /* Return the number of signatures on this .narinfo that were
        produced by one of the specified keys, or maxSigs if the path
        is content-addressed. */
-    size_t checkSignatures(const Store & store, const PublicKeys & publicKeys) const;
+    size_t checkSignatures(Store & store, const PublicKeys & publicKeys) const;
 
     /* Verify a single signature. */
     bool checkSignature(const Store & store, const PublicKeys & publicKeys, const std::string & sig) const;
