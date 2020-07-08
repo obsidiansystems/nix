@@ -108,7 +108,7 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
 
             ContentAddressWithoutName ca = ipfsContent
                 ? ContentAddressWithoutName {
-                    IPFSHashWithOptValue<IPFSGitTreeNode<IPFSHashWithOptValue>>::fromValue({
+                    IPFSHashWithOptValue<IPFSGitTreeNode>::fromValue({
                         .gitTree = *gitHash,
                         { {}, hasSelfReference },
                     })
@@ -124,7 +124,7 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
                 };
 
             if (ipfsContent) {
-                auto & refs = std::get<IPFSHashWithOptValue<IPFSGitTreeNode<IPFSHashWithOptValue>>>(ca).value->references;
+                auto & refs = std::get<IPFSHashWithOptValue<IPFSGitTreeNode>>(ca).value->references;
                 //refs.hasSelfReference = hasSelfReference;
                 if (refPaths.size() > 0)
                     throw UsageError("IPFS+Git store paths must not have non-CA references");

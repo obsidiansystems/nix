@@ -32,7 +32,9 @@ struct FixedOutputHash {
 };
 
 template<template <typename> class Ref>
-struct IPFSGitTreeNode;
+struct IPFSGitTreeNodeT;
+
+typedef IPFSGitTreeNodeT<IPFSHashWithOptValue> IPFSGitTreeNode;
 
 /*
   We've accumulated several types of content-addressed paths over the years;
@@ -48,7 +50,7 @@ struct IPFSGitTreeNode;
 typedef std::variant<
     TextHash, // for paths computed by makeTextPath() / addTextToStore
     FixedOutputHash, // for path computed by makeFixedOutputPath
-    IPFSHash<IPFSGitTreeNode<IPFSHash>>
+    IPFSHash<IPFSGitTreeNode>
 > LegacyContentAddress;
 
 /* Compute the prefix to the hash algorithm which indicates how the files were
@@ -143,17 +145,17 @@ template<typename Underlying>
 struct ContentAddressT;
 
 template<template <typename> class Ref>
-struct IPFSGitTreeNode {
+struct IPFSGitTreeNodeT {
 	Hash gitTree;
     // References for the paths
-    PathReferences<ContentAddressT<Ref<IPFSGitTreeNode<Ref>>>> references;
+    PathReferences<ContentAddressT<Ref<IPFSGitTreeNodeT<Ref>>>> references;
 };
 
 // FIXME names
 typedef std::variant<
     TextInfo,
     FixedOutputInfo,
-    IPFSHashWithOptValue<IPFSGitTreeNode<IPFSHashWithOptValue>>
+    IPFSHashWithOptValue<IPFSGitTreeNode>
 > ContentAddressWithoutName;
 
 template<typename Underlying>
@@ -175,12 +177,12 @@ std::string renderContentAddress(ContentAddress ca);
 ContentAddress parseContentAddress(std::string_view rawCa);
 
 template<template <typename> class Ref>
-void to_json(nlohmann::json& j, const IPFSGitTreeNode<Ref> & c);
+void to_json(nlohmann::json& j, const IPFSGitTreeNodeT<Ref> & c);
 template<template <typename> class Ref>
-void from_json(const nlohmann::json& j, IPFSGitTreeNode<Ref> & c);
+void from_json(const nlohmann::json& j, IPFSGitTreeNodeT<Ref> & c);
 
-void to_json(nlohmann::json& j, const IPFSHash<IPFSGitTreeNode<IPFSHash>> & c);
-void from_json(const nlohmann::json& j, IPFSHash<IPFSGitTreeNode<IPFSHash>> & c);
+void to_json(nlohmann::json& j, const IPFSHash<IPFSGitTreeNode> & c);
+void from_json(const nlohmann::json& j, IPFSHash<IPFSGitTreeNode> & c);
 
 template<typename T>
 void to_json(nlohmann::json& j, const PathReferences<T> & c);
