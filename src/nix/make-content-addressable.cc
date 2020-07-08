@@ -107,8 +107,8 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
                 ca.info = IPFSInfo {
                     .hash = gitHash,
                     PathReferences<IPFSRef> {
-                        .hasSelfReference = refs.hasSelfReference,
                         .references = ipfsRefs,
+                        .hasSelfReference = refs.hasSelfReference,
                     },
                 };
             }
