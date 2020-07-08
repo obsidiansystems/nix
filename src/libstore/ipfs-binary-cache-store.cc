@@ -555,11 +555,10 @@ private:
                 assert(ca_.hash.type == htSHA1);
                 return "f01781114" + ca_.hash.to_string(Base16, false);
             }
-        } else if (std::holds_alternative<IPFSInfo>(ca.info)) {
-            auto path = makeFixedOutputPathFromCA(ca);
-            auto hash = Hash::parseAny(path.hashPart(), htSHA1);
-            return "f01711114" + hash.to_string(Base16, false);
-        }
+        } else if (std::holds_alternative<IPFSInfo>(ca.info))
+            return computeIPFSCid(ca);
+        else if (std::holds_alternative<IPFSCid>(ca.info))
+            return std::get<IPFSCid>(ca.info).cid;
 
         return std::nullopt;
     }
@@ -704,10 +703,10 @@ public:
                 return;
             }
         } else if (info.ca && std::holds_alternative<IPFSHash>(*info.ca)) {
-            auto fullCa = *info.fullContentAddressOpt();
+            auto fullCa = *info.fullContentAddressOpt(*this);
             auto cid = getCidFromCA(fullCa);
 
-            auto cid_ = ipfsCidFormatBase16(std::string(putIpfsDag(fullCa, "sha1"), 6));
+            auto cid_ = ipfsCidFormatBase16(std::string(putIpfsDag(fullCa, "sha2-256"), 6));
             assert(cid_ == cid);
 
             auto nar = make_ref<std::string>(narSource.drain());
@@ -860,8 +859,8 @@ public:
             fmt("querying info about '%s' on '%s'", storePathS, uri), Logger::Fields{storePathS, uri});
         PushActivity pact(act->id);
 
-        if (auto p = std::get_if<1>(&storePathOrCa)) {
-            ContentAddress ca = static_cast<const ContentAddress &>(*p);
+        if (auto ca_ = std::get_if<1>(&storePathOrCa)) {
+            ContentAddress ca = static_cast<const ContentAddress &>(*ca_);
             auto cid = getCidFromCA(ca);
             if (cid && ipfsBlockStat("/ipfs/" + *cid)) {
                 std::string url("ipfs://" + *cid);

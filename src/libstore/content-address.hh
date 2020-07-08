@@ -139,10 +139,18 @@ struct FixedOutputInfo : FixedOutputHash {
     PathReferences<StorePath> references;
 };
 
+// pair of cid and name for ipfs references
+typedef std::pair<std::string, std::string> IPFSRef;
+
 struct IPFSInfo {
     Hash hash;
     // References for the paths
-    PathReferences<StorePath> references;
+    PathReferences<IPFSRef> references;
+};
+
+// just the cid, which is a hash of ipfsinfo
+struct IPFSCid {
+    std::string cid;
 };
 
 struct ContentAddress {
@@ -150,7 +158,8 @@ struct ContentAddress {
     std::variant<
         TextInfo,
         FixedOutputInfo,
-        IPFSInfo
+        IPFSInfo,
+        IPFSCid
     > info;
 
     bool operator < (const ContentAddress & other) const
@@ -160,14 +169,10 @@ struct ContentAddress {
     }
 };
 
-std::string renderContentAddress(ContentAddress ca);
-
-ContentAddress parseContentAddress(std::string_view rawCa);
-
 void to_json(nlohmann::json& j, const ContentAddress & c);
 void from_json(const nlohmann::json& j, ContentAddress & c);
 
-void to_json(nlohmann::json& j, const PathReferences<StorePath> & c);
-void from_json(const nlohmann::json& j, PathReferences<StorePath> & c);
+void to_json(nlohmann::json& j, const PathReferences<IPFSRef> & c);
+void from_json(const nlohmann::json& j, PathReferences<IPFSRef> & c);
 
 }

@@ -98,123 +98,6 @@ std::string renderLegacyContentAddress(std::optional<LegacyContentAddress> ca) {
     return ca ? renderLegacyContentAddress(*ca) : "";
 }
 
-std::string renderContentAddress(ContentAddress ca)
-{
-    return "full:" + ca.name + ":" + std::visit(overloaded {
-        [](TextInfo th) {
-            std::string result = "refs," + std::to_string(th.references.size());
-            for (auto & i : th.references) {
-                result += ":";
-                result += i.to_string();
-            }
-            result += ":" + renderLegacyContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {TextHash {
-                    .hash = th.hash,
-                }});
-            return result;
-        },
-        [](FixedOutputInfo fsh) {
-            std::string result = "refs," + std::to_string(fsh.references.references.size() + (fsh.references.hasSelfReference ? 1 : 0));
-            for (auto & i : fsh.references.references) {
-                result += ":";
-                result += i.to_string();
-            }
-            if (fsh.references.hasSelfReference) result += ":self";
-            result += ":" + renderLegacyContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {FixedOutputHash {
-                    .method = fsh.method,
-                    .hash = fsh.hash
-                }});
-            return result;
-        },
-        [](IPFSInfo fsh) {
-            std::string result = "refs," + std::to_string(fsh.references.references.size() + (fsh.references.hasSelfReference ? 1 : 0));
-            for (auto & i : fsh.references.references) {
-                result += ":";
-                result += i.to_string();
-            }
-            if (fsh.references.hasSelfReference) result += ":self";
-            result += ":" + renderLegacyContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {IPFSHash {
-                    .hash = fsh.hash
-                }});
-            return result;
-        }
-    }, ca.info);
-
-}
-
-ContentAddress parseContentAddress(std::string_view rawCa)
-{
-    auto prefixSeparator = rawCa.find(':');
-    if (prefixSeparator == string::npos)
-        throw Error("unknown ca: '%s'", rawCa);
-    auto rest = rawCa.substr(prefixSeparator + 1);
-
-    if (hasPrefix(rawCa, "full:")) {
-        prefixSeparator = rest.find(':');
-        auto name = std::string(rest.substr(0, prefixSeparator));
-        rest = rest.substr(prefixSeparator + 1);
-
-        if (!hasPrefix(rest, "refs,"))
-            throw Error("could not parse ca '%s'", rawCa);
-        prefixSeparator = rest.find(':');
-        if (prefixSeparator == string::npos)
-            throw Error("unknown ca: '%s'", rawCa);
-        auto numReferences = std::stoi(std::string(rest.substr(5, prefixSeparator)));
-        rest = rest.substr(prefixSeparator + 1);
-
-        bool hasSelfReference = false;
-        StorePathSet references;
-        for (int i = 0; i < numReferences; i++) {
-            prefixSeparator = rest.find(':');
-            if (prefixSeparator == string::npos)
-                throw Error("unexpected end of string in '%s'", rest);
-            auto s = std::string(rest, 0, prefixSeparator);
-            if (s == "self")
-                hasSelfReference = true;
-            else
-                references.insert(StorePath(s));
-            rest = rest.substr(prefixSeparator + 1);
-        }
-        LegacyContentAddress ca = parseLegacyContentAddress(rest);
-        if (std::holds_alternative<TextHash>(ca)) {
-            auto ca_ = std::get<TextHash>(ca);
-            if (hasSelfReference)
-                throw Error("text content address cannot have self reference");
-            return ContentAddress {
-                .name = name,
-                .info = TextInfo {
-                    {.hash = ca_.hash,},
-                    .references = references,
-                },
-            };
-        } else if (std::holds_alternative<FixedOutputHash>(ca)) {
-            auto ca_ = std::get<FixedOutputHash>(ca);
-            return ContentAddress {
-                .name = name,
-                .info = FixedOutputInfo {
-                    {.method = ca_.method,
-                     .hash = ca_.hash,},
-                    .references = PathReferences<StorePath> {
-                        .references = references,
-                        .hasSelfReference = hasSelfReference,
-                    },
-                },
-            };
-        } else if (std::holds_alternative<IPFSHash>(ca)) {
-            auto ca_ = std::get<IPFSHash>(ca);
-            return ContentAddress {
-                .name = name,
-                .info = IPFSInfo {
-                    .hash = ca_.hash,
-                    .references = PathReferences<StorePath> {
-                        .references = references,
-                        .hasSelfReference = hasSelfReference,
-                    },
-                },
-            };
-        } else throw Error("unknown content address type");
-    } else throw Error("unknown ca: '%s'", rawCa);
-}
-
 void to_json(nlohmann::json& j, const LegacyContentAddress & ca) {
     j = std::visit(overloaded {
         [](TextHash th) {
@@ -292,21 +175,20 @@ void from_json(const nlohmann::json& j, ContentAddress & ca)
             .name = j.at("name"),
             .info = IPFSInfo {
                 Hash::parseAny(cid.substr(9), htSHA1),
-                j.at("references").get<PathReferences<StorePath>>(),
+                j.at("references").get<PathReferences<IPFSRef>>(),
             },
         };
     } else
         throw Error("invalid type: %s", type);
 }
 
-void to_json(nlohmann::json& j, const PathReferences<StorePath> & references)
+void to_json(nlohmann::json& j, const PathReferences<IPFSRef> & references)
 {
     auto refs = nlohmann::json::array();
     for (auto & i : references.references) {
-        auto hash = Hash::parseAny(i.hashPart(), htSHA1);
         refs.push_back(nlohmann::json {
-            { "name", i.name() },
-            { "cid", nlohmann::json {{ "/", "f01711114" + hash.to_string(Base16, false) }} }
+            { "name", i.second },
+            { "cid", nlohmann::json {{ "/", i.first }} }
         });
     }
 
@@ -320,18 +202,15 @@ void to_json(nlohmann::json& j, const PathReferences<StorePath> & references)
     };
 }
 
-void from_json(const nlohmann::json& j, PathReferences<StorePath> & references)
+void from_json(const nlohmann::json& j, PathReferences<IPFSRef> & references)
 {
-    StorePathSet refs;
+    std::set<IPFSRef> refs;
     for (auto & ref : j.at("references")) {
         auto name = ref.at("name").get<std::string>();
         auto cid = ref.at("cid").at("/").get<std::string>();
-        if (cid.substr(0, 9) != "f01711114")
-            throw Error("cid '%s' is wrong type for ipfs hash", cid);
-        auto hash = Hash::parseAny(cid.substr(9), htSHA1);
-        refs.insert(StorePath(hash, name));
+        refs.insert(IPFSRef(cid, name));
     }
-    references = PathReferences<StorePath> {
+    references = PathReferences<IPFSRef> {
         .references = refs,
         .hasSelfReference = j.at("zhasSelfReference").get<bool>(),
     };
