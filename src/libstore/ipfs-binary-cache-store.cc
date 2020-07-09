@@ -569,8 +569,10 @@ std::unique_ptr<Source> IPFSBinaryCacheStore::getGitObject(std::string path, std
             size_t i = result.size() - 1;
             for (; i > 0; i--) {
                 char c = result.data()[i];
-                if (!(c >= '0' && c <= '9') && c != '|')
+                if (!(c >= '0' && c <= '9') && c != '|') {
+                    i += offset.size();
                     break;
+                }
                 if (c == '|') {
                     int pos;
                     try {
