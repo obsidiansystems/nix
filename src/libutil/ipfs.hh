@@ -14,6 +14,14 @@ struct IPFSHash {
     Hash hash;
     std::string to_string() const;
     static IPFSHash<Deref> from_string(std::string_view cid);
+    std::vector<uint8_t> pack() const;
+    nlohmann::json packForCBor() const;
+};
+
+namespace untyped {
+	std::string toString(Hash);
+	Hash fromString(std::string_view);
+    std::vector<uint8_t>pack(Hash);
 };
 
 /* The point of this is to store data that hasn't yet been put in IPFS
@@ -29,36 +37,32 @@ struct IPFSHashWithOptValue : IPFSHash<Deref> {
     static IPFSHashWithOptValue fromValue(Deref value);
 };
 
-// "f01711220" base-16, sha-256
-// "f01781114" base-16, sha-1
-
 template<typename Deref>
 std::string IPFSHash<Deref>::to_string() const {
-    std::string prefix;
-    switch (hash.type) {
-    case htSHA1: prefix = "f01711220";
-    case htSHA256: prefix = "f01781114";
-    default: throw Error("hash type '%s' we don't yet export to IPFS", printHashType(hash.type));
-    }
-    return prefix + hash.to_string(Base16, false);
+    return untyped::toString(hash);
 }
 
 template<typename Deref>
 IPFSHash<Deref> IPFSHash<Deref>::from_string(std::string_view cid) {
-    auto prefix = cid.substr(0, 9);
-    HashType algo = prefix == "f01711220" ? htSHA256
-        : prefix == "f01781114" ? htSHA1
-        : throw Error("cid '%s' is wrong type for ipfs hash", cid);
-    return IPFSHash<Deref> {
-        .hash = Hash::parseNonSRIUnprefixed(cid.substr(9), algo),
-    };
+	return IPFSHash<Deref> {
+		.hash = untyped::fromString(cid)
+	};
+}
+
+template<typename Deref>
+std::vector<uint8_t> IPFSHash<Deref>::pack() const {
+	return untyped::pack(hash);
+}
+
+template<typename Deref>
+nlohmann::json IPFSHash<Deref>::packForCBor() const {
+    return nlohmann::json::binary(pack(), 42);
 }
 
 template<typename Deref>
 void to_json(nlohmann::json& j, const IPFSHash<Deref> & c) {
-    std::string s = c.to_string();
     j = nlohmann::json {
-        { "/", s },
+        { "/", c.to_string() },
     };
 }
 
