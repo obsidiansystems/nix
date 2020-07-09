@@ -221,7 +221,7 @@ Hash computeIPFSHash(const IPFSGitTreeNode & info)
     nlohmann::json j { info };
 
     auto pack = [&](auto & ref) {
-        ref = ref.get<IPFSHash<IPFSGitTreeNode>>().packForCBOR();
+        ref = ref.template get<IPFSHash<IPFSGitTreeNode>>().packForCBOR();
 	};
 
     // replace {"/": ...} with packed multihash
@@ -935,7 +935,7 @@ std::optional<ContentAddress> ValidPathInfo::fullContentAddressOpt() const
             },
             [&](IPFSHash<IPFSGitTreeNode> io) {
                 return ContentAddressWithoutName {
-                    IPFSHashWithOptValue { io },
+                    IPFSHashWithOptValue<IPFSGitTreeNode> { io },
                 };
             },
         }, *ca),
@@ -1002,16 +1002,12 @@ ValidPathInfo::ValidPathInfo(
             this->ca = FixedOutputHash { (FixedOutputHash) std::move(foi) };
         },
         [this, &store](IPFSHashWithOptValue<IPFSGitTreeNode> ih) {
-            this->ca = IPFSHash { ih };
+            this->ca = static_cast<IPFSHash<IPFSGitTreeNode>>(ih);
             if (ih.value) {
                 this->hasSelfReference = ih.value->references.hasSelfReference;
                 for (auto & ref : ih.value->references.references)
-                    this->references.insert(store.makeIPFSPath(ref));
+                    this->references.insert(store.makeIPFSPath(ref.name, ref.info));
             }
-        },
-        [](IPFSHash< foi) {
-            this->ca = IPFSHash { foi.hash };
-            throw Error("cannot make a valid path from a cid");
         },
     }, std::move(info.info));
 }

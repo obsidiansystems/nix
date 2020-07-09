@@ -15,7 +15,7 @@ struct IPFSHash {
     std::string to_string() const;
     static IPFSHash<Deref> from_string(std::string_view cid);
     std::vector<uint8_t> pack() const;
-    nlohmann::json packForCBor() const;
+    nlohmann::json packForCBOR() const;
 };
 
 namespace untyped {
@@ -55,7 +55,7 @@ std::vector<uint8_t> IPFSHash<Deref>::pack() const {
 }
 
 template<typename Deref>
-nlohmann::json IPFSHash<Deref>::packForCBor() const {
+nlohmann::json IPFSHash<Deref>::packForCBOR() const {
     return nlohmann::json::binary(pack(), 42);
 }
 
