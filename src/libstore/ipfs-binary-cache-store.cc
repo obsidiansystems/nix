@@ -663,27 +663,21 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
         auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())));
         assert(std::string(key, 0, 9) == "f01781114");
 
-        IPFSInfo caWithRefs { .hash = Hash::parseAny(std::string(key, 9), htSHA1) };
-        caWithRefs.references.hasSelfReference = info.hasSelfReference;
-        for (auto & ref : info.references)
-            caWithRefs.references.references.insert(IPFSRef {
-                    .name = std::string(ref.name()),
-                    .hash = std::get<IPFSHash>(*queryPathInfo(ref)->ca)
-                });
-
-        auto fullCa = *info.fullContentAddressOpt();
-        auto cid = getCidFromCA(fullCa);
-
-        auto realCa = ContentAddress {
-            .name = std::string(info.path.name()),
-            .info = caWithRefs
+        IPFSGitTreeNode caWithRefs {
+            .gitTree = Hash::parseAny(key.substr(9), htSHA1),
         };
+        caWithRefs.references.hasSelfReference = info.hasSelfReference;
+        for (auto & ref : info.references) {
+            caWithRefs.references.references.insert(ContentAddressT<IPFSHashWithOptValue<IPFSGitTreeNode>> {
+                .name = std::string(ref.name()),
+                .info = IPFSHashWithOptValue<IPFSGitTreeNode> { IPFSHash<IPFSGitTreeNode> {
+                    .hash = std::get<IPFSHash<IPFSGitTreeNode>>(*queryPathInfo(ref)->ca),
+                }},
+            });
+        }
 
-        nlohmann::json json = realCa;
-
-        auto cid_ = ipfsCidFormatBase16(std::string(putIpfsDag(realCa, "sha2-256"), 6));
-        assert(cid_ == cid);
-        assert(cid_ == "f01711220" + std::get<IPFSHash>(*info.ca).hash.to_string(Base16, false));
+        auto cid = ipfsCidFormatBase16(std::string(putIpfsDag(caWithRefs, "sha2-256"), 6));
+        assert(cid == "f01711220" + std::get<IPFSHash<IPFSGitTreeNode>>(*info.ca).hash.to_string(Base16, false));
 
         auto narInfo = make_ref<NarInfo>(info);;
         narInfo->narSize = nar->size();
