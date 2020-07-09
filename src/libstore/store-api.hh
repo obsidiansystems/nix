@@ -264,11 +264,7 @@ public:
 
     StorePath bakeCaIfNeeded(StorePathOrCA path) const;
 
-    StorePath makeIPFSPath(const ContentAddress & info) const;
-
-    StorePath makeIPFSPath(IPFSRef ref) const;
-
-    StorePath makeIPFSPath(std::string cid, std::string name) const;
+    StorePath makeIPFSPath(std::string name, Hash hash) const;
 
     /* This is the preparatory part of addToStore(); it computes the
        store path to which srcPath is to be copied.  Returns the store
@@ -772,7 +768,6 @@ std::pair<std::string, Store::Params> splitUriAndParams(const std::string & uri)
 std::optional<ContentAddress> getDerivationCA(const BasicDerivation & drv);
 
 Hash computeIPFSHash(const ContentAddress & info);
-std::string computeIPFSCid(const ContentAddress & info);
 
 
 }

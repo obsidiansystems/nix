@@ -512,9 +512,9 @@ std::optional<std::string> IPFSBinaryCacheStore::getCidFromCA(ContentAddress ca)
             return "f01781114" + ca_.hash.to_string(Base16, false);
         }
     } else if (std::holds_alternative<IPFSInfo>(ca.info))
-        return computeIPFSCid(ca);
-    else if (std::holds_alternative<IPFSCid>(ca.info))
-        return std::get<IPFSCid>(ca.info).cid;
+        return "f01711220" + computeIPFSHash(ca).to_string(Base16, false);
+    else if (std::holds_alternative<IPFSHash>(ca.info))
+        return "f01711220" + std::get<IPFSHash>(ca.info).hash.to_string(Base16, false);
 
     return std::nullopt;
 }
@@ -667,10 +667,11 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
 
         IPFSInfo caWithRefs { .hash = Hash::parseAny(std::string(key, 9), htSHA1) };
         caWithRefs.references.hasSelfReference = info.hasSelfReference;
-        for (auto & ref : info.references) {
-            auto cid = std::get<IPFSHash>(*queryPathInfo(ref)->ca);
-            caWithRefs.references.references.insert(IPFSRef("f01711220" + cid.hash.to_string(Base16, false), ref.name()));
-        }
+        for (auto & ref : info.references)
+            caWithRefs.references.references.insert(IPFSRef {
+                    .name = std::string(ref.name()),
+                    .hash = std::get<IPFSHash>(*queryPathInfo(ref)->ca)
+                });
 
         auto fullCa = *info.fullContentAddressOpt();
         auto cid = getCidFromCA(fullCa);

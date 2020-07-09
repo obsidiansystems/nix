@@ -246,8 +246,10 @@ static std::vector<uint8_t> packMultihash(std::string cid)
     return result;
 }
 
-Hash computeIPFSHash(const ContentAddress & info, HashType ht)
+Hash computeIPFSHash(const ContentAddress & info)
 {
+    assert(std::holds_alternative<IPFSInfo>(info.info));
+
     nlohmann::json j = info;
 
     // replace {"/": ...} with packed multihash
@@ -257,32 +259,19 @@ Hash computeIPFSHash(const ContentAddress & info, HashType ht)
         ref.at("cid") = nlohmann::json::binary(packMultihash(ref.at("cid").at("/").get<std::string>()), 42);
 
     std::vector<std::uint8_t> cbor = nlohmann::json::to_cbor(j);
-    return hashString(ht, std::string(cbor.begin(), cbor.end()));
+    return hashString(htSHA256, std::string(cbor.begin(), cbor.end()));
 }
 
-std::string computeIPFSCid(const ContentAddress & info)
-{
-    return "f01711220" + computeIPFSHash(info, htSHA256).to_string(Base16, false);
-}
-
-StorePath Store::makeIPFSPath(IPFSRef ref) const
+StorePath Store::makeIPFSPath(std::string name, Hash hash) const
 {
     string type = "ipfs";
+    assert(hash.type == htSHA256);
+    string cid = "f01711220" + hash.to_string(Base16, false);
 
-    // copy pase from makeStorePath
-    string s = type + ":" + ref.first + ":" + storeDir + ":" + std::string(ref.second);
+    // copy paste from makeStorePath
+    string s = type + ":" + cid + ":" + storeDir + ":" + name;
     auto h = compressHash(hashString(htSHA256, s), 20);
-    return StorePath(h, ref.second);
-}
-
-StorePath Store::makeIPFSPath(std::string cid, std::string name) const
-{
-    return makeIPFSPath(IPFSRef(cid, name));
-}
-
-StorePath Store::makeIPFSPath(const ContentAddress & info) const
-{
-    return makeIPFSPath(computeIPFSCid(info), info.name);
+    return StorePath(h, name);
 }
 
 StorePath Store::makeFixedOutputPathFromCA(const ContentAddress & info) const
@@ -296,10 +285,10 @@ StorePath Store::makeFixedOutputPathFromCA(const ContentAddress & info) const
             return makeFixedOutputPath(info.name, foi);
         },
         [&](IPFSInfo io) {
-            return makeIPFSPath(info);
+            return makeIPFSPath(info.name, computeIPFSHash(info));
         },
-        [&](IPFSCid ic) {
-            return makeIPFSPath(ic.cid, info.name);
+        [&](IPFSHash ic) {
+            return makeIPFSPath(info.name, ic.hash);
         }
     }, info.info);
 }
@@ -974,15 +963,15 @@ std::optional<ContentAddress> ValidPathInfo::fullContentAddressOpt() const
                 TextInfo info { th };
                 assert(!hasSelfReference);
                 info.references = references;
-                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo, IPFSCid> { info };
+                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo, IPFSHash> { info };
             },
             [&](FixedOutputHash foh) {
                 FixedOutputInfo info { foh };
                 info.references = static_cast<PathReferences<StorePath>>(*this);
-                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo, IPFSCid> { info };
+                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo, IPFSHash> { info };
             },
             [&](IPFSHash io) {
-                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo, IPFSCid> { IPFSCid { "f01711220" + io.hash.to_string(Base16, false) } };
+                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo, IPFSHash> { io };
             },
         }, *ca),
     };
@@ -1050,10 +1039,10 @@ ValidPathInfo::ValidPathInfo(
         [this, &store, info](IPFSInfo foi) {
             this->hasSelfReference = foi.references.hasSelfReference;
             for (auto & ref : foi.references.references)
-                this->references.insert(store.makeIPFSPath(ref));
-            this->ca = IPFSHash { computeIPFSHash(info, htSHA256) };
+                this->references.insert(store.makeIPFSPath(ref.name, ref.hash.hash));
+            this->ca = IPFSHash { computeIPFSHash(info) };
         },
-        [](IPFSCid foi) {
+        [](IPFSHash foi) {
             throw Error("cannot make a valid path from a cid");
         },
     }, std::move(info.info));
