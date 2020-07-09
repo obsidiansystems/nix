@@ -131,11 +131,7 @@ std::string renderContentAddress(ContentAddress ca)
             return s;
         },
         [](IPFSHash ic) {
-            return renderLegacyContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {
-                    IPFSHash {
-                        .hash = ic.hash
-                    }
-            });
+            return renderLegacyContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> { ic });
         }
     }, ca.info);
 
