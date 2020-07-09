@@ -21,7 +21,7 @@ struct IPFSHash {
 namespace untyped {
 	std::string toString(Hash);
 	Hash fromString(std::string_view);
-    std::vector<uint8_t>pack(Hash);
+    std::vector<uint8_t> pack(Hash);
 };
 
 /* The point of this is to store data that hasn't yet been put in IPFS
