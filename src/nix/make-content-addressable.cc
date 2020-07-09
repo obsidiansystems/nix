@@ -99,10 +99,11 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
                 Hash gitHash = dumpGitHashWithCustomHash([&]{ return std::make_unique<HashModuloSink>(htSHA1, oldHashPart); }, (Path) tmpDir + "/tmp");
 
                 std::set<IPFSRef> ipfsRefs;
-                for (auto & ref : refs.references) {
-                    auto cid = std::get<IPFSHash>(*store->queryPathInfo(ref)->ca);
-                    ipfsRefs.insert(IPFSRef("f01711220" + cid.hash.to_string(Base16, false), ref.name()));
-                }
+                for (auto & ref : refs.references)
+                    ipfsRefs.insert(IPFSRef {
+                            .name = std::string(ref.name()),
+                            .hash = std::get<IPFSHash>(*store->queryPathInfo(ref)->ca)
+                        });
                 ca.info = IPFSInfo {
                     .hash = gitHash,
                     PathReferences<IPFSRef> {

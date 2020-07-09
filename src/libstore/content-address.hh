@@ -30,6 +30,7 @@ struct FixedOutputHash {
     std::string printMethodAlgo() const;
 };
 
+// hash of some IPFSInfo
 struct IPFSHash {
     Hash hash;
 };
@@ -139,18 +140,22 @@ struct FixedOutputInfo : FixedOutputHash {
     PathReferences<StorePath> references;
 };
 
-// pair of cid and name for ipfs references
-typedef std::pair<std::string, std::string> IPFSRef;
+// pair of name and a hash of a content address
+struct IPFSRef {
+    std::string name;
+    IPFSHash hash;
+
+    bool operator < (const IPFSRef & other) const
+    {
+        return name < other.name;
+        // FIXME second field
+    }
+};
 
 struct IPFSInfo {
     Hash hash;
     // References for the paths
     PathReferences<IPFSRef> references;
-};
-
-// just the cid, which is a hash of ipfsinfo
-struct IPFSCid {
-    std::string cid;
 };
 
 struct ContentAddress {
@@ -159,7 +164,7 @@ struct ContentAddress {
         TextInfo,
         FixedOutputInfo,
         IPFSInfo,
-        IPFSCid
+        IPFSHash
     > info;
 
     bool operator < (const ContentAddress & other) const

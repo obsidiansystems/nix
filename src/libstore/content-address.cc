@@ -130,12 +130,8 @@ std::string renderContentAddress(ContentAddress ca)
             throw Error("ipfs info not handled");
             return s;
         },
-        [](IPFSCid ic) {
-            return renderLegacyContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {
-                    IPFSHash {
-                        .hash = Hash::parseAny(std::string(ic.cid, 9), htSHA256)
-                    }
-            });
+        [](IPFSHash ic) {
+            return renderLegacyContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> { ic });
         }
     }, ca.info);
 
@@ -205,9 +201,7 @@ ContentAddress parseContentAddress(std::string_view rawCa)
                 auto hash = std::get<IPFSHash>(ca);
                 return ContentAddress {
                     .name = name,
-                    .info = IPFSCid {
-                        .cid = "f01711220" + hash.hash.to_string(Base16, false)
-                    }
+                    .info = hash
                 };
             } else throw Error("unknown content address type for '%s'", rawCa);
         }
@@ -303,8 +297,8 @@ void to_json(nlohmann::json& j, const PathReferences<IPFSRef> & references)
     auto refs = nlohmann::json::array();
     for (auto & i : references.references) {
         refs.push_back(nlohmann::json {
-            { "name", i.second },
-            { "cid", nlohmann::json {{ "/", i.first }} }
+            { "name", i.name },
+            { "cid", nlohmann::json {{ "/", "f01711220" + i.hash.hash.to_string(Base16, false) }} }
         });
     }
 
@@ -324,7 +318,10 @@ void from_json(const nlohmann::json& j, PathReferences<IPFSRef> & references)
     for (auto & ref : j.at("references")) {
         auto name = ref.at("name").get<std::string>();
         auto cid = ref.at("cid").at("/").get<std::string>();
-        refs.insert(IPFSRef(cid, name));
+        refs.insert(IPFSRef {
+                .name = name,
+                .hash = Hash::parseAny(std::string(cid, 9), htSHA256)
+            });
     }
     references = PathReferences<IPFSRef> {
         .references = refs,
