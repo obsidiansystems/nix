@@ -246,7 +246,7 @@ static std::vector<uint8_t> packMultihash(std::string cid)
     return result;
 }
 
-IPFSHash computeIPFSHash(const ContentAddress & info)
+static IPFSHash computeIPFSHash(const ContentAddress & info)
 {
     assert(std::holds_alternative<IPFSInfo>(info.info));
 

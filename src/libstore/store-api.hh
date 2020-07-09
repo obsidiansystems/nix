@@ -767,7 +767,5 @@ std::pair<std::string, Store::Params> splitUriAndParams(const std::string & uri)
 
 std::optional<ContentAddress> getDerivationCA(const BasicDerivation & drv);
 
-IPFSHash computeIPFSHash(const ContentAddress & info);
-
 
 }
