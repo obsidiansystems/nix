@@ -97,13 +97,6 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
                 StringSink sink_;
                 RewritingSink rewritingSink(oldHashPart, std::string(oldHashPart.size(), 0), sink_);
                 dumpGit(htSHA1, (Path) tmpDir + "/tmp", rewritingSink);
-
-                rewritingSink.flush();
-
-                for (auto & pos : rewritingSink.matches) {
-                    auto s = fmt("|%d", pos);
-                    sink_((unsigned char *) s.data(), s.size());
-                }
             }
 
             ContentAddressWithoutName ca = ipfsContent

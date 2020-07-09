@@ -942,7 +942,7 @@ std::optional<ContentAddress> ValidPathInfo::fullContentAddressOpt() const
     };
 }
 
-bool ValidPathInfo::isContentAddressed(Store & store) const
+bool ValidPathInfo::isContentAddressed(const Store & store) const
 {
     auto fullCaOpt = fullContentAddressOpt();
 
@@ -960,7 +960,7 @@ bool ValidPathInfo::isContentAddressed(Store & store) const
 }
 
 
-size_t ValidPathInfo::checkSignatures(Store & store, const PublicKeys & publicKeys) const
+size_t ValidPathInfo::checkSignatures(const Store & store, const PublicKeys & publicKeys) const
 {
     if (isContentAddressed(store)) return maxSigs;
 
