@@ -216,13 +216,13 @@ StorePath Store::makeTextPath(std::string_view name, const TextInfo & info) cons
 }
 
 // FIXME move to content-address.cc
-Hash computeIPFSHash(const IPFSGitTreeNode & info)
+IPFSHash<IPFSGitTreeNode> computeIPFSHash(const IPFSGitTreeNode & info)
 {
     nlohmann::json j { info };
 
     auto pack = [&](auto & ref) {
         ref = ref.template get<IPFSHash<IPFSGitTreeNode>>().packForCBOR();
-	};
+    };
 
     // replace {"/": ...} with packed multihash
     // ipfs converts automatically between the two
@@ -231,12 +231,13 @@ Hash computeIPFSHash(const IPFSGitTreeNode & info)
         pack(ref);
 
     std::vector<std::uint8_t> cbor = nlohmann::json::to_cbor(j);
-    return hashString(htSHA256, std::string(cbor.begin(), cbor.end()));
+    return IPFSHash<IPFSGitTreeNode> {
+        hashString(htSHA256, std::string(cbor.begin(), cbor.end())),
+    };
 }
 
 StorePath Store::makeIPFSPath(std::string_view name, IPFSHash<IPFSGitTreeNode> hash) const
 {
-	// `to_string` use IPFS-style multi* encoding for forward-compat.
     return makeStorePath("ipfs-git", hash.hash, name);
 }
 
@@ -1008,6 +1009,7 @@ ValidPathInfo::ValidPathInfo(
                 for (auto & ref : ih.value->references.references)
                     this->references.insert(store.makeIPFSPath(ref.name, ref.info));
             }
+            // Else must add references manually after construction!
         },
     }, std::move(info.info));
 }
