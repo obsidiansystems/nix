@@ -254,8 +254,7 @@ void from_json(const nlohmann::json& j, LegacyContentAddress & ca) {
 }
 
 // f01781114 is the cid prefix for a base16 cbor sha1. This hash
-// stores the ContentAddress information. The hash (without the cid
-// prefix) will be put directly in the store path hash.
+// stores the ContentAddress information.
 
 void to_json(nlohmann::json& j, const ContentAddress & ca)
 {
@@ -316,10 +315,9 @@ void from_json(const nlohmann::json& j, PathReferences<IPFSRef> & references)
 {
     std::set<IPFSRef> refs;
     for (auto & ref : j.at("references")) {
-        auto name = ref.at("name").get<std::string>();
         auto cid = ref.at("cid").at("/").get<std::string>();
         refs.insert(IPFSRef {
-                .name = name,
+                .name = ref.at("name").get<std::string>(),
                 .hash = Hash::parseAny(std::string(cid, 9), htSHA256)
             });
     }
