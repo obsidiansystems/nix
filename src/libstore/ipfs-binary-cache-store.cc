@@ -512,7 +512,7 @@ std::optional<std::string> IPFSBinaryCacheStore::getCidFromCA(ContentAddress ca)
             return "f01781114" + ca_.hash.to_string(Base16, false);
         }
     } else if (std::holds_alternative<IPFSInfo>(ca.info))
-        return "f01711220" + computeIPFSHash(ca).to_string(Base16, false);
+        return "f01711220" + computeIPFSHash(ca).hash.to_string(Base16, false);
     else if (std::holds_alternative<IPFSHash>(ca.info))
         return "f01711220" + std::get<IPFSHash>(ca.info).hash.to_string(Base16, false);
 

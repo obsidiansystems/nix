@@ -246,7 +246,7 @@ static std::vector<uint8_t> packMultihash(std::string cid)
     return result;
 }
 
-Hash computeIPFSHash(const ContentAddress & info)
+IPFSHash computeIPFSHash(const ContentAddress & info)
 {
     assert(std::holds_alternative<IPFSInfo>(info.info));
 
@@ -259,14 +259,14 @@ Hash computeIPFSHash(const ContentAddress & info)
         ref.at("cid") = nlohmann::json::binary(packMultihash(ref.at("cid").at("/").get<std::string>()), 42);
 
     std::vector<std::uint8_t> cbor = nlohmann::json::to_cbor(j);
-    return hashString(htSHA256, std::string(cbor.begin(), cbor.end()));
+    return IPFSHash { hashString(htSHA256, std::string(cbor.begin(), cbor.end())) };
 }
 
-StorePath Store::makeIPFSPath(std::string name, Hash hash) const
+StorePath Store::makeIPFSPath(std::string name, IPFSHash hash) const
 {
     string type = "ipfs";
-    assert(hash.type == htSHA256);
-    string cid = "f01711220" + hash.to_string(Base16, false);
+    assert(hash.hash.type == htSHA256);
+    string cid = "f01711220" + hash.hash.to_string(Base16, false);
 
     // copy paste from makeStorePath
     string s = type + ":" + cid + ":" + storeDir + ":" + name;
@@ -288,7 +288,7 @@ StorePath Store::makeFixedOutputPathFromCA(const ContentAddress & info) const
             return makeIPFSPath(info.name, computeIPFSHash(info));
         },
         [&](IPFSHash ic) {
-            return makeIPFSPath(info.name, ic.hash);
+            return makeIPFSPath(info.name, ic);
         }
     }, info.info);
 }
@@ -1039,11 +1039,11 @@ ValidPathInfo::ValidPathInfo(
         [this, &store, info](IPFSInfo foi) {
             this->hasSelfReference = foi.references.hasSelfReference;
             for (auto & ref : foi.references.references)
-                this->references.insert(store.makeIPFSPath(ref.name, ref.hash.hash));
+                this->references.insert(store.makeIPFSPath(ref.name, ref.hash));
             this->ca = IPFSHash { computeIPFSHash(info) };
         },
         [](IPFSHash foi) {
-            throw Error("cannot make a valid path from a cid");
+            throw Error("cannot make a valid path from an ipfs hash without talking to the ipfs daemon");
         },
     }, std::move(info.info));
 }
