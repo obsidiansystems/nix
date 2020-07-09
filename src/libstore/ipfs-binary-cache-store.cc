@@ -511,7 +511,7 @@ std::optional<std::string> IPFSBinaryCacheStore::getCidFromCA(ContentAddress ca)
             assert(ca_.hash.type == htSHA1);
             return "f01781114" + ca_.hash.to_string(Base16, false);
         }
-    } else if (std::holds_alternative<IPFSInfo>(ca.info))
+    } else if (std::holds_alternative<IPFSHashWithOptValue<IPFSGitTreeNode>>(ca.info))
         return computeIPFSCid(ca);
     else if (std::holds_alternative<IPFSCid>(ca.info))
         return std::get<IPFSCid>(ca.info).cid;
@@ -655,7 +655,7 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
 
             return;
         }
-    } else if (info.ca && std::holds_alternative<IPFSHash>(*info.ca)) {
+    } else if (info.ca && std::holds_alternative<IPFSHash<IPSFGitTreeNode>>(*info.ca)) {
         auto nar = make_ref<std::string>(narSource.drain());
 
         AutoDelete tmpDir(createTempDir(), true);
