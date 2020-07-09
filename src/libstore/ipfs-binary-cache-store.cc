@@ -656,12 +656,6 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
             return;
         }
     } else if (info.ca && std::holds_alternative<IPFSHash>(*info.ca)) {
-        auto fullCa = *info.fullContentAddressOpt(*this);
-        auto cid = getCidFromCA(fullCa);
-
-        auto cid_ = ipfsCidFormatBase16(std::string(putIpfsDag(fullCa, "sha2-256"), 6));
-        assert(cid_ == cid);
-
         auto nar = make_ref<std::string>(narSource.drain());
 
         AutoDelete tmpDir(createTempDir(), true);
@@ -671,8 +665,26 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
         auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())));
         assert(std::string(key, 0, 9) == "f01781114");
 
-        auto hash_ = Hash::parseAny(std::string(key, 9), htSHA1);
-        assert(hash_ == std::get<IPFSHash>(*info.ca).hash);
+        IPFSInfo caWithRefs { .hash = Hash::parseAny(std::string(key, 9), htSHA1) };
+        caWithRefs.references.hasSelfReference = info.hasSelfReference;
+        for (auto & ref : info.references) {
+            auto cid = std::get<IPFSHash>(*queryPathInfo(ref)->ca);
+            caWithRefs.references.references.insert(IPFSRef("f01711220" + cid.hash.to_string(Base16, false), ref.name()));
+        }
+
+        auto fullCa = *info.fullContentAddressOpt();
+        auto cid = getCidFromCA(fullCa);
+
+        auto realCa = ContentAddress {
+            .name = std::string(info.path.name()),
+            .info = caWithRefs
+        };
+
+        nlohmann::json json = realCa;
+
+        auto cid_ = ipfsCidFormatBase16(std::string(putIpfsDag(realCa, "sha2-256"), 6));
+        assert(cid_ == cid);
+        assert(cid_ == "f01711220" + std::get<IPFSHash>(*info.ca).hash.to_string(Base16, false));
 
         auto narInfo = make_ref<NarInfo>(info);;
         narInfo->narSize = nar->size();

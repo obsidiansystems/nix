@@ -100,9 +100,8 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
 
                 std::set<IPFSRef> ipfsRefs;
                 for (auto & ref : refs.references) {
-                    auto ca_ = store->queryPathInfo(ref)->fullContentAddressOpt(*store);
-                    assert(ca_);
-                    ipfsRefs.insert(IPFSRef(computeIPFSCid(*ca_), ref.name()));
+                    auto cid = std::get<IPFSHash>(*store->queryPathInfo(ref)->ca);
+                    ipfsRefs.insert(IPFSRef("f01711220" + cid.hash.to_string(Base16, false), ref.name()));
                 }
                 ca.info = IPFSInfo {
                     .hash = gitHash,
