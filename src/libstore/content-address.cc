@@ -83,8 +83,8 @@ LegacyContentAddress parseLegacyContentAddress(std::string_view rawCa) {
         };
     } else if (prefix == "ipfs") {
         Hash hash = Hash::parseAnyPrefixed(rest);
-        if (hash.type != htSHA1)
-            throw Error("the ipfs hash should have type SHA1");
+        if (hash.type != htSHA256)
+            throw Error("the ipfs hash should have type SHA256");
         return IPFSHash { hash };
     } else
         throw UsageError("content address prefix \"%s\" is unrecognized. Recogonized prefixes are \"text\" or \"fixed\"", prefix);
@@ -130,10 +130,12 @@ std::string renderContentAddress(ContentAddress ca)
             throw Error("ipfs info not handled");
             return s;
         },
-        [](IPFSCid fsh) {
-            std::string s = "";
-            throw Error("ipfs cid not handled");
-            return s;
+        [](IPFSCid ic) {
+            return renderLegacyContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {
+                    IPFSHash {
+                        .hash = Hash::parseAny(std::string(ic.cid, 9), htSHA256)
+                    }
+            });
         }
     }, ca.info);
 
@@ -195,6 +197,14 @@ ContentAddress parseContentAddress(std::string_view rawCa)
                         .references = references,
                         .hasSelfReference = hasSelfReference,
                     },
+                },
+            };
+        } else if (std::holds_alternative<IPFSHash>(ca)) {
+            auto hash = std::get<IPFSHash>(ca);
+            return ContentAddress {
+                .name = name,
+                .info = IPFSCid {
+                    .cid = "f01711220" + hash.hash.to_string(Base16, false)
                 },
             };
         } else throw Error("unknown content address type");

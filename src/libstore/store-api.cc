@@ -816,7 +816,7 @@ std::map<StorePath, StorePath> copyPaths(ref<Store> srcStore, ref<Store> dstStor
             auto info = srcStore->queryPathInfo(storePath);
             auto storePathForDst = storePath;
             if (info->ca && info->references.empty() && !info->hasSelfReference) {
-                storePathForDst = dstStore->makeFixedOutputPathFromCA(*info->fullContentAddressOpt(*srcStore));
+                storePathForDst = dstStore->makeFixedOutputPathFromCA(*info->fullContentAddressOpt());
                 if (dstStore->storeDir == srcStore->storeDir)
                     assert(storePathForDst == storePath);
                 if (storePathForDst != storePath)
@@ -844,7 +844,7 @@ std::map<StorePath, StorePath> copyPaths(ref<Store> srcStore, ref<Store> dstStor
 
             auto storePathForDst = storePath;
             if (info->ca && info->references.empty() && !info->hasSelfReference) {
-                storePathForDst = dstStore->makeFixedOutputPathFromCA(*info->fullContentAddressOpt(*srcStore));
+                storePathForDst = dstStore->makeFixedOutputPathFromCA(*info->fullContentAddressOpt());
                 if (dstStore->storeDir == srcStore->storeDir)
                     assert(storePathForDst == storePath);
                 if (storePathForDst != storePath)
@@ -962,7 +962,7 @@ void ValidPathInfo::sign(const Store & store, const SecretKey & secretKey)
     sigs.insert(secretKey.signDetached(fingerprint(store)));
 }
 
-std::optional<ContentAddress> ValidPathInfo::fullContentAddressOpt(Store & store) const
+std::optional<ContentAddress> ValidPathInfo::fullContentAddressOpt() const
 {
     if (! ca)
         return std::nullopt;
@@ -982,21 +982,15 @@ std::optional<ContentAddress> ValidPathInfo::fullContentAddressOpt(Store & store
                 return std::variant<TextInfo, FixedOutputInfo, IPFSInfo, IPFSCid> { info };
             },
             [&](IPFSHash io) {
-                IPFSInfo info { .hash = io.hash };
-                info.references.hasSelfReference = this->hasSelfReference;
-                for (auto & ref : this->references) {
-                    auto ca = *store.queryPathInfo(ref)->fullContentAddressOpt(store);
-                    info.references.references.insert(IPFSRef(computeIPFSCid(ca), ref.name()));
-                }
-                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo, IPFSCid> { info };
+                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo, IPFSCid> { IPFSCid { "f01711220" + io.hash.to_string(Base16, false) } };
             },
         }, *ca),
     };
 }
 
-bool ValidPathInfo::isContentAddressed(Store & store) const
+bool ValidPathInfo::isContentAddressed(const Store & store) const
 {
-    auto fullCaOpt = fullContentAddressOpt(store);
+    auto fullCaOpt = fullContentAddressOpt();
 
     if (! fullCaOpt)
         return false;
@@ -1012,7 +1006,7 @@ bool ValidPathInfo::isContentAddressed(Store & store) const
 }
 
 
-size_t ValidPathInfo::checkSignatures(Store & store, const PublicKeys & publicKeys) const
+size_t ValidPathInfo::checkSignatures(const Store & store, const PublicKeys & publicKeys) const
 {
     if (isContentAddressed(store)) return maxSigs;
 
@@ -1053,11 +1047,11 @@ ValidPathInfo::ValidPathInfo(
             *(static_cast<PathReferences<StorePath> *>(this)) = foi.references;
             this->ca = FixedOutputHash { (FixedOutputHash) std::move(foi) };
         },
-        [this, &store](IPFSInfo foi) {
+        [this, &store, info](IPFSInfo foi) {
             this->hasSelfReference = foi.references.hasSelfReference;
             for (auto & ref : foi.references.references)
                 this->references.insert(store.makeIPFSPath(ref));
-            this->ca = IPFSHash { foi.hash };
+            this->ca = IPFSHash { computeIPFSHash(info, htSHA256) };
         },
         [](IPFSCid foi) {
             throw Error("cannot make a valid path from a cid");
