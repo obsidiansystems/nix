@@ -10,6 +10,7 @@ std::string FixedOutputHash::printMethodAlgo() const {
     return makeFileIngestionPrefix(method) + printHashType(hash.type);
 }
 
+
 std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
     switch (m) {
     case FileIngestionMethod::Flat:
@@ -22,6 +23,7 @@ std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
     abort();
 }
 
+
 std::string renderLegacyContentAddress(LegacyContentAddress ca) {
     return std::visit(overloaded {
         [](TextHash th) {
@@ -29,15 +31,30 @@ std::string renderLegacyContentAddress(LegacyContentAddress ca) {
                 + th.hash.to_string(Base32, true);
         },
         [](FixedOutputHash fsh) {
-             return "fixed:"
-                 + makeFileIngestionPrefix(fsh.method)
-                 + fsh.hash.to_string(Base32, true);
+            return "fixed:"
+                + makeFileIngestionPrefix(fsh.method)
+                + fsh.hash.to_string(Base32, true);
         },
-        [](IPFSHash fsh) {
-             return "ipfs:"
-                 + fsh.hash.to_string(Base32, true);
+        [](IPFSHash ih) {
+            // FIXME do Base-32 for consistency
+            return "ipfs:" + ih.to_string();
         }
     }, ca);
+}
+
+static HashType parseHashType_(std::string_view & rest) {
+    auto hashTypeRaw = splitPrefixTo(rest, ':');
+    if (!hashTypeRaw)
+        throw UsageError("hash must be in form \"<algo>:<hash>\", but found: %s", rest);
+    return parseHashType(*hashTypeRaw);
+};
+
+static FileIngestionMethod parseFileIngestionMethod_(std::string_view & rest) {
+    if (splitPrefix(rest, "r:"))
+        return FileIngestionMethod::Recursive;
+    else if (splitPrefix(rest, "git:"))
+        return FileIngestionMethod::Git;
+    return FileIngestionMethod::Flat;
 }
 
 LegacyContentAddress parseLegacyContentAddress(std::string_view rawCa) {
@@ -47,22 +64,14 @@ LegacyContentAddress parseLegacyContentAddress(std::string_view rawCa) {
     {
         auto optPrefix = splitPrefixTo(rest, ':');
         if (!optPrefix)
-            throw UsageError("not a content address because it is not in the form \"<prefix>:<rest>\": %s", rawCa);
+            throw UsageError("not a path-info content address because it is not in the form \"<prefix>:<rest>\": %s", rawCa);
         prefix = *optPrefix;
     }
-
-    auto parseHashType_ = [&](){
-        auto hashTypeRaw = splitPrefixTo(rest, ':');
-        if (!hashTypeRaw)
-            throw UsageError("content address hash must be in form \"<algo>:<hash>\", but found: %s", rawCa);
-        HashType hashType = parseHashType(*hashTypeRaw);
-        return std::move(hashType);
-    };
 
     // Switch on prefix
     if (prefix == "text") {
         // No parsing of the method, "text" only support flat.
-        HashType hashType = parseHashType_();
+        HashType hashType = parseHashType_(rest);
         if (hashType != htSHA256)
             throw Error("text content address hash should use %s, but instead uses %s",
                 printHashType(htSHA256), printHashType(hashType));
@@ -70,24 +79,19 @@ LegacyContentAddress parseLegacyContentAddress(std::string_view rawCa) {
             .hash = Hash::parseNonSRIUnprefixed(rest, std::move(hashType)),
         };
     } else if (prefix == "fixed") {
-        // Parse method
-        auto method = FileIngestionMethod::Flat;
-        if (splitPrefix(rest, "r:"))
-            method = FileIngestionMethod::Recursive;
-        else if (splitPrefix(rest, "git:"))
-            method = FileIngestionMethod::Git;
-        HashType hashType = parseHashType_();
+        auto method = parseFileIngestionMethod_(rest);
+        HashType hashType = parseHashType_(rest);
         return FixedOutputHash {
             .method = method,
             .hash = Hash::parseNonSRIUnprefixed(rest, std::move(hashType)),
         };
     } else if (prefix == "ipfs") {
-        Hash hash = Hash::parseAnyPrefixed(rest);
-        if (hash.type != htSHA256)
-            throw Error("the ipfs hash should have type SHA256");
-        return IPFSHash { hash };
+        auto hash = IPFSHash::from_string(rest);
+        if (hash.hash.type != htSHA256)
+            throw Error("This IPFS hash should have type SHA-256: %s", hash.to_string());
+        return hash;
     } else
-        throw UsageError("content address prefix \"%s\" is unrecognized. Recogonized prefixes are \"text\" or \"fixed\"", prefix);
+        throw UsageError("path-info content address prefix \"%s\" is unrecognized. Recogonized prefixes are \"text\", \"fixed\", or \"ipfs\"", prefix);
 };
 
 std::optional<LegacyContentAddress> parseLegacyContentAddressOpt(std::string_view rawCaOpt) {
@@ -98,111 +102,128 @@ std::string renderLegacyContentAddress(std::optional<LegacyContentAddress> ca) {
     return ca ? renderLegacyContentAddress(*ca) : "";
 }
 
+
+// FIXME Deduplicate with store-api.cc path computation
 std::string renderContentAddress(ContentAddress ca)
 {
-    return ca.name + ":" + std::visit(overloaded {
-        [](TextInfo th) {
-            std::string result = "refs," + std::to_string(th.references.size());
-            for (auto & i : th.references) {
-                result += ":";
-                result += i.to_string();
-            }
-            result += ":" + renderLegacyContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {TextHash {
-                    .hash = th.hash,
-                }});
-            return result;
+    std::string result = ca.name;
+
+    auto dumpRefs = [&](auto references, bool hasSelfReference) {
+        result += "refs:";
+        result += std::to_string(references.size());
+        for (auto & i : references) {
+            result += ":";
+            result += i.to_string();
+        }
+        if (hasSelfReference) result += ":self";
+    };
+
+    std::visit(overloaded {
+        [&](TextInfo th) {
+            result += "text:";
+            dumpRefs(th.references, false);
+            result += ":" + renderLegacyContentAddress(LegacyContentAddress {TextHash {
+                .hash = th.hash,
+            }});
         },
-        [](FixedOutputInfo fsh) {
-            std::string result = "refs," + std::to_string(fsh.references.references.size() + (fsh.references.hasSelfReference ? 1 : 0));
-            for (auto & i : fsh.references.references) {
-                result += ":";
-                result += i.to_string();
-            }
-            if (fsh.references.hasSelfReference) result += ":self";
-            result += ":" + renderLegacyContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> {FixedOutputHash {
-                    .method = fsh.method,
-                    .hash = fsh.hash
-                }});
-            return result;
+        [&](FixedOutputInfo fsh) {
+            result += "fixed:";
+            dumpRefs(fsh.references.references, fsh.references.hasSelfReference);
+            result += ":" + renderLegacyContentAddress(LegacyContentAddress {FixedOutputHash {
+                .method = fsh.method,
+                .hash = fsh.hash
+            }});
         },
         [](IPFSInfo fsh) {
-            std::string s = "";
             throw Error("ipfs info not handled");
-            return s;
         },
-        [](IPFSHash ic) {
-            return renderLegacyContentAddress(std::variant<TextHash, FixedOutputHash, IPFSHash> { ic });
-        }
+        [&](IPFSHash ih) {
+            result += "ipfs:";
+            result += ih.to_string();
+        },
     }, ca.info);
 
+    return result;
 }
+
 
 ContentAddress parseContentAddress(std::string_view rawCa)
 {
     auto rest = rawCa;
-    auto prefixSeparator = rest.find(':');
-    if (prefixSeparator == string::npos)
-        throw Error("unknown ca: '%s'", rawCa);
-    auto name = std::string(rest.substr(0, prefixSeparator));
-    rest = rest.substr(prefixSeparator + 1);
 
-    if (hasPrefix(rest, "refs,")) {
-        prefixSeparator = rest.find(':');
-        if (prefixSeparator == string::npos)
-            throw Error("unknown ca: '%s'", rawCa);
-        auto numReferences = std::stoi(std::string(rest.substr(5, prefixSeparator)));
-        rest = rest.substr(prefixSeparator + 1);
-
-        bool hasSelfReference = false;
-        StorePathSet references;
-        for (int i = 0; i < numReferences; i++) {
-            prefixSeparator = rest.find(':');
-            if (prefixSeparator == string::npos)
-                throw Error("unexpected end of string in '%s'", rest);
-            auto s = std::string(rest, 0, prefixSeparator);
-            if (s == "self")
-                hasSelfReference = true;
-            else
-                references.insert(StorePath(s));
-            rest = rest.substr(prefixSeparator + 1);
-        }
-        LegacyContentAddress ca = parseLegacyContentAddress(rest);
-        if (std::holds_alternative<TextHash>(ca)) {
-            auto ca_ = std::get<TextHash>(ca);
-            if (hasSelfReference)
-                throw Error("text content address cannot have self reference");
-            return ContentAddress {
-                .name = name,
-                    .info = TextInfo {
-                    {.hash = ca_.hash,},
-                    .references = references,
-                }
-            };
-        } else if (std::holds_alternative<FixedOutputHash>(ca)) {
-            auto ca_ = std::get<FixedOutputHash>(ca);
-            return ContentAddress {
-                .name = name,
-                    .info = FixedOutputInfo {
-                    {.method = ca_.method,
-                     .hash = ca_.hash,},
-                    .references = PathReferences<StorePath> {
-                        .references = references,
-                        .hasSelfReference = hasSelfReference,
-                    },
-                }
-            };
-        } else throw Error("unknown content address type for '%s'", rawCa);
-    } else {
-        LegacyContentAddress ca = parseLegacyContentAddress(rest);
-        if (std::holds_alternative<IPFSHash>(ca)) {
-            auto hash = std::get<IPFSHash>(ca);
-            return ContentAddress {
-                .name = name,
-                .info = hash
-            };
-        } else throw Error("unknown content address type for '%s'", rawCa);
+    std::string_view name;
+    std::string_view tag;
+    {
+        auto optName = splitPrefixTo(rest, ':');
+        auto optTag = splitPrefixTo(rest, ':');
+        if (!(optTag && optName))
+            throw UsageError("not a content address because it is not in the form \"<name>:<tag>:<rest>\": %s", rawCa);
+        tag = *optTag;
+        name = *optName;
     }
+
+    auto parseRefs = [&]() -> PathReferences<StorePath> {
+        if (!splitPrefix(rest, "refs,"))
+            throw Error("Invalid CA \"%s\", \"%s\" should begin with \"refs:\"", rawCa, rest);
+        PathReferences<StorePath> ret;
+        size_t numReferences = 0;
+        {
+            auto countRaw = splitPrefixTo(rest, ':');
+            if (!countRaw)
+                throw UsageError("Invalid count");
+            numReferences = std::stoi(std::string { *countRaw });
+        }
+        for (size_t i = 0; i < numReferences; i++) {
+            auto s = splitPrefixTo(rest, ':');
+            if (!s)
+                throw UsageError("Missing reference no. %d", i);
+            ret.references.insert(StorePath(*s));
+        }
+        if (splitPrefix(rest, "self:"))
+            ret.hasSelfReference = true;
+        return ret;
+    };
+
+    // Dummy value
+    ContentAddressWithoutName info = TextInfo { Hash(htSHA256), {} };
+
+    // Switch on tag
+    if (tag == "text") {
+        auto refs = parseRefs();
+        if (refs.hasSelfReference)
+            throw UsageError("Text content addresses cannot have self references");
+        auto hashType = parseHashType_(rest);
+        if (hashType != htSHA256)
+            throw Error("Text content address hash should use %s, but instead uses %s",
+                printHashType(htSHA256), printHashType(hashType));
+        info = TextInfo {
+            {
+                .hash = Hash::parseNonSRIUnprefixed(rest, std::move(hashType)),
+            },
+            refs.references,
+        };
+    } else if (tag == "fixed") {
+        auto refs = parseRefs();
+        auto method = parseFileIngestionMethod_(rest);
+        auto hashType = parseHashType_(rest);
+        info = FixedOutputInfo {
+            {
+                .method = method,
+                .hash = Hash::parseNonSRIUnprefixed(rest, std::move(hashType)),
+            },
+            refs,
+        };
+    } else if (tag == "ipfs") {
+        info = IPFSHash::from_string(rest);
+    } else
+        throw UsageError("content address tag \"%s\" is unrecognized. Recogonized tages are \"text\", \"fixed\", or \"ipfs\"", tag);
+
+    return ContentAddress {
+        .name = std::string { name },
+        .info = info,
+    };
 }
+
 
 void to_json(nlohmann::json& j, const LegacyContentAddress & ca) {
     j = std::visit(overloaded {
@@ -220,12 +241,12 @@ void to_json(nlohmann::json& j, const LegacyContentAddress & ca) {
                 { "hash", foh.hash.to_string(Base32, false) },
             };
         },
-        [](IPFSHash foh) {
+        [](IPFSHash ih) {
             return nlohmann::json {
                 { "type", "ipfs" },
-                { "hash", foh.hash.to_string(Base32, false) },
+                { "hash", ih.to_string() },
             };
-        }
+        },
     }, ca);
 }
 
@@ -264,7 +285,9 @@ void to_json(nlohmann::json& j, const ContentAddress & ca)
             { "qtype", "ipfs" },
             { "name", ca.name },
             { "references", info.references },
-            { "cid", nlohmann::json { { "/", "f01781114" + info.hash.to_string(Base16, false) } } }
+            { "cid", nlohmann::json {
+                { "/", (IPFSHash { .hash = info.hash }).to_string() }
+            } }
         };
     } else throw Error("cannot convert to json");
 }
@@ -274,12 +297,10 @@ void from_json(const nlohmann::json& j, ContentAddress & ca)
     std::string_view type = j.at("qtype").get<std::string_view>();
     if (type == "ipfs") {
         auto cid = j.at("cid").at("/").get<std::string_view>();
-        if (cid.substr(0, 9) != "f01781114")
-            throw Error("cid '%s' is wrong type for ipfs hash", cid);
         ca = ContentAddress {
             .name = j.at("name"),
             .info = IPFSInfo {
-                Hash::parseAny(cid.substr(9), htSHA1),
+                IPFSHash::from_string(cid).hash,
                 j.at("references").get<PathReferences<IPFSRef>>(),
             },
         };
@@ -293,7 +314,7 @@ void to_json(nlohmann::json& j, const PathReferences<IPFSRef> & references)
     for (auto & i : references.references) {
         refs.push_back(nlohmann::json {
             { "name", i.name },
-            { "cid", nlohmann::json {{ "/", "f01711220" + i.hash.hash.to_string(Base16, false) }} }
+            { "cid", nlohmann::json {{ "/", i.hash.to_string() }} }
         });
     }
 
@@ -311,11 +332,11 @@ void from_json(const nlohmann::json& j, PathReferences<IPFSRef> & references)
 {
     std::set<IPFSRef> refs;
     for (auto & ref : j.at("references")) {
-        auto cid = ref.at("cid").at("/").get<std::string>();
+        auto cid = ref.at("cid").at("/").get<std::string_view>();
         refs.insert(IPFSRef {
-                .name = ref.at("name").get<std::string>(),
-                .hash = Hash::parseAny(std::string(cid, 9), htSHA256)
-            });
+            .name = std::move(ref.at("name").get<std::string>()),
+            .hash = IPFSHash::from_string(cid).hash,
+        });
     }
     references = PathReferences<IPFSRef> {
         .references = refs,

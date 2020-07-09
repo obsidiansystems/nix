@@ -963,15 +963,15 @@ std::optional<ContentAddress> ValidPathInfo::fullContentAddressOpt() const
                 TextInfo info { th };
                 assert(!hasSelfReference);
                 info.references = references;
-                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo, IPFSHash> { info };
+                return ContentAddressWithoutName { info };
             },
             [&](FixedOutputHash foh) {
                 FixedOutputInfo info { foh };
                 info.references = static_cast<PathReferences<StorePath>>(*this);
-                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo, IPFSHash> { info };
+                return ContentAddressWithoutName { info };
             },
             [&](IPFSHash io) {
-                return std::variant<TextInfo, FixedOutputInfo, IPFSInfo, IPFSHash> { io };
+                return ContentAddressWithoutName { io };
             },
         }, *ca),
     };
