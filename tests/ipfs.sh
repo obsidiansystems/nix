@@ -225,6 +225,11 @@ numRefs=$(nix-store -q --references $rewrite | wc -l)
 
 nix copy $rewrite --to ipfs://
 
+# verify ipfs has it
+cid=f01711220$(nix to-base16 $(echo $ca | sed s,^ipfs:,,))
+[ $(ipfs dag get $cid | jq -r .qtype) = ipfs ]
+[ $(ipfs dag get $cid | jq -r .name) = dependencies-top ]
+
 nix-store --delete $rewrite
 
 path5=$(nix --experimental-features 'nix-command ca-references' ensure-ca full:dependencies-top:$ca --substituters ipfs:// --option substitute true)
