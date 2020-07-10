@@ -564,6 +564,34 @@ std::string IPFSBinaryCacheStore::addGit(Path path, std::string modulus, bool ha
     return putIpfsBlock(*sink.s, "git-raw", "sha1");
 }
 
+void IPFSBinaryCacheStore::unrewriteModulus(std::string & data, std::string hashPart)
+{
+    // unrewrite modulus
+    std::string offset;
+    size_t i = data.size() - 1;
+    for (; i > 0; i--) {
+        char c = data.data()[i];
+        if (!(c >= '0' && c <= '9') && c != '|') {
+            i += offset.size();
+            break;
+        }
+        if (c == '|') {
+            int pos;
+            try {
+                pos = stoi(offset);
+            } catch (std::invalid_argument& e) {
+                break;
+            }
+            assert(pos > 0 && pos + hashPart.size() < i);
+            assert(std::string(data, pos, hashPart.size()) == std::string(hashPart.size(), 0));
+            std::copy(hashPart.begin(), hashPart.end(), data.begin() + pos);
+            offset = "";
+        } else
+            offset = c + offset;
+    }
+    data.erase(i + 1);
+}
+
 std::unique_ptr<Source> IPFSBinaryCacheStore::getGitObject(std::string path, std::string hashPart, bool hasSelfReference)
 {
     return sinkToSource([path, hashPart, hasSelfReference, this](Sink & sink) {
@@ -571,32 +599,8 @@ std::unique_ptr<Source> IPFSBinaryCacheStore::getGitObject(std::string path, std
         getIpfsBlock(path, sink2);
 
         std::string result = *sink2.s;
-        if (hasSelfReference) {
-            // unrewrite modulus
-            std::string offset;
-            size_t i = result.size() - 1;
-            for (; i > 0; i--) {
-                char c = result.data()[i];
-                if (!(c >= '0' && c <= '9') && c != '|') {
-                    i += offset.size();
-                    break;
-                }
-                if (c == '|') {
-                    int pos;
-                    try {
-                        pos = stoi(offset);
-                    } catch (std::invalid_argument& e) {
-                        break;
-                    }
-                    assert(pos > 0 && pos + hashPart.size() < i);
-                    assert(std::string(result, pos, hashPart.size()) == std::string(hashPart.size(), 0));
-                    std::copy(hashPart.begin(), hashPart.end(), result.begin() + pos);
-                    offset = "";
-                } else
-                    offset = c + offset;
-            }
-            result.erase(i + 1);
-        }
+        if (hasSelfReference)
+            unrewriteModulus(result, hashPart);
         sink(result);
     });
 }

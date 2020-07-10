@@ -113,6 +113,8 @@ private:
 
     std::string addGit(Path path, std::string modulus, bool hasSelfReference);
 
+    void unrewriteModulus(std::string & data, std::string hashPart);
+
     std::unique_ptr<Source> getGitObject(std::string path, std::string hashPart, bool hasSelfReference);
 
     void getGitEntry(ParseSink & sink, const Path & path,
