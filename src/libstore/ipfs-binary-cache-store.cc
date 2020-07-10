@@ -534,7 +534,7 @@ std::string IPFSBinaryCacheStore::putIpfsBlock(std::string s, std::string format
     return (std::string) json["Key"];
 }
 
-std::string IPFSBinaryCacheStore::addGit(Path path, std::string modulus)
+std::string IPFSBinaryCacheStore::addGit(Path path, std::string modulus, bool hasSelfReference)
 {
     struct stat st;
     if (lstat(path.c_str(), &st))
@@ -542,20 +542,24 @@ std::string IPFSBinaryCacheStore::addGit(Path path, std::string modulus)
 
     if (S_ISDIR(st.st_mode)) {
         for (auto & i : readDirectory(path))
-            addGit(path + "/" + i.name, modulus);
+            addGit(path + "/" + i.name, modulus, hasSelfReference);
     }
 
     StringSink sink;
-    RewritingSink rewritingSink(modulus, std::string(modulus.size(), 0), sink);
 
-    dumpGitWithCustomHash([&]{ return std::make_unique<HashModuloSink>(htSHA1, modulus); }, path, rewritingSink);
+    if (hasSelfReference) {
+        RewritingSink rewritingSink(modulus, std::string(modulus.size(), 0), sink);
 
-    rewritingSink.flush();
+        dumpGitWithCustomHash([&]{ return std::make_unique<HashModuloSink>(htSHA1, modulus); }, path, rewritingSink);
 
-    for (auto & pos : rewritingSink.matches) {
-        auto s = fmt("|%d", pos);
-        sink((unsigned char *) s.data(), s.size());
-    }
+        rewritingSink.flush();
+
+        for (auto & pos : rewritingSink.matches) {
+            auto s = fmt("|%d", pos);
+            sink((unsigned char *) s.data(), s.size());
+        }
+    } else
+        dumpGit(htSHA1, path, sink);
 
     return putIpfsBlock(*sink.s, "git-raw", "sha1");
 }
@@ -638,7 +642,7 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
             StringSource savedNAR(*nar);
             restorePath((Path) tmpDir + "/tmp", savedNAR);
 
-            auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())));
+            auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart()), info.hasSelfReference));
             assert(std::string(key, 0, 9) == "f01781114");
 
             auto hash = Hash::parseAny(std::string(key, 9), htSHA1);
@@ -666,7 +670,7 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
         StringSource savedNAR(*nar);
         restorePath((Path) tmpDir + "/tmp", savedNAR);
 
-        auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())));
+        auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart()), info.hasSelfReference));
         assert(std::string(key, 0, 9) == "f01781114");
 
         IPFSInfo caWithRefs { .hash = Hash::parseAny(std::string(key, 9), htSHA1) };

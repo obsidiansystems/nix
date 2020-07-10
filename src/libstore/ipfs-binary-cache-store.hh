@@ -111,7 +111,7 @@ private:
 
     std::string putIpfsBlock(std::string s, std::string format, std::string mhtype);
 
-    std::string addGit(Path path, std::string modulus);
+    std::string addGit(Path path, std::string modulus, bool hasSelfReference);
 
     std::unique_ptr<Source> getGitObject(std::string path, std::string hashPart, bool hasSelfReference);
 
