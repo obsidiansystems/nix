@@ -13,7 +13,7 @@ body=$(nix-build fixed.nix -A good.0 --no-out-link)
 
 ca=$(nix path-info --json $body | jq -r .\[0\].ca)
 
-path=$(nix ensure-ca full:fixed:refs,0:$ca)
+path=$(nix ensure-ca fixed:refs,0:$ca)
 
 [ $body = $path ]
 
@@ -25,6 +25,6 @@ ca=$(nix path-info --json $rewrite | jq -r .\[0\].ca)
 numRefs=$(nix-store -q --references $rewrite | wc -l)
 refs=$(nix-store -q --references $rewrite | sed s,$rewrite,self, | sed s,$NIX_STORE_DIR/,, | tr \\n :)
 
-path2=$(nix ensure-ca full:dependencies-top:refs,$numRefs:$refs$ca)
+path2=$(nix ensure-ca dependencies-top:refs,$numRefs:$refs$ca)
 [ -d $path2 ]
 [ $ca = $(nix path-info --json $path2 | jq -r .\[0\].ca) ]

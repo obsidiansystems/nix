@@ -100,7 +100,7 @@ std::string renderLegacyContentAddress(std::optional<LegacyContentAddress> ca) {
 
 std::string renderContentAddress(ContentAddress ca)
 {
-    return "full:" + ca.name + ":" + std::visit(overloaded {
+    return ca.name + ":" + std::visit(overloaded {
         [](TextInfo th) {
             std::string result = "refs," + std::to_string(th.references.size());
             for (auto & i : th.references) {
@@ -139,73 +139,69 @@ std::string renderContentAddress(ContentAddress ca)
 
 ContentAddress parseContentAddress(std::string_view rawCa)
 {
-    auto prefixSeparator = rawCa.find(':');
+    auto rest = rawCa;
+    auto prefixSeparator = rest.find(':');
     if (prefixSeparator == string::npos)
         throw Error("unknown ca: '%s'", rawCa);
-    auto rest = rawCa.substr(prefixSeparator + 1);
+    auto name = std::string(rest.substr(0, prefixSeparator));
+    rest = rest.substr(prefixSeparator + 1);
 
-    if (hasPrefix(rawCa, "full:")) {
+    if (hasPrefix(rest, "refs,")) {
         prefixSeparator = rest.find(':');
-        auto name = std::string(rest.substr(0, prefixSeparator));
+        if (prefixSeparator == string::npos)
+            throw Error("unknown ca: '%s'", rawCa);
+        auto numReferences = std::stoi(std::string(rest.substr(5, prefixSeparator)));
         rest = rest.substr(prefixSeparator + 1);
 
-        if (hasPrefix(rest, "refs,")) {
+        bool hasSelfReference = false;
+        StorePathSet references;
+        for (int i = 0; i < numReferences; i++) {
             prefixSeparator = rest.find(':');
             if (prefixSeparator == string::npos)
-                throw Error("unknown ca: '%s'", rawCa);
-            auto numReferences = std::stoi(std::string(rest.substr(5, prefixSeparator)));
+                throw Error("unexpected end of string in '%s'", rest);
+            auto s = std::string(rest, 0, prefixSeparator);
+            if (s == "self")
+                hasSelfReference = true;
+            else
+                references.insert(StorePath(s));
             rest = rest.substr(prefixSeparator + 1);
-
-            bool hasSelfReference = false;
-            StorePathSet references;
-            for (int i = 0; i < numReferences; i++) {
-                prefixSeparator = rest.find(':');
-                if (prefixSeparator == string::npos)
-                    throw Error("unexpected end of string in '%s'", rest);
-                auto s = std::string(rest, 0, prefixSeparator);
-                if (s == "self")
-                    hasSelfReference = true;
-                else
-                    references.insert(StorePath(s));
-                rest = rest.substr(prefixSeparator + 1);
-            }
-            LegacyContentAddress ca = parseLegacyContentAddress(rest);
-            if (std::holds_alternative<TextHash>(ca)) {
-                auto ca_ = std::get<TextHash>(ca);
-                if (hasSelfReference)
-                    throw Error("text content address cannot have self reference");
-                return ContentAddress {
-                    .name = name,
-                        .info = TextInfo {
-                        {.hash = ca_.hash,},
-                        .references = references,
-                    }
-                };
-            } else if (std::holds_alternative<FixedOutputHash>(ca)) {
-                auto ca_ = std::get<FixedOutputHash>(ca);
-                return ContentAddress {
-                    .name = name,
-                        .info = FixedOutputInfo {
-                        {.method = ca_.method,
-                         .hash = ca_.hash,},
-                        .references = PathReferences<StorePath> {
-                            .references = references,
-                            .hasSelfReference = hasSelfReference,
-                        },
-                    }
-                };
-            } else throw Error("unknown content address type for '%s'", rawCa);
-        } else {
-            LegacyContentAddress ca = parseLegacyContentAddress(rest);
-            if (std::holds_alternative<IPFSHash>(ca)) {
-                auto hash = std::get<IPFSHash>(ca);
-                return ContentAddress {
-                    .name = name,
-                    .info = hash
-                };
-            } else throw Error("unknown content address type for '%s'", rawCa);
         }
-    } else throw Error("unknown ca: '%s'", rawCa);
+        LegacyContentAddress ca = parseLegacyContentAddress(rest);
+        if (std::holds_alternative<TextHash>(ca)) {
+            auto ca_ = std::get<TextHash>(ca);
+            if (hasSelfReference)
+                throw Error("text content address cannot have self reference");
+            return ContentAddress {
+                .name = name,
+                    .info = TextInfo {
+                    {.hash = ca_.hash,},
+                    .references = references,
+                }
+            };
+        } else if (std::holds_alternative<FixedOutputHash>(ca)) {
+            auto ca_ = std::get<FixedOutputHash>(ca);
+            return ContentAddress {
+                .name = name,
+                    .info = FixedOutputInfo {
+                    {.method = ca_.method,
+                     .hash = ca_.hash,},
+                    .references = PathReferences<StorePath> {
+                        .references = references,
+                        .hasSelfReference = hasSelfReference,
+                    },
+                }
+            };
+        } else throw Error("unknown content address type for '%s'", rawCa);
+    } else {
+        LegacyContentAddress ca = parseLegacyContentAddress(rest);
+        if (std::holds_alternative<IPFSHash>(ca)) {
+            auto hash = std::get<IPFSHash>(ca);
+            return ContentAddress {
+                .name = name,
+                .info = hash
+            };
+        } else throw Error("unknown content address type for '%s'", rawCa);
+    }
 }
 
 void to_json(nlohmann::json& j, const LegacyContentAddress & ca) {
