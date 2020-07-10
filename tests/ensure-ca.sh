@@ -11,9 +11,11 @@ export IMPURE_VAR2=bar
 
 body=$(nix-build fixed.nix -A good.0 --no-out-link)
 
-ca=$(nix path-info --json $body | jq -r .\[0\].ca)
+jqCaHash='.[0].ca | split(":") | .[1:] | join(":")'
 
-path=$(nix ensure-ca fixed:refs,0:$ca)
+caHash=$(nix path-info --json $body | jq -r "$jqCaHash")
+
+path=$(nix ensure-ca fixed:fixed:refs,0:$caHash)
 
 [ $body = $path ]
 
@@ -21,10 +23,10 @@ body=$(nix-build dependencies.nix --no-out-link)
 
 rewrite=$(nix --experimental-features 'nix-command ca-references' make-content-addressable --json -r $body | jq -r ".rewrites[\"$body\"]")
 
-ca=$(nix path-info --json $rewrite | jq -r .\[0\].ca)
-numRefs=$(nix-store -q --references $rewrite | wc -l)
+caHash=$(nix path-info --json $rewrite | jq -r "$jqCaHash")
+numRefs=$(nix-store -q --references $rewrite | grep -v $rewrite | wc -l)
 refs=$(nix-store -q --references $rewrite | sed s,$rewrite,self, | sed s,$NIX_STORE_DIR/,, | tr \\n :)
 
-path2=$(nix ensure-ca dependencies-top:refs,$numRefs:$refs$ca)
+path2=$(nix ensure-ca dependencies-top:fixed:refs,$numRefs:$refs$caHash)
 [ -d $path2 ]
-[ $ca = $(nix path-info --json $path2 | jq -r .\[0\].ca) ]
+[ fixed:$caHash = $(nix path-info --json $path2 | jq -r .\[0\].ca) ]

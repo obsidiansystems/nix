@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 #include <variant>
 
+#include "ipfs.hh"
 #include "hash.hh"
 #include "path.hh"
 
@@ -28,11 +29,6 @@ struct FixedOutputHash {
     FileIngestionMethod method;
     Hash hash;
     std::string printMethodAlgo() const;
-};
-
-// hash of some IPFSInfo
-struct IPFSHash {
-    Hash hash;
 };
 
 /*
@@ -158,14 +154,16 @@ struct IPFSInfo {
     PathReferences<IPFSRef> references;
 };
 
+typedef std::variant<
+    TextInfo,
+    FixedOutputInfo,
+    IPFSInfo,
+    IPFSHash
+> ContentAddressWithoutName;
+
 struct ContentAddress {
     std::string name;
-    std::variant<
-        TextInfo,
-        FixedOutputInfo,
-        IPFSInfo,
-        IPFSHash
-    > info;
+    ContentAddressWithoutName info;
 
     bool operator < (const ContentAddress & other) const
     {
