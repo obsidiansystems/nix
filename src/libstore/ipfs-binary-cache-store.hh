@@ -109,7 +109,7 @@ private:
 
     std::optional<std::string> getCidFromCA(ContentAddress ca);
 
-    std::string putIpfsGitBlock(std::string s);
+    std::string putIpfsBlock(std::string s, std::string format, std::string mhtype);
 
     std::string addGit(Path path, std::string modulus);
 

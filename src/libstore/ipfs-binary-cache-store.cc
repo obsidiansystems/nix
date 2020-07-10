@@ -519,9 +519,11 @@ std::optional<std::string> IPFSBinaryCacheStore::getCidFromCA(ContentAddress ca)
     return std::nullopt;
 }
 
-std::string IPFSBinaryCacheStore::putIpfsGitBlock(std::string s)
+std::string IPFSBinaryCacheStore::putIpfsBlock(std::string s, std::string format, std::string mhtype)
 {
-    auto uri = daemonUri + "/api/v0/block/put?format=git-raw&mhtype=sha1";
+    auto uri = daemonUri + "/api/v0/block/put";
+    uri += "?format=" + format;
+    uri += "&mhtype=" + mhtype;
 
     auto req = FileTransferRequest(uri);
     req.data = std::make_shared<string>(s);
@@ -555,7 +557,7 @@ std::string IPFSBinaryCacheStore::addGit(Path path, std::string modulus)
         sink((unsigned char *) s.data(), s.size());
     }
 
-    return putIpfsGitBlock(*sink.s);
+    return putIpfsBlock(*sink.s, "git-raw", "sha1");
 }
 
 std::unique_ptr<Source> IPFSBinaryCacheStore::getGitObject(std::string path, std::string hashPart, bool hasSelfReference)
