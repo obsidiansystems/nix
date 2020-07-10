@@ -232,7 +232,7 @@ cid=f01711220$(nix to-base16 $(echo $ca | sed s,^ipfs:,,))
 
 nix-store --delete $rewrite
 
-path5=$(nix --experimental-features 'nix-command ca-references' ensure-ca full:dependencies-top:$ca --substituters ipfs:// --option substitute true)
+path5=$(nix --experimental-features 'nix-command ca-references' ensure-ca dependencies-top:$ca --substituters ipfs:// --option substitute true)
 
 [ $(nix-store -q --references $path5 | wc -l) = $numRefs ]
 [ $(readlink -f $path5/self) = $path5 ]
