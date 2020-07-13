@@ -159,11 +159,11 @@ typedef std::variant<
     FixedOutputInfo,
     IPFSInfo,
     IPFSHash
-> ContentAddressWithoutName;
+> ContentAddressWithReferences;
 
 struct StorePathDescriptor {
     std::string name;
-    ContentAddressWithoutName info;
+    ContentAddressWithReferences info;
 
     bool operator < (const StorePathDescriptor & other) const
     {

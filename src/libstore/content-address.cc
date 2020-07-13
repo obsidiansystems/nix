@@ -185,7 +185,7 @@ StorePathDescriptor parseStorePathDescriptor(std::string_view rawCa)
     };
 
     // Dummy value
-    ContentAddressWithoutName info = TextInfo { Hash(htSHA256), {} };
+    ContentAddressWithReferences info = TextInfo { Hash(htSHA256), {} };
 
     // Switch on tag
     if (tag == "text") {

@@ -963,15 +963,15 @@ std::optional<StorePathDescriptor> ValidPathInfo::fullStorePathDescriptorOpt() c
                 TextInfo info { th };
                 assert(!hasSelfReference);
                 info.references = references;
-                return ContentAddressWithoutName { info };
+                return ContentAddressWithReferences { info };
             },
             [&](FixedOutputHash foh) {
                 FixedOutputInfo info { foh };
                 info.references = static_cast<PathReferences<StorePath>>(*this);
-                return ContentAddressWithoutName { info };
+                return ContentAddressWithReferences { info };
             },
             [&](IPFSHash io) {
-                return ContentAddressWithoutName { io };
+                return ContentAddressWithReferences { io };
             },
         }, *ca),
     };
