@@ -24,7 +24,7 @@ std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
 }
 
 
-std::string renderLegacyContentAddress(LegacyContentAddress ca) {
+std::string renderContentAddress(ContentAddress ca) {
     return std::visit(overloaded {
         [](TextHash th) {
             return "text:"
@@ -57,7 +57,7 @@ static FileIngestionMethod parseFileIngestionMethod_(std::string_view & rest) {
     return FileIngestionMethod::Flat;
 }
 
-LegacyContentAddress parseLegacyContentAddress(std::string_view rawCa) {
+ContentAddress parseContentAddress(std::string_view rawCa) {
     auto rest = rawCa;
 
     std::string_view prefix;
@@ -94,12 +94,12 @@ LegacyContentAddress parseLegacyContentAddress(std::string_view rawCa) {
         throw UsageError("path-info content address prefix \"%s\" is unrecognized. Recogonized prefixes are \"text\", \"fixed\", or \"ipfs\"", prefix);
 };
 
-std::optional<LegacyContentAddress> parseLegacyContentAddressOpt(std::string_view rawCaOpt) {
-    return rawCaOpt == "" ? std::optional<LegacyContentAddress> {} : parseLegacyContentAddress(rawCaOpt);
+std::optional<ContentAddress> parseContentAddressOpt(std::string_view rawCaOpt) {
+    return rawCaOpt == "" ? std::optional<ContentAddress> {} : parseContentAddress(rawCaOpt);
 };
 
-std::string renderLegacyContentAddress(std::optional<LegacyContentAddress> ca) {
-    return ca ? renderLegacyContentAddress(*ca) : "";
+std::string renderContentAddress(std::optional<ContentAddress> ca) {
+    return ca ? renderContentAddress(*ca) : "";
 }
 
 
@@ -122,14 +122,14 @@ std::string renderStorePathDescriptor(StorePathDescriptor ca)
         [&](TextInfo th) {
             result += "text:";
             dumpRefs(th.references, false);
-            result += ":" + renderLegacyContentAddress(LegacyContentAddress {TextHash {
+            result += ":" + renderContentAddress(ContentAddress {TextHash {
                 .hash = th.hash,
             }});
         },
         [&](FixedOutputInfo fsh) {
             result += "fixed:";
             dumpRefs(fsh.references.references, fsh.references.hasSelfReference);
-            result += ":" + renderLegacyContentAddress(LegacyContentAddress {FixedOutputHash {
+            result += ":" + renderContentAddress(ContentAddress {FixedOutputHash {
                 .method = fsh.method,
                 .hash = fsh.hash
             }});
@@ -225,7 +225,7 @@ StorePathDescriptor parseStorePathDescriptor(std::string_view rawCa)
 }
 
 
-void to_json(nlohmann::json& j, const LegacyContentAddress & ca) {
+void to_json(nlohmann::json& j, const ContentAddress & ca) {
     j = std::visit(overloaded {
         [](TextHash th) {
             return nlohmann::json {
@@ -250,7 +250,7 @@ void to_json(nlohmann::json& j, const LegacyContentAddress & ca) {
     }, ca);
 }
 
-void from_json(const nlohmann::json& j, LegacyContentAddress & ca) {
+void from_json(const nlohmann::json& j, ContentAddress & ca) {
     std::string_view type = j.at("type").get<std::string_view>();
     if (type == "text") {
         ca = TextHash {
@@ -346,14 +346,14 @@ void from_json(const nlohmann::json& j, PathReferences<IPFSRef> & references)
 
 // Needed until https://github.com/nlohmann/json/pull/2117
 
-void to_json(nlohmann::json& j, const std::optional<LegacyContentAddress> & c) {
+void to_json(nlohmann::json& j, const std::optional<ContentAddress> & c) {
     if (!c)
         j = nullptr;
     else
         to_json(j, *c);
 }
 
-void from_json(const nlohmann::json& j, std::optional<LegacyContentAddress> & c) {
+void from_json(const nlohmann::json& j, std::optional<ContentAddress> & c) {
     if (j.is_null()) {
         c = std::nullopt;
     } else {

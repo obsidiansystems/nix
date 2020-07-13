@@ -593,7 +593,7 @@ uint64_t LocalStore::addValidPath(State & state,
         (info.narSize, info.narSize != 0)
         (info.ultimate ? 1 : 0, info.ultimate)
         (concatStringsSep(" ", info.sigs), !info.sigs.empty())
-        (renderLegacyContentAddress(info.ca), (bool) info.ca)
+        (renderContentAddress(info.ca), (bool) info.ca)
         .exec();
     uint64_t id = sqlite3_last_insert_rowid(state.db);
 
@@ -668,7 +668,7 @@ void LocalStore::queryPathInfoUncached(StorePathOrCA pathOrCA,
             if (s) info->sigs = tokenizeString<StringSet>(s, " ");
 
             s = (const char *) sqlite3_column_text(state->stmtQueryPathInfo, 7);
-            if (s) info->ca = parseLegacyContentAddressOpt(s);
+            if (s) info->ca = parseContentAddressOpt(s);
 
             /* Get the references. */
             auto useQueryReferences(state->stmtQueryReferences.use()(info->id));
@@ -693,7 +693,7 @@ void LocalStore::updatePathInfo(State & state, const ValidPathInfo & info)
         (info.narHash->to_string(Base16, true))
         (info.ultimate ? 1 : 0, info.ultimate)
         (concatStringsSep(" ", info.sigs), !info.sigs.empty())
-        (renderLegacyContentAddress(info.ca), (bool) info.ca)
+        (renderContentAddress(info.ca), (bool) info.ca)
         (printStorePath(info.path))
         .exec();
 }
