@@ -505,7 +505,7 @@ void IPFSBinaryCacheStore::writeNarInfo(ref<NarInfo> narInfo)
 // cid-version = 01
 // codec = 78 (git codec) / 71 (dag codec)
 // multicodec-packed-content-type = 1114
-std::optional<std::string> IPFSBinaryCacheStore::getCidFromCA(ContentAddress ca)
+std::optional<std::string> IPFSBinaryCacheStore::getCidFromCA(StorePathDescriptor ca)
 {
     if (std::holds_alternative<FixedOutputInfo>(ca.info)) {
         auto ca_ = std::get<FixedOutputInfo>(ca.info);
@@ -693,7 +693,7 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
         auto fullCa = *info.fullContentAddressOpt();
         auto cid = getCidFromCA(fullCa);
 
-        auto realCa = ContentAddress {
+        auto realCa = StorePathDescriptor {
             .name = std::string(info.path.name()),
             .info = caWithRefs
         };
@@ -843,7 +843,7 @@ void IPFSBinaryCacheStore::queryPathInfoUncached(StorePathOrCA storePathOrCa,
     PushActivity pact(act->id);
 
     if (auto ca_ = std::get_if<1>(&storePathOrCa)) {
-        ContentAddress ca = static_cast<const ContentAddress &>(*ca_);
+        StorePathDescriptor ca = static_cast<const StorePathDescriptor &>(*ca_);
         auto cid = getCidFromCA(ca);
         if (cid && ipfsBlockStat("/ipfs/" + *cid)) {
             std::string url("ipfs://" + *cid);
@@ -856,13 +856,13 @@ void IPFSBinaryCacheStore::queryPathInfoUncached(StorePathOrCA storePathOrCa,
                     ref.at("cid").at("/") = ipfsCidFormatBase16(ref.at("cid").at("/"));
 
                 // Dummy value to set tag bit.
-                ca = ContentAddress {
+                ca = StorePathDescriptor {
                     .name = "t e m p",
                     TextInfo { { .hash = Hash { htSHA256 } } },
                 };
                 from_json(json, ca);
             }
-            NarInfo narInfo { *this, ContentAddress { ca } };
+            NarInfo narInfo { *this, StorePathDescriptor { ca } };
             assert(narInfo.path == storePath);
             narInfo.url = url;
             (*callbackPtr)((std::shared_ptr<ValidPathInfo>)
@@ -956,7 +956,7 @@ StorePath IPFSBinaryCacheStore::addToStore(const string & name, const Path & src
 
     ValidPathInfo info {
         *this,
-        ContentAddress {
+        StorePathDescriptor {
             .name = name,
             .info = FixedOutputInfo {
                 {

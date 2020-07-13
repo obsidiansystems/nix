@@ -14,7 +14,7 @@ struct TreeInfo
 {
     std::optional<Hash> narHash;
 
-    std::optional<ContentAddress> ca;
+    std::optional<StorePathDescriptor> ca;
 
     std::optional<uint64_t> revCount;
     std::optional<time_t> lastModified;

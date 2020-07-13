@@ -161,23 +161,23 @@ typedef std::variant<
     IPFSHash
 > ContentAddressWithoutName;
 
-struct ContentAddress {
+struct StorePathDescriptor {
     std::string name;
     ContentAddressWithoutName info;
 
-    bool operator < (const ContentAddress & other) const
+    bool operator < (const StorePathDescriptor & other) const
     {
         return name < other.name;
         // FIXME second field
     }
 };
 
-std::string renderContentAddress(ContentAddress ca);
+std::string renderContentAddress(StorePathDescriptor ca);
 
-ContentAddress parseContentAddress(std::string_view rawCa);
+StorePathDescriptor parseContentAddress(std::string_view rawCa);
 
-void to_json(nlohmann::json& j, const ContentAddress & c);
-void from_json(const nlohmann::json& j, ContentAddress & c);
+void to_json(nlohmann::json& j, const StorePathDescriptor & c);
+void from_json(const nlohmann::json& j, StorePathDescriptor & c);
 
 void to_json(nlohmann::json& j, const PathReferences<IPFSRef> & c);
 void from_json(const nlohmann::json& j, PathReferences<IPFSRef> & c);

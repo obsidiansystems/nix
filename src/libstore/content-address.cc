@@ -104,7 +104,7 @@ std::string renderLegacyContentAddress(std::optional<LegacyContentAddress> ca) {
 
 
 // FIXME Deduplicate with store-api.cc path computation
-std::string renderContentAddress(ContentAddress ca)
+std::string renderContentAddress(StorePathDescriptor ca)
 {
     std::string result = ca.name;
 
@@ -147,7 +147,7 @@ std::string renderContentAddress(ContentAddress ca)
 }
 
 
-ContentAddress parseContentAddress(std::string_view rawCa)
+StorePathDescriptor parseContentAddress(std::string_view rawCa)
 {
     auto rest = rawCa;
 
@@ -218,7 +218,7 @@ ContentAddress parseContentAddress(std::string_view rawCa)
     } else
         throw UsageError("content address tag \"%s\" is unrecognized. Recogonized tages are \"text\", \"fixed\", or \"ipfs\"", tag);
 
-    return ContentAddress {
+    return StorePathDescriptor {
         .name = std::string { name },
         .info = info,
     };
@@ -271,9 +271,9 @@ void from_json(const nlohmann::json& j, LegacyContentAddress & ca) {
 }
 
 // f01781114 is the cid prefix for a base16 cbor sha1. This hash
-// stores the ContentAddress information.
+// stores the StorePathDescriptor information.
 
-void to_json(nlohmann::json& j, const ContentAddress & ca)
+void to_json(nlohmann::json& j, const StorePathDescriptor & ca)
 {
     if (std::holds_alternative<IPFSInfo>(ca.info)) {
         auto info = std::get<IPFSInfo>(ca.info);
@@ -292,12 +292,12 @@ void to_json(nlohmann::json& j, const ContentAddress & ca)
     } else throw Error("cannot convert to json");
 }
 
-void from_json(const nlohmann::json& j, ContentAddress & ca)
+void from_json(const nlohmann::json& j, StorePathDescriptor & ca)
 {
     std::string_view type = j.at("qtype").get<std::string_view>();
     if (type == "ipfs") {
         auto cid = j.at("cid").at("/").get<std::string_view>();
-        ca = ContentAddress {
+        ca = StorePathDescriptor {
             .name = j.at("name"),
             .info = IPFSInfo {
                 IPFSHash::from_string(cid).hash,

@@ -3722,7 +3722,7 @@ void DerivationGoal::registerOutputs()
         /* Check that fixed-output derivations produced the right
            outputs (i.e., the content hash should match the specified
            hash). */
-        std::optional<ContentAddress> ca;
+        std::optional<StorePathDescriptor> ca;
 
         if (fixedOutput) {
 
@@ -3778,7 +3778,7 @@ void DerivationGoal::registerOutputs()
             else
                 assert(i.second.path == dest);
 
-            ca = ContentAddress {
+            ca = StorePathDescriptor {
                 .name = std::string { i.second.path.name() },
                 .info = FixedOutputInfo {
                     {
@@ -3854,7 +3854,7 @@ void DerivationGoal::registerOutputs()
         }
 
         auto info = ca
-            ? ValidPathInfo { worker.store, ContentAddress { *ca } }
+            ? ValidPathInfo { worker.store, StorePathDescriptor { *ca } }
             : ValidPathInfo { i.second.path };
         info.narHash = hash.first;
         info.narSize = hash.second;
@@ -4288,7 +4288,7 @@ class SubstitutionGoal : public Goal
 
 private:
     /* The store path that should be realised through a substitute. */
-    // TODO std::variant<StorePath, ContentAddress> storePath;
+    // TODO std::variant<StorePath, StorePathDescriptor> storePath;
     StorePath storePath;
 
     /* The remaining substituters. */
@@ -4326,10 +4326,10 @@ private:
 
     /* Content address for recomputing store path */
     // TODO delete once `storePath` is variant.
-    std::optional<ContentAddress> ca;
+    std::optional<StorePathDescriptor> ca;
 
 public:
-    SubstitutionGoal(const StorePath & storePath, Worker & worker, RepairFlag repair = NoRepair, std::optional<ContentAddress> ca = std::nullopt);
+    SubstitutionGoal(const StorePath & storePath, Worker & worker, RepairFlag repair = NoRepair, std::optional<StorePathDescriptor> ca = std::nullopt);
     ~SubstitutionGoal();
 
     void timedOut(Error && ex) override { abort(); };
@@ -4359,7 +4359,7 @@ public:
 };
 
 
-SubstitutionGoal::SubstitutionGoal(const StorePath & storePath, Worker & worker, RepairFlag repair, std::optional<ContentAddress> ca)
+SubstitutionGoal::SubstitutionGoal(const StorePath & storePath, Worker & worker, RepairFlag repair, std::optional<StorePathDescriptor> ca)
     : Goal(worker)
     , storePath(storePath)
     , repair(repair)
