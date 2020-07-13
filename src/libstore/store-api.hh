@@ -150,7 +150,7 @@ struct BuildResult
 typedef std::variant<
     std::reference_wrapper<const StorePath>,
     std::reference_wrapper<const StorePathDescriptor>
-> StorePathOrCA;
+> StorePathOrDesc;
 
 class Store : public std::enable_shared_from_this<Store>, public Config
 {
@@ -262,7 +262,7 @@ public:
 
     StorePath makeFixedOutputPathFromCA(const StorePathDescriptor & info) const;
 
-    StorePath bakeCaIfNeeded(StorePathOrCA path) const;
+    StorePath bakeCaIfNeeded(StorePathOrDesc path) const;
 
     StorePath makeIPFSPath(std::string name, IPFSHash hash) const;
 
@@ -291,11 +291,11 @@ public:
         const StorePathSet & references) const;
 
     /* Check whether a path is valid. */
-    bool isValidPath(StorePathOrCA ca);
+    bool isValidPath(StorePathOrDesc desc);
 
 protected:
 
-    virtual bool isValidPathUncached(StorePathOrCA ca);
+    virtual bool isValidPathUncached(StorePathOrDesc desc);
 
 public:
 
@@ -314,15 +314,15 @@ public:
 
     /* Query information about a valid path. It is permitted to omit
        the name part of the store path. */
-    ref<const ValidPathInfo> queryPathInfo(StorePathOrCA path);
+    ref<const ValidPathInfo> queryPathInfo(StorePathOrDesc path);
 
     /* Asynchronous version of queryPathInfo(). */
-    void queryPathInfo(StorePathOrCA path,
+    void queryPathInfo(StorePathOrDesc path,
         Callback<ref<const ValidPathInfo>> callback) noexcept;
 
 protected:
 
-    virtual void queryPathInfoUncached(StorePathOrCA path,
+    virtual void queryPathInfoUncached(StorePathOrDesc path,
         Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept = 0;
 
 public:
@@ -386,7 +386,7 @@ public:
         const StorePathSet & references, RepairFlag repair = NoRepair) = 0;
 
     /* Write a NAR dump of a store path. */
-    virtual void narFromPath(StorePathOrCA ca, Sink & sink) = 0;
+    virtual void narFromPath(StorePathOrDesc desc, Sink & sink) = 0;
 
     /* For each path, if it's a derivation, build it.  Building a
        derivation means ensuring that the output paths are valid.  If
@@ -409,7 +409,7 @@ public:
     /* Ensure that a path is valid.  If it is not currently valid, it
        may be made valid by running a substitute (if defined for the
        path). */
-    virtual void ensurePath(StorePathOrCA ca) = 0;
+    virtual void ensurePath(StorePathOrDesc desc) = 0;
 
     /* Add a store path as a temporary root of the garbage collector.
        The root disappears as soon as we exit. */
@@ -633,7 +633,7 @@ public:
 
     LocalFSStore(const Params & params);
 
-    void narFromPath(StorePathOrCA path, Sink & sink) override;
+    void narFromPath(StorePathOrDesc path, Sink & sink) override;
 
     ref<FSAccessor> getFSAccessor() override;
 
@@ -655,7 +655,7 @@ public:
 
 /* Copy a path from one store to another. */
 void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
-    StorePathOrCA storePath,
+    StorePathOrDesc storePath,
     RepairFlag repair = NoRepair, CheckSigsFlag checkSigs = CheckSigs);
 
 

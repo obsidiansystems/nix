@@ -227,9 +227,9 @@ struct S3BinaryCacheStoreImpl : public S3BinaryCacheStore
        fetches the .narinfo file, rather than first checking for its
        existence via a HEAD request. Since .narinfos are small, doing
        a GET is unlikely to be slower than HEAD. */
-    bool isValidPathUncached(StorePathOrCA storePathOrCA) override
+    bool isValidPathUncached(StorePathOrDesc storePathOrDesc) override
     {
-        auto storePath = bakeCaIfNeeded(storePathOrCA);
+        auto storePath = bakeCaIfNeeded(storePathOrDesc);
         try {
             queryPathInfo(storePath);
             return true;

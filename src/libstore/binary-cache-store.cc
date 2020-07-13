@@ -262,7 +262,7 @@ void BinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSource
     stats.narInfoWrite++;
 }
 
-bool BinaryCacheStore::isValidPathUncached(StorePathOrCA storePath)
+bool BinaryCacheStore::isValidPathUncached(StorePathOrDesc storePath)
 {
     // FIXME: this only checks whether a .narinfo with a matching hash
     // part exists. So ‘f4kb...-foo’ matches ‘f4kb...-bar’, even
@@ -270,7 +270,7 @@ bool BinaryCacheStore::isValidPathUncached(StorePathOrCA storePath)
     return fileExists(narInfoFileFor(bakeCaIfNeeded(storePath)));
 }
 
-void BinaryCacheStore::narFromPath(StorePathOrCA storePath, Sink & sink)
+void BinaryCacheStore::narFromPath(StorePathOrDesc storePath, Sink & sink)
 {
     auto info = queryPathInfo(storePath).cast<const NarInfo>();
 
@@ -296,7 +296,7 @@ void BinaryCacheStore::narFromPath(StorePathOrCA storePath, Sink & sink)
     stats.narReadBytes += narSize;
 }
 
-void BinaryCacheStore::queryPathInfoUncached(StorePathOrCA storePath,
+void BinaryCacheStore::queryPathInfoUncached(StorePathOrDesc storePath,
     Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept
 {
     auto uri = getUri();

@@ -630,10 +630,10 @@ uint64_t LocalStore::addValidPath(State & state,
 }
 
 
-void LocalStore::queryPathInfoUncached(StorePathOrCA pathOrCA,
+void LocalStore::queryPathInfoUncached(StorePathOrDesc pathOrDesc,
     Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept
 {
-    auto path = bakeCaIfNeeded(pathOrCA);
+    auto path = bakeCaIfNeeded(pathOrDesc);
     try {
         auto info = std::make_shared<ValidPathInfo>(path);
 
@@ -714,9 +714,9 @@ bool LocalStore::isValidPath_(State & state, const StorePath & path)
 }
 
 
-bool LocalStore::isValidPathUncached(StorePathOrCA pathOrCA)
+bool LocalStore::isValidPathUncached(StorePathOrDesc pathOrDesc)
 {
-    auto path = bakeCaIfNeeded(pathOrCA);
+    auto path = bakeCaIfNeeded(pathOrDesc);
     return retrySQLite<bool>([&]() {
         auto state(_state.lock());
         return isValidPath_(*state, path);

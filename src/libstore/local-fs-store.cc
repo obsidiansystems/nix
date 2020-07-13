@@ -78,10 +78,10 @@ ref<FSAccessor> LocalFSStore::getFSAccessor()
             std::dynamic_pointer_cast<LocalFSStore>(shared_from_this())));
 }
 
-void LocalFSStore::narFromPath(const StorePathOrCA pathOrCA, Sink & sink)
+void LocalFSStore::narFromPath(const StorePathOrDesc pathOrDesc, Sink & sink)
 {
-    auto p = this->bakeCaIfNeeded(pathOrCA);
-    if (!isValidPath(pathOrCA))
+    auto p = this->bakeCaIfNeeded(pathOrDesc);
+    if (!isValidPath(pathOrDesc))
         throw Error("path '%s' is not valid", printStorePath(p));
     dumpPath(getRealStoreDir() + std::string(printStorePath(p), storeDir.size()), sink);
 }

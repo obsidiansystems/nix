@@ -63,8 +63,8 @@ std::pair<Tree, std::shared_ptr<const Input>> Input::fetchTree(ref<Store> store)
     if (!tree.info.narHash)
     {
         auto pathOrCa = tree.info.ca
-            ? StorePathOrCA {*tree.info.ca}
-            : StorePathOrCA {tree.storePath};
+            ? StorePathOrDesc {*tree.info.ca}
+            : StorePathOrDesc {tree.storePath};
         tree.info.narHash = store->queryPathInfo(pathOrCa)->narHash;
     }
 

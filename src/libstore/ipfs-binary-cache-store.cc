@@ -766,10 +766,10 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
     stats.narInfoWrite++;
 }
 
-bool IPFSBinaryCacheStore::isValidPathUncached(StorePathOrCA storePathOrCA)
+bool IPFSBinaryCacheStore::isValidPathUncached(StorePathOrDesc storePathOrDesc)
 {
-    auto storePath = this->bakeCaIfNeeded(storePathOrCA);
-    auto ca = std::get_if<1>(&storePathOrCA);
+    auto storePath = this->bakeCaIfNeeded(storePathOrDesc);
+    auto ca = std::get_if<1>(&storePathOrDesc);
 
     if (ca) {
         auto cid = getCidFromCA(*ca);
@@ -786,9 +786,9 @@ bool IPFSBinaryCacheStore::isValidPathUncached(StorePathOrCA storePathOrCA)
     return json["nar"].contains(storePath.to_string());
 }
 
-void IPFSBinaryCacheStore::narFromPath(StorePathOrCA storePathOrCA, Sink & sink)
+void IPFSBinaryCacheStore::narFromPath(StorePathOrDesc storePathOrDesc, Sink & sink)
 {
-    auto info = queryPathInfo(storePathOrCA).cast<const NarInfo>();
+    auto info = queryPathInfo(storePathOrDesc).cast<const NarInfo>();
 
     uint64_t narSize = 0;
 
@@ -801,7 +801,7 @@ void IPFSBinaryCacheStore::narFromPath(StorePathOrCA storePathOrCA, Sink & sink)
     if (info->url[7] != 'Q' && hasPrefix(ipfsCidFormatBase16(std::string(info->url, 7)), "f0178")) {
         AutoDelete tmpDir(createTempDir(), true);
         // FIXME this is wrong, just doing so it builds
-        auto storePath = bakeCaIfNeeded(storePathOrCA);
+        auto storePath = bakeCaIfNeeded(storePathOrDesc);
         auto hasSelfReference = info->hasSelfReference;
         auto source = getGitObject("/ipfs/" + std::string(info->url, 7), std::string(storePath.hashPart()), hasSelfReference);
         restoreGit((Path) tmpDir + "/tmp", *source, storeDir, storeDir,
@@ -828,7 +828,7 @@ void IPFSBinaryCacheStore::narFromPath(StorePathOrCA storePathOrCA, Sink & sink)
     stats.narReadBytes += narSize;
 }
 
-void IPFSBinaryCacheStore::queryPathInfoUncached(StorePathOrCA storePathOrCa,
+void IPFSBinaryCacheStore::queryPathInfoUncached(StorePathOrDesc storePathOrCa,
     Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept
 {
     // TODO: properly use callbacks

@@ -297,7 +297,7 @@ public:
     GoalPtr makeDerivationGoal(const StorePath & drvPath, const StringSet & wantedOutputs, BuildMode buildMode = bmNormal);
     std::shared_ptr<DerivationGoal> makeBasicDerivationGoal(const StorePath & drvPath,
         const BasicDerivation & drv, BuildMode buildMode = bmNormal);
-    GoalPtr makeSubstitutionGoal(StorePathOrCA storePath, RepairFlag repair = NoRepair);
+    GoalPtr makeSubstitutionGoal(StorePathOrDesc storePath, RepairFlag repair = NoRepair);
 
     /* Remove a dead goal. */
     void removeGoal(GoalPtr goal);
@@ -1207,7 +1207,7 @@ void DerivationGoal::haveDerivation()
     if (settings.useSubstitutes && parsedDrv->substitutesAllowed())
         for (auto & i : invalidOutputs) {
             auto optCA = getDerivationCA(*drv);
-            auto p = optCA ? StorePathOrCA { *optCA } : i;
+            auto p = optCA ? StorePathOrDesc { *optCA } : i;
             addWaitee(worker.makeSubstitutionGoal(p, buildMode == bmRepair ? Repair : NoRepair));
         }
 
@@ -2734,7 +2734,7 @@ struct RestrictedStore : public LocalFSStore
         return paths;
     }
 
-    void queryPathInfoUncached(StorePathOrCA path,
+    void queryPathInfoUncached(StorePathOrDesc path,
         Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override
     {
         if (goal.isAllowed(bakeCaIfNeeded(path))) {
@@ -2791,17 +2791,17 @@ struct RestrictedStore : public LocalFSStore
         return path;
     }
 
-    void narFromPath(StorePathOrCA pathOrCA, Sink & sink) override
+    void narFromPath(StorePathOrDesc pathOrDesc, Sink & sink) override
     {
-        auto path = bakeCaIfNeeded(pathOrCA);
+        auto path = bakeCaIfNeeded(pathOrDesc);
         if (!goal.isAllowed(path))
             throw InvalidPath("cannot dump unknown path '%s' in recursive Nix", printStorePath(path));
-        LocalFSStore::narFromPath(pathOrCA, sink);
+        LocalFSStore::narFromPath(pathOrDesc, sink);
     }
 
-    void ensurePath(StorePathOrCA pathOrCA) override
+    void ensurePath(StorePathOrDesc pathOrDesc) override
     {
-        auto path = bakeCaIfNeeded(pathOrCA);
+        auto path = bakeCaIfNeeded(pathOrDesc);
         if (!goal.isAllowed(path))
             throw InvalidPath("cannot substitute unknown path '%s' in recursive Nix", printStorePath(path));
         /* Nothing to be done; 'path' must already be valid. */
@@ -4446,7 +4446,7 @@ void SubstitutionGoal::tryNext()
 
     try {
         // FIXME: make async
-        auto p = ca ? StorePathOrCA { std::cref(*ca) } : std::cref(storePath);
+        auto p = ca ? StorePathOrDesc { std::cref(*ca) } : std::cref(storePath);
         info = sub->queryPathInfo(p);
     } catch (InvalidPath &) {
         tryNext();
@@ -4565,7 +4565,7 @@ void SubstitutionGoal::tryToRun()
             Activity act(*logger, actSubstitute, Logger::Fields{worker.store.printStorePath(storePath), sub->getUri()});
             PushActivity pact(act.id);
 
-            auto p = ca ? StorePathOrCA { std::cref(*ca) } : std::cref(storePath);
+            auto p = ca ? StorePathOrDesc { std::cref(*ca) } : std::cref(storePath);
 
             copyStorePath(ref<Store>(sub), ref<Store>(worker.store.shared_from_this()),
                 p, repair, sub->isTrusted ? NoCheckSigs : CheckSigs);
@@ -4701,7 +4701,7 @@ std::shared_ptr<DerivationGoal> Worker::makeBasicDerivationGoal(const StorePath 
 }
 
 
-GoalPtr Worker::makeSubstitutionGoal(StorePathOrCA path, RepairFlag repair)
+GoalPtr Worker::makeSubstitutionGoal(StorePathOrDesc path, RepairFlag repair)
 {
     auto p = store.bakeCaIfNeeded(path);
     GoalPtr goal = substitutionGoals[p].lock(); // FIXME
@@ -5150,7 +5150,7 @@ BuildResult LocalStore::buildDerivation(const StorePath & drvPath, const BasicDe
 }
 
 
-void LocalStore::ensurePath(StorePathOrCA path)
+void LocalStore::ensurePath(StorePathOrDesc path)
 {
     /* If the path is already valid, we're done. */
     if (isValidPath(path)) return;

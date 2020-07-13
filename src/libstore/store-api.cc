@@ -174,7 +174,7 @@ static std::string makeType(
     return std::move(type);
 }
 
-StorePath Store::bakeCaIfNeeded(StorePathOrCA path) const
+StorePath Store::bakeCaIfNeeded(StorePathOrDesc path) const
 {
     return std::visit(overloaded {
         [this](std::reference_wrapper<const StorePath> storePath) {
@@ -364,7 +364,7 @@ StorePathSet Store::queryDerivationOutputs(const StorePath & path)
     return outputPaths;
 }
 
-bool Store::isValidPath(StorePathOrCA storePath)
+bool Store::isValidPath(StorePathOrDesc storePath)
 {
     std::string hashPart { bakeCaIfNeeded(storePath).hashPart() };
 
@@ -400,7 +400,7 @@ bool Store::isValidPath(StorePathOrCA storePath)
 
 /* Default implementation for stores that only implement
    queryPathInfoUncached(). */
-bool Store::isValidPathUncached(StorePathOrCA path)
+bool Store::isValidPathUncached(StorePathOrDesc path)
 {
     try {
         queryPathInfo(path);
@@ -411,7 +411,7 @@ bool Store::isValidPathUncached(StorePathOrCA path)
 }
 
 
-ref<const ValidPathInfo> Store::queryPathInfo(StorePathOrCA storePath)
+ref<const ValidPathInfo> Store::queryPathInfo(StorePathOrDesc storePath)
 {
     std::promise<ref<const ValidPathInfo>> promise;
 
@@ -427,7 +427,7 @@ ref<const ValidPathInfo> Store::queryPathInfo(StorePathOrCA storePath)
     return promise.get_future().get();
 }
 
-void Store::queryPathInfo(StorePathOrCA pathOrCa,
+void Store::queryPathInfo(StorePathOrDesc pathOrCa,
     Callback<ref<const ValidPathInfo>> callback) noexcept
 {
     std::string hashPart;
@@ -685,7 +685,7 @@ void Store::buildPaths(const std::vector<StorePathWithOutputs> & paths, BuildMod
 
 
 void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
-    StorePathOrCA storePath, RepairFlag repair, CheckSigsFlag checkSigs)
+    StorePathOrDesc storePath, RepairFlag repair, CheckSigsFlag checkSigs)
 {
     auto srcUri = srcStore->getUri();
     auto dstUri = dstStore->getUri();
