@@ -104,7 +104,7 @@ std::string renderLegacyContentAddress(std::optional<LegacyContentAddress> ca) {
 
 
 // FIXME Deduplicate with store-api.cc path computation
-std::string renderContentAddress(StorePathDescriptor ca)
+std::string renderStorePathDescriptor(StorePathDescriptor ca)
 {
     std::string result = ca.name;
 
@@ -147,7 +147,7 @@ std::string renderContentAddress(StorePathDescriptor ca)
 }
 
 
-StorePathDescriptor parseContentAddress(std::string_view rawCa)
+StorePathDescriptor parseStorePathDescriptor(std::string_view rawCa)
 {
     auto rest = rawCa;
 

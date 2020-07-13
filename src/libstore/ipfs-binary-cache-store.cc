@@ -690,7 +690,7 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
                     .hash = std::get<IPFSHash>(*queryPathInfo(ref)->ca)
                 });
 
-        auto fullCa = *info.fullContentAddressOpt();
+        auto fullCa = *info.fullStorePathDescriptorOpt();
         auto cid = getCidFromCA(fullCa);
 
         auto realCa = StorePathDescriptor {

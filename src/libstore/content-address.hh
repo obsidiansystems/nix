@@ -172,9 +172,9 @@ struct StorePathDescriptor {
     }
 };
 
-std::string renderContentAddress(StorePathDescriptor ca);
+std::string renderStorePathDescriptor(StorePathDescriptor ca);
 
-StorePathDescriptor parseContentAddress(std::string_view rawCa);
+StorePathDescriptor parseStorePathDescriptor(std::string_view rawCa);
 
 void to_json(nlohmann::json& j, const StorePathDescriptor & c);
 void from_json(const nlohmann::json& j, StorePathDescriptor & c);
