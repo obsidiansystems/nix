@@ -46,7 +46,7 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
 
         std::reverse(paths.begin(), paths.end());
 
-        std::map<StorePath, StorePath> remappings;
+        std::map<StorePath, ContentAddress> remappings;
 
         auto jsonRoot = json ? std::make_unique<JSONObject>(std::cout) : nullptr;
         auto jsonRewrites = json ? std::make_unique<JSONObject>(jsonRoot->object("rewrites")) : nullptr;
@@ -61,15 +61,21 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
 
             StringMap rewrites;
 
-            PathReferences<StorePath> refs;
-            refs.hasSelfReference = oldInfo->hasSelfReference;
+            bool hasSelfReference = oldInfo->hasSelfReference;
+            std::set<StorePath> refPaths;
+            std::set<ContentAddress> refCAs;
             for (auto & ref : oldInfo->references) {
                 auto i = remappings.find(ref);
-                auto replacement = i != remappings.end() ? i->second : ref;
+                auto replacement = i != remappings.end()
+                    ? store->makeFixedOutputPathFromCA(i->second)
+                    : ref;
                 // FIXME: warn about unremapped paths?
                 if (replacement != ref)
                     rewrites.insert_or_assign(store->printStorePath(ref), store->printStorePath(replacement));
-                refs.references.insert(std::move(replacement));
+                if (i != remappings.end())
+                    refCAs.insert(i->second);
+                else
+                    refPaths.insert(ref);
             }
 
             *sink.s = rewriteStrings(*sink.s, rewrites);
@@ -79,41 +85,66 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
 
             auto narHash = hashModuloSink.finish().first;
 
-            ContentAddress ca {
-                .name = std::string { path.name() },
-                .info = FixedOutputInfo {
-                    {
-                        .method = FileIngestionMethod::Recursive,
-                        .hash = narHash,
-                    },
-                    refs,
-                },
-            };
-
             // ugh... we have to convert nar data to git.
+            std::optional<Hash> gitHash;
             if (ipfsContent) {
                 AutoDelete tmpDir(createTempDir(), true);
                 StringSource source(*sink.s);
                 restorePath((Path) tmpDir + "/tmp", source);
 
-                Hash gitHash = dumpGitHashWithCustomHash([&]{ return std::make_unique<HashModuloSink>(htSHA1, oldHashPart); }, (Path) tmpDir + "/tmp");
+                gitHash = dumpGitHashWithCustomHash([&]{ return std::make_unique<HashModuloSink>(htSHA1, oldHashPart); }, (Path) tmpDir + "/tmp");
 
-                std::set<IPFSRef> ipfsRefs;
-                for (auto & ref : refs.references)
-                    ipfsRefs.insert(IPFSRef {
-                            .name = std::string(ref.name()),
-                            .hash = std::get<IPFSHash>(*store->queryPathInfo(ref)->ca)
-                        });
-                ca.info = IPFSInfo {
-                    .hash = gitHash,
-                    PathReferences<IPFSRef> {
-                        .references = ipfsRefs,
-                        .hasSelfReference = refs.hasSelfReference,
-                    },
-                };
+                StringSink sink_;
+                RewritingSink rewritingSink(oldHashPart, std::string(oldHashPart.size(), 0), sink_);
+                dumpGit(htSHA1, (Path) tmpDir + "/tmp", rewritingSink);
             }
 
-            ValidPathInfo info { *store, ContentAddress { ca } };
+            ContentAddressWithoutName ca = ipfsContent
+                ? ContentAddressWithoutName {
+                    IPFSHashWithOptValue<IPFSGitTreeNode>::fromValue({
+                        .gitTree = *gitHash,
+                        { {}, hasSelfReference },
+                    })
+                }
+                : ContentAddressWithoutName {
+                    FixedOutputInfo {
+                        {
+                             .method = FileIngestionMethod::Recursive,
+                             .hash = narHash,
+                        },
+                        { {}, hasSelfReference },
+                    }
+                };
+
+            if (ipfsContent) {
+                auto & refs = std::get<IPFSHashWithOptValue<IPFSGitTreeNode>>(ca).value->references;
+                //refs.hasSelfReference = hasSelfReference;
+                if (refPaths.size() > 0)
+                    throw UsageError("IPFS+Git store paths must not have non-CA references");
+                for (auto & ca2 : refCAs) {
+                    auto p = std::get_if<2>(&ca2.info);
+                    if (!p) throw UsageError("IPFS+Git store paths must only have IPFS+Git references");
+                    refs.references.insert({
+                        .name = ca2.name,
+                        .info = *p
+                    });
+                }
+            } else {
+                auto & refs = std::get<FixedOutputInfo>(ca).references;
+                //refs.hasSelfReference = hasSelfReference;
+                for (auto & p : refPaths)
+                    refs.references.insert(p);
+                for (auto & ca : refCAs)
+                    refs.references.insert(store->makeFixedOutputPathFromCA(ca));
+            };
+
+            ValidPathInfo info {
+                *store,
+                ContentAddress {
+                    .name = std::string { path.name() },
+                    .info = ca,
+                },
+            };
             info.narHash = narHash;
             info.narSize = sink.s->size();
 
@@ -131,7 +162,7 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
             if (json)
                 jsonRewrites->attr(store->printStorePath(path), store->printStorePath(info.path));
 
-            remappings.insert_or_assign(std::move(path), std::move(info.path));
+            remappings.insert_or_assign(std::move(path), info.fullContentAddressOpt().value());
         }
     }
 };

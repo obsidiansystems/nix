@@ -1,11 +1,11 @@
 #include "ipfs.hh"
 
-namespace nix {
+namespace nix::untyped {
 
 // "f01711220" base-16, sha-256
 // "f01781114" base-16, sha-1
 
-std::string IPFSHash::to_string() const
+std::string toString(Hash hash)
 {
     std::string prefix;
     switch (hash.type) {
@@ -16,15 +16,28 @@ std::string IPFSHash::to_string() const
     return prefix + hash.to_string(Base16, false);
 }
 
-IPFSHash IPFSHash::from_string(std::string_view cid)
+Hash fromString(std::string_view cid)
 {
     auto prefix = cid.substr(0, 9);
     HashType algo = prefix == "f01781114" ? htSHA1
         : prefix == "f01711220" ? htSHA256
         : throw Error("cid '%s' is wrong type for ipfs hash", cid);
-    return IPFSHash {
-        Hash::parseNonSRIUnprefixed(cid.substr(9), algo)
-    };
+    return Hash::parseNonSRIUnprefixed(cid.substr(9), algo);
+}
+
+std::vector<uint8_t> pack(Hash hash)
+{
+	auto cid = toString(hash);
+    std::vector<uint8_t> result;
+    assert(cid[0] == 'f');
+    result.push_back(0x00);
+    result.push_back(std::stoi(cid.substr(1, 2), nullptr, 16));
+    result.push_back(std::stoi(cid.substr(3, 2), nullptr, 16));
+    result.push_back(std::stoi(cid.substr(5, 2), nullptr, 16));
+    result.push_back(std::stoi(cid.substr(7, 2), nullptr, 16));
+    for (unsigned int i = 0; i < hash.hashSize; i++)
+        result.push_back(hash.hash[i]);
+    return result;
 }
 
 }

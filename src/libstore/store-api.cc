@@ -215,63 +215,30 @@ StorePath Store::makeTextPath(std::string_view name, const TextInfo & info) cons
         name);
 }
 
-static HashType getMultiHashTag(int tag)
+// FIXME move to content-address.cc
+IPFSHash<IPFSGitTreeNode> computeIPFSHash(const IPFSGitTreeNode & info)
 {
-    switch (tag) {
-    case 0x11: {
-        return htSHA1;
-    }
-    case 0x12: {
-        return htSHA256;
-    }
-    default: {
-        throw Error("tag '%i' is an unknown hash type", tag);
-    }
-    }
-}
+    nlohmann::json j { info };
 
-static std::vector<uint8_t> packMultihash(std::string cid)
-{
-    std::vector<uint8_t> result;
-    assert(cid[0] == 'f');
-    result.push_back(0x00);
-    result.push_back(std::stoi(cid.substr(1, 2), nullptr, 16));
-    result.push_back(std::stoi(cid.substr(3, 2), nullptr, 16));
-    result.push_back(std::stoi(cid.substr(5, 2), nullptr, 16));
-    result.push_back(std::stoi(cid.substr(7, 2), nullptr, 16));
-    HashType ht = getMultiHashTag(std::stoi(cid.substr(5, 2), nullptr, 16));
-    Hash hash = Hash::parseAny(cid.substr(9), ht);
-    for (unsigned int i = 0; i < hash.hashSize; i++)
-        result.push_back(hash.hash[i]);
-    return result;
-}
-
-static IPFSHash computeIPFSHash(const ContentAddress & info)
-{
-    assert(std::holds_alternative<IPFSInfo>(info.info));
-
-    nlohmann::json j = info;
+    auto pack = [&](auto & ref) {
+        ref = ref.template get<IPFSHash<IPFSGitTreeNode>>().packForCBOR();
+    };
 
     // replace {"/": ...} with packed multihash
     // ipfs converts automatically between the two
-    j.at("cid") = nlohmann::json::binary(packMultihash(j.at("cid").at("/").get<std::string>()), 42);
+    pack(j.at("gitTree"));
     for (auto & ref : j.at("references").at("references"))
-        ref.at("cid") = nlohmann::json::binary(packMultihash(ref.at("cid").at("/").get<std::string>()), 42);
+        pack(ref);
 
     std::vector<std::uint8_t> cbor = nlohmann::json::to_cbor(j);
-    return IPFSHash { hashString(htSHA256, std::string(cbor.begin(), cbor.end())) };
+    return IPFSHash<IPFSGitTreeNode> {
+        hashString(htSHA256, std::string(cbor.begin(), cbor.end())),
+    };
 }
 
-StorePath Store::makeIPFSPath(std::string name, IPFSHash hash) const
+StorePath Store::makeIPFSPath(std::string_view name, IPFSHash<IPFSGitTreeNode> hash) const
 {
-    string type = "ipfs";
-    assert(hash.hash.type == htSHA256);
-    string cid = "f01711220" + hash.hash.to_string(Base16, false);
-
-    // copy paste from makeStorePath
-    string s = type + ":" + cid + ":" + storeDir + ":" + name;
-    auto h = compressHash(hashString(htSHA256, s), 20);
-    return StorePath(h, name);
+    return makeStorePath("ipfs-git", hash.hash, name);
 }
 
 StorePath Store::makeFixedOutputPathFromCA(const ContentAddress & info) const
@@ -284,12 +251,9 @@ StorePath Store::makeFixedOutputPathFromCA(const ContentAddress & info) const
         [&](FixedOutputInfo foi) {
             return makeFixedOutputPath(info.name, foi);
         },
-        [&](IPFSInfo io) {
-            return makeIPFSPath(info.name, computeIPFSHash(info));
+        [&](IPFSHash<IPFSGitTreeNode> ih) {
+            return makeIPFSPath(info.name, ih);
         },
-        [&](IPFSHash ic) {
-            return makeIPFSPath(info.name, ic);
-        }
     }, info.info);
 }
 
@@ -970,8 +934,10 @@ std::optional<ContentAddress> ValidPathInfo::fullContentAddressOpt() const
                 info.references = static_cast<PathReferences<StorePath>>(*this);
                 return ContentAddressWithoutName { info };
             },
-            [&](IPFSHash io) {
-                return ContentAddressWithoutName { io };
+            [&](IPFSHash<IPFSGitTreeNode> io) {
+                return ContentAddressWithoutName {
+                    IPFSHashWithOptValue<IPFSGitTreeNode> { io },
+                };
             },
         }, *ca),
     };
@@ -1036,14 +1002,14 @@ ValidPathInfo::ValidPathInfo(
             *(static_cast<PathReferences<StorePath> *>(this)) = foi.references;
             this->ca = FixedOutputHash { (FixedOutputHash) std::move(foi) };
         },
-        [this, &store, info](IPFSInfo foi) {
-            this->hasSelfReference = foi.references.hasSelfReference;
-            for (auto & ref : foi.references.references)
-                this->references.insert(store.makeIPFSPath(ref.name, ref.hash));
-            this->ca = IPFSHash { computeIPFSHash(info) };
-        },
-        [](IPFSHash foi) {
-            throw Error("cannot make a valid path from an ipfs hash without talking to the ipfs daemon");
+        [this, &store](IPFSHashWithOptValue<IPFSGitTreeNode> ih) {
+            this->ca = static_cast<IPFSHash<IPFSGitTreeNode>>(ih);
+            if (ih.value) {
+                this->hasSelfReference = ih.value->references.hasSelfReference;
+                for (auto & ref : ih.value->references.references)
+                    this->references.insert(store.makeIPFSPath(ref.name, ref.info));
+            }
+            // Else must add references manually after construction!
         },
     }, std::move(info.info));
 }

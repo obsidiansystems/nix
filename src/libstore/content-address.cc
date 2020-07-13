@@ -35,7 +35,7 @@ std::string renderLegacyContentAddress(LegacyContentAddress ca) {
                 + makeFileIngestionPrefix(fsh.method)
                 + fsh.hash.to_string(Base32, true);
         },
-        [](IPFSHash ih) {
+        [](IPFSHash<IPFSGitTreeNode> ih) {
             // FIXME do Base-32 for consistency
             return "ipfs:" + ih.to_string();
         }
@@ -86,7 +86,7 @@ LegacyContentAddress parseLegacyContentAddress(std::string_view rawCa) {
             .hash = Hash::parseNonSRIUnprefixed(rest, std::move(hashType)),
         };
     } else if (prefix == "ipfs") {
-        auto hash = IPFSHash::from_string(rest);
+        auto hash = IPFSHash<IPFSGitTreeNode>::from_string(rest);
         if (hash.hash.type != htSHA256)
             throw Error("This IPFS hash should have type SHA-256: %s", hash.to_string());
         return hash;
@@ -134,10 +134,7 @@ std::string renderContentAddress(ContentAddress ca)
                 .hash = fsh.hash
             }});
         },
-        [](IPFSInfo fsh) {
-            throw Error("ipfs info not handled");
-        },
-        [&](IPFSHash ih) {
+        [&](IPFSHashWithOptValue<IPFSGitTreeNode> ih) {
             result += "ipfs:";
             result += ih.to_string();
         },
@@ -214,7 +211,9 @@ ContentAddress parseContentAddress(std::string_view rawCa)
             refs,
         };
     } else if (tag == "ipfs") {
-        info = IPFSHash::from_string(rest);
+        info = IPFSHashWithOptValue<IPFSGitTreeNode> {
+            IPFSHash<IPFSGitTreeNode>::from_string(rest)
+        };
     } else
         throw UsageError("content address tag \"%s\" is unrecognized. Recogonized tages are \"text\", \"fixed\", or \"ipfs\"", tag);
 
@@ -241,10 +240,10 @@ void to_json(nlohmann::json& j, const LegacyContentAddress & ca) {
                 { "hash", foh.hash.to_string(Base32, false) },
             };
         },
-        [](IPFSHash ih) {
+        [](IPFSHash<IPFSGitTreeNode> ih) {
             return nlohmann::json {
                 { "type", "ipfs" },
-                { "hash", ih.to_string() },
+                { "hash", ih },
             };
         },
     }, ca);
@@ -270,80 +269,6 @@ void from_json(const nlohmann::json& j, LegacyContentAddress & ca) {
         throw Error("invalid type: %s", type);
 }
 
-// f01781114 is the cid prefix for a base16 cbor sha1. This hash
-// stores the ContentAddress information.
-
-void to_json(nlohmann::json& j, const ContentAddress & ca)
-{
-    if (std::holds_alternative<IPFSInfo>(ca.info)) {
-        auto info = std::get<IPFSInfo>(ca.info);
-
-        // FIXME: ipfs sort order is weird, it always puts type before
-        // references, so we rename it to qtype so it always comes
-        // before references
-        j = nlohmann::json {
-            { "qtype", "ipfs" },
-            { "name", ca.name },
-            { "references", info.references },
-            { "cid", nlohmann::json {
-                { "/", (IPFSHash { .hash = info.hash }).to_string() }
-            } }
-        };
-    } else throw Error("cannot convert to json");
-}
-
-void from_json(const nlohmann::json& j, ContentAddress & ca)
-{
-    std::string_view type = j.at("qtype").get<std::string_view>();
-    if (type == "ipfs") {
-        auto cid = j.at("cid").at("/").get<std::string_view>();
-        ca = ContentAddress {
-            .name = j.at("name"),
-            .info = IPFSInfo {
-                IPFSHash::from_string(cid).hash,
-                j.at("references").get<PathReferences<IPFSRef>>(),
-            },
-        };
-    } else
-        throw Error("invalid type: %s", type);
-}
-
-void to_json(nlohmann::json& j, const PathReferences<IPFSRef> & references)
-{
-    auto refs = nlohmann::json::array();
-    for (auto & i : references.references) {
-        refs.push_back(nlohmann::json {
-            { "name", i.name },
-            { "cid", nlohmann::json {{ "/", i.hash.to_string() }} }
-        });
-    }
-
-    // FIXME: ipfs sort order is weird, it always puts references
-    // before hasSelfReference, so we rename it to zhasSelfReferences
-    // so it always comes after references
-
-    j = nlohmann::json {
-        { "zhasSelfReference", references.hasSelfReference },
-        { "references", refs }
-    };
-}
-
-void from_json(const nlohmann::json& j, PathReferences<IPFSRef> & references)
-{
-    std::set<IPFSRef> refs;
-    for (auto & ref : j.at("references")) {
-        auto cid = ref.at("cid").at("/").get<std::string_view>();
-        refs.insert(IPFSRef {
-            .name = std::move(ref.at("name").get<std::string>()),
-            .hash = IPFSHash::from_string(cid).hash,
-        });
-    }
-    references = PathReferences<IPFSRef> {
-        .references = refs,
-        .hasSelfReference = j.at("zhasSelfReference").get<bool>(),
-    };
-}
-
 // Needed until https://github.com/nlohmann/json/pull/2117
 
 void to_json(nlohmann::json& j, const std::optional<LegacyContentAddress> & c) {
@@ -362,5 +287,78 @@ void from_json(const nlohmann::json& j, std::optional<LegacyContentAddress> & c)
         from_json(j, *c);
     }
 }
+
+template<typename T>
+void to_json(nlohmann::json& j, const ContentAddressT<T> & c)
+{
+    j = nlohmann::json {
+        { "name", c.name },
+        { "info", c.info },
+    };
+}
+
+template<typename T>
+void from_json(const nlohmann::json& j, ContentAddressT<T> & c)
+{
+    c.name = j.at("name");
+    from_json(j.at("info"), c.info);
+}
+
+template<template <typename> class Ref>
+void to_json(nlohmann::json& j, const IPFSGitTreeNodeT<Ref> & c)
+{
+    // FIXME: ipfs sort order is weird, it always puts type before
+    // references, so we rename it to qtype so it always comes
+    // before references
+    j = nlohmann::json {
+        { "gitTree", IPFSHash<void> { c.gitTree } },
+        { "zreferences", c.references },
+    };
+}
+
+template<template <typename> class Ref>
+void from_json(const nlohmann::json& j, IPFSGitTreeNodeT<Ref> & c)
+{
+    IPFSHash<void> temp {
+        .hash = Hash { htSHA256 }, // dummy val
+    };
+    from_json(j.at("gitTree"), temp);
+    c.gitTree = std::move(temp.hash);
+    from_json(j.at("zreferences"), c.references);
+}
+
+template<typename T>
+void to_json(nlohmann::json& j, const PathReferences<T> & references)
+{
+    // FIXME: ipfs sort order is weird, it always puts references
+    // before hasSelfReference, so we rename it to zhasSelfReferences
+    // so it always comes after references
+
+    j = nlohmann::json {
+        { "zhasSelfReference", references.hasSelfReference },
+        { "references", references.references }
+    };
+}
+
+template<typename T>
+void from_json(const nlohmann::json& j, PathReferences<T> & references)
+{
+    std::set<T> refs;
+    nlohmann::from_json(j.at("references"), refs);
+    references = PathReferences<T> {
+        .references = refs,
+        .hasSelfReference = j.at("zhasSelfReference").get<bool>(),
+    };
+}
+
+template
+void to_json(nlohmann::json& j, const IPFSHash<IPFSGitTreeNode> & c);
+template
+void from_json(const nlohmann::json& j, IPFSHash<IPFSGitTreeNode> & c);
+
+template
+void to_json(nlohmann::json& j, const IPFSGitTreeNode & c);
+template
+void from_json(const nlohmann::json& j, IPFSGitTreeNode & c);
 
 }

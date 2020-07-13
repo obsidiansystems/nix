@@ -31,6 +31,10 @@ struct Hash
 
     HashType type;
 
+	/* Using and arbitrary dummy value is bad, but very useful for
+	   <nlohmann/json> so we do it anways */
+	Hash() : Hash { htSHA256 } { }
+
     /* Create a zero-filled hash object. */
     Hash(HashType type);
 

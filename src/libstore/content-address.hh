@@ -3,8 +3,8 @@
 #include <nlohmann/json.hpp>
 #include <variant>
 
-#include "ipfs.hh"
 #include "hash.hh"
+#include "ipfs.hh"
 #include "path.hh"
 
 namespace nix {
@@ -31,6 +31,11 @@ struct FixedOutputHash {
     std::string printMethodAlgo() const;
 };
 
+template<template <typename> class Ref>
+struct IPFSGitTreeNodeT;
+
+typedef IPFSGitTreeNodeT<IPFSHashWithOptValue> IPFSGitTreeNode;
+
 /*
   We've accumulated several types of content-addressed paths over the years;
   fixed-output derivations support multiple hash algorithms and serialisation
@@ -45,7 +50,7 @@ struct FixedOutputHash {
 typedef std::variant<
     TextHash, // for paths computed by makeTextPath() / addTextToStore
     FixedOutputHash, // for path computed by makeFixedOutputPath
-    IPFSHash
+    IPFSHash<IPFSGitTreeNode>
 > LegacyContentAddress;
 
 /* Compute the prefix to the hash algorithm which indicates how the files were
@@ -136,50 +141,54 @@ struct FixedOutputInfo : FixedOutputHash {
     PathReferences<StorePath> references;
 };
 
-// pair of name and a hash of a content address
-struct IPFSRef {
-    std::string name;
-    IPFSHash hash;
+template<typename Underlying>
+struct ContentAddressT;
 
-    bool operator < (const IPFSRef & other) const
-    {
-        return name < other.name;
-        // FIXME second field
-    }
-};
-
-struct IPFSInfo {
-    Hash hash;
+template<template <typename> class Ref>
+struct IPFSGitTreeNodeT {
+	Hash gitTree;
     // References for the paths
-    PathReferences<IPFSRef> references;
+    PathReferences<ContentAddressT<Ref<IPFSGitTreeNodeT<Ref>>>> references;
 };
 
+// FIXME names
 typedef std::variant<
     TextInfo,
     FixedOutputInfo,
-    IPFSInfo,
-    IPFSHash
+    IPFSHashWithOptValue<IPFSGitTreeNode>
 > ContentAddressWithoutName;
 
-struct ContentAddress {
+template<typename Underlying>
+struct ContentAddressT {
     std::string name;
-    ContentAddressWithoutName info;
+    Underlying info;
 
-    bool operator < (const ContentAddress & other) const
+    bool operator < (const ContentAddressT<Underlying> & other) const
     {
         return name < other.name;
         // FIXME second field
     }
 };
+
+typedef ContentAddressT<ContentAddressWithoutName> ContentAddress;
 
 std::string renderContentAddress(ContentAddress ca);
 
 ContentAddress parseContentAddress(std::string_view rawCa);
 
-void to_json(nlohmann::json& j, const ContentAddress & c);
-void from_json(const nlohmann::json& j, ContentAddress & c);
+template<template <typename> class Ref>
+void to_json(nlohmann::json& j, const IPFSGitTreeNodeT<Ref> & c);
+template<template <typename> class Ref>
+void from_json(const nlohmann::json& j, IPFSGitTreeNodeT<Ref> & c);
 
-void to_json(nlohmann::json& j, const PathReferences<IPFSRef> & c);
-void from_json(const nlohmann::json& j, PathReferences<IPFSRef> & c);
+template<typename T>
+void to_json(nlohmann::json& j, const ContentAddressT<T> & c);
+template<typename T>
+void from_json(const nlohmann::json& j, ContentAddressT<T> & c);
+
+template<typename T>
+void to_json(nlohmann::json& j, const PathReferences<T> & c);
+template<typename T>
+void from_json(const nlohmann::json& j, PathReferences<T> & c);
 
 }
