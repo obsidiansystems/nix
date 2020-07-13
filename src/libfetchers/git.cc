@@ -115,9 +115,9 @@ struct GitInput : Input
             warn("Nix's computed git tree hash will be different when submodules are converted to regular directories");
         }
 
-        std::optional<ContentAddress> ca;
+        std::optional<StorePathDescriptor> ca;
         if (treeHash)
-            ca = ContentAddress {
+            ca = StorePathDescriptor {
                 .name = name,
                 .info = FixedOutputInfo {
                     ingestionMethod,
@@ -433,7 +433,7 @@ struct GitInput : Input
                     throw Error("Git hash mismatch in input '%s' (%s), expected '%s', got '%s'",
                         to_string(), store->printStorePath(storePath), input->treeHash->gitRev(), gotHash.gitRev());
             } else {
-                ca = ContentAddress {
+                ca = StorePathDescriptor {
                     .name = name,
                     .info = FixedOutputInfo {
                         ingestionMethod,

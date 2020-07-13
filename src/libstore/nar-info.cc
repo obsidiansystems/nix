@@ -69,7 +69,7 @@ NarInfo::NarInfo(const Store & store, const std::string & s, const std::string &
         else if (name == "CA") {
             if (ca) throw corrupt();
             // FIXME: allow blank ca or require skipping field?
-            ca = parseLegacyContentAddressOpt(value);
+            ca = parseContentAddressOpt(value);
         }
 
         pos = eol + 1;
@@ -106,7 +106,7 @@ std::string NarInfo::to_string(const Store & store) const
         res += "Sig: " + sig + "\n";
 
     if (ca)
-        res += "CA: " + renderLegacyContentAddress(*ca) + "\n";
+        res += "CA: " + renderContentAddress(*ca) + "\n";
 
     return res;
 }

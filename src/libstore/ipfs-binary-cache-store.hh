@@ -113,7 +113,7 @@ private:
 
     void writeNarInfo(ref<NarInfo> narInfo);
 
-    std::optional<std::string> getCidFromCA(ContentAddress ca);
+    std::optional<std::string> getCidFromCA(StorePathDescriptor ca);
 
     std::string putIpfsBlock(std::string s, std::string format, std::string mhtype);
 

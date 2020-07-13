@@ -79,7 +79,7 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
 
             auto narHash = hashModuloSink.finish().first;
 
-            ContentAddress ca {
+            StorePathDescriptor ca {
                 .name = std::string { path.name() },
                 .info = FixedOutputInfo {
                     {
@@ -113,7 +113,7 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
                 };
             }
 
-            ValidPathInfo info { *store, ContentAddress { ca } };
+            ValidPathInfo info { *store, StorePathDescriptor { ca } };
             info.narHash = narHash;
             info.narSize = sink.s->size();
 

@@ -623,9 +623,9 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
     case wopQuerySubstitutablePathInfos: {
         SubstitutablePathInfos infos;
         auto paths = readStorePaths<StorePathSet>(*store, from);
-        std::set<ContentAddress> caPaths;
+        std::set<StorePathDescriptor> caPaths;
         if (GET_PROTOCOL_MINOR(clientVersion) > 22)
-            caPaths = readContentAddressSet(*store, from);
+            caPaths = readStorePathDescriptorSet(*store, from);
         logger->startWork();
         store->querySubstitutablePathInfos(paths, caPaths, infos);
         logger->stopWork();
@@ -667,7 +667,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
             if (GET_PROTOCOL_MINOR(clientVersion) >= 16) {
                 to << info->ultimate
                    << info->sigs
-                   << renderLegacyContentAddress(info->ca);
+                   << renderContentAddress(info->ca);
             }
         } else {
             assert(GET_PROTOCOL_MINOR(clientVersion) >= 17);
@@ -725,7 +725,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         info.setReferencesPossiblyToSelf(readStorePaths<StorePathSet>(*store, from));
         from >> info.registrationTime >> info.narSize >> info.ultimate;
         info.sigs = readStrings<StringSet>(from);
-        info.ca = parseLegacyContentAddressOpt(readString(from));
+        info.ca = parseContentAddressOpt(readString(from));
         from >> repair >> dontCheckSigs;
         if (!trusted && dontCheckSigs)
             dontCheckSigs = false;

@@ -180,7 +180,7 @@ StorePath Store::bakeCaIfNeeded(StorePathOrCA path) const
         [this](std::reference_wrapper<const StorePath> storePath) {
             return StorePath {storePath};
         },
-        [this](std::reference_wrapper<const ContentAddress> ca) {
+        [this](std::reference_wrapper<const StorePathDescriptor> ca) {
             return makeFixedOutputPathFromCA(ca);
         },
     }, path);
@@ -246,7 +246,7 @@ static std::vector<uint8_t> packMultihash(std::string cid)
     return result;
 }
 
-static IPFSHash computeIPFSHash(const ContentAddress & info)
+static IPFSHash computeIPFSHash(const StorePathDescriptor & info)
 {
     assert(std::holds_alternative<IPFSInfo>(info.info));
 
@@ -274,7 +274,7 @@ StorePath Store::makeIPFSPath(std::string name, IPFSHash hash) const
     return StorePath(h, name);
 }
 
-StorePath Store::makeFixedOutputPathFromCA(const ContentAddress & info) const
+StorePath Store::makeFixedOutputPathFromCA(const StorePathDescriptor & info) const
 {
     // New template
     return std::visit(overloaded {
@@ -594,7 +594,7 @@ void Store::pathInfoToJSON(JSONPlaceholder & jsonOut, const StorePathSet & store
             }
 
             if (info->ca)
-                jsonPath.attr("ca", renderLegacyContentAddress(info->ca));
+                jsonPath.attr("ca", renderContentAddress(info->ca));
 
             std::pair<uint64_t, uint64_t> closureSizes;
 
@@ -708,15 +708,15 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
     uint64_t total = 0;
 
     // recompute store path on the chance dstStore does it differently
-    if (auto p = std::get_if<std::reference_wrapper<const ContentAddress>>(&storePath)) {
-        auto ca = static_cast<const ContentAddress &>(*p);
+    if (auto p = std::get_if<std::reference_wrapper<const StorePathDescriptor>>(&storePath)) {
+        auto ca = static_cast<const StorePathDescriptor &>(*p);
         // {
-        //     ValidPathInfo srcInfoCA { *srcStore, ContentAddress { ca } };
+        //     ValidPathInfo srcInfoCA { *srcStore, StorePathDescriptor { ca } };
         //     assert((PathReferences<StorePath> &)(*info) == (PathReferences<StorePath> &)srcInfoCA);
         // }
         if (info->references.empty()) {
             auto info2 = make_ref<ValidPathInfo>(*info);
-            ValidPathInfo dstInfoCA { *dstStore, ContentAddress { ca } };
+            ValidPathInfo dstInfoCA { *dstStore, StorePathDescriptor { ca } };
             if (dstStore->storeDir == srcStore->storeDir)
                 assert(info2->path == info2->path);
             info2->path = std::move(dstInfoCA.path);
@@ -805,7 +805,7 @@ std::map<StorePath, StorePath> copyPaths(ref<Store> srcStore, ref<Store> dstStor
             auto info = srcStore->queryPathInfo(storePath);
             auto storePathForDst = storePath;
             if (info->ca && info->references.empty() && !info->hasSelfReference) {
-                storePathForDst = dstStore->makeFixedOutputPathFromCA(*info->fullContentAddressOpt());
+                storePathForDst = dstStore->makeFixedOutputPathFromCA(*info->fullStorePathDescriptorOpt());
                 if (dstStore->storeDir == srcStore->storeDir)
                     assert(storePathForDst == storePath);
                 if (storePathForDst != storePath)
@@ -833,7 +833,7 @@ std::map<StorePath, StorePath> copyPaths(ref<Store> srcStore, ref<Store> dstStor
 
             auto storePathForDst = storePath;
             if (info->ca && info->references.empty() && !info->hasSelfReference) {
-                storePathForDst = dstStore->makeFixedOutputPathFromCA(*info->fullContentAddressOpt());
+                storePathForDst = dstStore->makeFixedOutputPathFromCA(*info->fullStorePathDescriptorOpt());
                 if (dstStore->storeDir == srcStore->storeDir)
                     assert(storePathForDst == storePath);
                 if (storePathForDst != storePath)
@@ -951,27 +951,27 @@ void ValidPathInfo::sign(const Store & store, const SecretKey & secretKey)
     sigs.insert(secretKey.signDetached(fingerprint(store)));
 }
 
-std::optional<ContentAddress> ValidPathInfo::fullContentAddressOpt() const
+std::optional<StorePathDescriptor> ValidPathInfo::fullStorePathDescriptorOpt() const
 {
     if (! ca)
         return std::nullopt;
 
-    return ContentAddress {
+    return StorePathDescriptor {
         .name = std::string { path.name() },
         .info = std::visit(overloaded {
             [&](TextHash th) {
                 TextInfo info { th };
                 assert(!hasSelfReference);
                 info.references = references;
-                return ContentAddressWithoutName { info };
+                return ContentAddressWithReferences { info };
             },
             [&](FixedOutputHash foh) {
                 FixedOutputInfo info { foh };
                 info.references = static_cast<PathReferences<StorePath>>(*this);
-                return ContentAddressWithoutName { info };
+                return ContentAddressWithReferences { info };
             },
             [&](IPFSHash io) {
-                return ContentAddressWithoutName { io };
+                return ContentAddressWithReferences { io };
             },
         }, *ca),
     };
@@ -979,7 +979,7 @@ std::optional<ContentAddress> ValidPathInfo::fullContentAddressOpt() const
 
 bool ValidPathInfo::isContentAddressed(const Store & store) const
 {
-    auto fullCaOpt = fullContentAddressOpt();
+    auto fullCaOpt = fullStorePathDescriptorOpt();
 
     if (! fullCaOpt)
         return false;
@@ -1024,7 +1024,7 @@ Strings ValidPathInfo::shortRefs() const
 
 ValidPathInfo::ValidPathInfo(
     const Store & store,
-    ContentAddress && info)
+    StorePathDescriptor && info)
       : path(store.makeFixedOutputPathFromCA(info))
 {
     std::visit(overloaded {
