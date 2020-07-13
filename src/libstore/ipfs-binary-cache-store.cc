@@ -517,9 +517,11 @@ std::optional<std::string> IPFSBinaryCacheStore::getCidFromCA(ContentAddress ca)
     return std::nullopt;
 }
 
-std::string IPFSBinaryCacheStore::putIpfsGitBlock(std::string s)
+std::string IPFSBinaryCacheStore::putIpfsBlock(std::string s, std::string format, std::string mhtype)
 {
-    auto uri = daemonUri + "/api/v0/block/put?format=git-raw&mhtype=sha1";
+    auto uri = daemonUri + "/api/v0/block/put";
+    uri += "?format=" + format;
+    uri += "&mhtype=" + mhtype;
 
     auto req = FileTransferRequest(uri);
     req.data = std::make_shared<string>(s);
@@ -530,7 +532,7 @@ std::string IPFSBinaryCacheStore::putIpfsGitBlock(std::string s)
     return (std::string) json["Key"];
 }
 
-std::string IPFSBinaryCacheStore::addGit(Path path, std::string modulus)
+std::string IPFSBinaryCacheStore::addGit(Path path, std::string modulus, bool hasSelfReference)
 {
     struct stat st;
     if (lstat(path.c_str(), &st))
@@ -538,22 +540,54 @@ std::string IPFSBinaryCacheStore::addGit(Path path, std::string modulus)
 
     if (S_ISDIR(st.st_mode)) {
         for (auto & i : readDirectory(path))
-            addGit(path + "/" + i.name, modulus);
+            addGit(path + "/" + i.name, modulus, hasSelfReference);
     }
 
     StringSink sink;
-    RewritingSink rewritingSink(modulus, std::string(modulus.size(), 0), sink);
 
-    dumpGitWithCustomHash([&]{ return std::make_unique<HashModuloSink>(htSHA1, modulus); }, path, rewritingSink);
+    if (hasSelfReference) {
+        RewritingSink rewritingSink(modulus, std::string(modulus.size(), 0), sink);
 
-    rewritingSink.flush();
+        dumpGitWithCustomHash([&]{ return std::make_unique<HashModuloSink>(htSHA1, modulus); }, path, rewritingSink);
 
-    for (auto & pos : rewritingSink.matches) {
-        auto s = fmt("|%d", pos);
-        sink((unsigned char *) s.data(), s.size());
+        rewritingSink.flush();
+
+        for (auto & pos : rewritingSink.matches) {
+            auto s = fmt("|%d", pos);
+            sink((unsigned char *) s.data(), s.size());
+        }
+    } else
+        dumpGit(htSHA1, path, sink);
+
+    return putIpfsBlock(*sink.s, "git-raw", "sha1");
+}
+
+void IPFSBinaryCacheStore::unrewriteModulus(std::string & data, std::string hashPart)
+{
+    // unrewrite modulus
+    std::string offset;
+    size_t i = data.size() - 1;
+    for (; i > 0; i--) {
+        char c = data.data()[i];
+        if (!(c >= '0' && c <= '9') && c != '|') {
+            i += offset.size();
+            break;
+        }
+        if (c == '|') {
+            int pos;
+            try {
+                pos = stoi(offset);
+            } catch (std::invalid_argument& e) {
+                break;
+            }
+            assert(pos > 0 && pos + hashPart.size() < i);
+            assert(std::string(data, pos, hashPart.size()) == std::string(hashPart.size(), 0));
+            std::copy(hashPart.begin(), hashPart.end(), data.begin() + pos);
+            offset = "";
+        } else
+            offset = c + offset;
     }
-
-    return putIpfsGitBlock(*sink.s);
+    data.erase(i + 1);
 }
 
 std::unique_ptr<Source> IPFSBinaryCacheStore::getGitObject(std::string path, std::string hashPart, bool hasSelfReference)
@@ -563,30 +597,8 @@ std::unique_ptr<Source> IPFSBinaryCacheStore::getGitObject(std::string path, std
         getIpfsBlock(path, sink2);
 
         std::string result = *sink2.s;
-        if (hasSelfReference) {
-            // unrewrite modulus
-            std::string offset;
-            size_t i = result.size() - 1;
-            for (; i > 0; i--) {
-                char c = result.data()[i];
-                if (!(c >= '0' && c <= '9') && c != '|')
-                    break;
-                if (c == '|') {
-                    int pos;
-                    try {
-                        pos = stoi(offset);
-                    } catch (std::invalid_argument& e) {
-                        break;
-                    }
-                    assert(pos > 0 && pos + hashPart.size() < i);
-                    assert(std::string(result, pos, hashPart.size()) == std::string(hashPart.size(), 0));
-                    std::copy(hashPart.begin(), hashPart.end(), result.begin() + pos);
-                    offset = "";
-                } else
-                    offset = c + offset;
-            }
-            result.erase(i + 1);
-        }
+        if (hasSelfReference)
+            unrewriteModulus(result, hashPart);
         sink(result);
     });
 }
@@ -632,7 +644,7 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
             StringSource savedNAR(*nar);
             restorePath((Path) tmpDir + "/tmp", savedNAR);
 
-            auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())));
+            auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart()), info.hasSelfReference));
             assert(std::string(key, 0, 9) == "f01781114");
 
             auto hash = Hash::parseAny(std::string(key, 9), htSHA1);
@@ -660,7 +672,7 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
         StringSource savedNAR(*nar);
         restorePath((Path) tmpDir + "/tmp", savedNAR);
 
-        auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart())));
+        auto key = ipfsCidFormatBase16(addGit((Path) tmpDir + "/tmp", std::string(info.path.hashPart()), info.hasSelfReference));
         assert(std::string(key, 0, 9) == "f01781114");
 
         IPFSGitTreeNode caWithRefs {

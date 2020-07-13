@@ -37,7 +37,7 @@ std::string renderLegacyContentAddress(LegacyContentAddress ca) {
         },
         [](IPFSHash<IPFSGitTreeNode> ih) {
             // FIXME do Base-32 for consistency
-            return "ipfs-git:" + ih.to_string();
+            return "ipfs:" + ih.to_string();
         }
     }, ca);
 }
@@ -85,13 +85,13 @@ LegacyContentAddress parseLegacyContentAddress(std::string_view rawCa) {
             .method = method,
             .hash = Hash::parseNonSRIUnprefixed(rest, std::move(hashType)),
         };
-    } else if (prefix == "ipfs-git") {
+    } else if (prefix == "ipfs") {
         auto hash = IPFSHash<IPFSGitTreeNode>::from_string(rest);
         if (hash.hash.type != htSHA256)
             throw Error("This IPFS hash should have type SHA-256: %s", hash.to_string());
         return hash;
     } else
-        throw UsageError("path-info content address prefix \"%s\" is unrecognized. Recogonized prefixes are \"text\", \"fixed\", or \"ipfs-git\"", prefix);
+        throw UsageError("path-info content address prefix \"%s\" is unrecognized. Recogonized prefixes are \"text\", \"fixed\", or \"ipfs\"", prefix);
 };
 
 std::optional<LegacyContentAddress> parseLegacyContentAddressOpt(std::string_view rawCaOpt) {
@@ -135,7 +135,7 @@ std::string renderContentAddress(ContentAddress ca)
             }});
         },
         [&](IPFSHashWithOptValue<IPFSGitTreeNode> ih) {
-            result += "ipfs-git:";
+            result += "ipfs:";
             result += ih.to_string();
         },
     }, ca.info);
@@ -151,16 +151,16 @@ ContentAddress parseContentAddress(std::string_view rawCa)
     std::string_view name;
     std::string_view tag;
     {
-        auto optPrefix = splitPrefixTo(rest, ':');
         auto optName = splitPrefixTo(rest, ':');
-        if (!(optPrefix && optName))
+        auto optTag = splitPrefixTo(rest, ':');
+        if (!(optTag && optName))
             throw UsageError("not a content address because it is not in the form \"<name>:<tag>:<rest>\": %s", rawCa);
-        tag = *optPrefix;
+        tag = *optTag;
         name = *optName;
     }
 
     auto parseRefs = [&]() -> PathReferences<StorePath> {
-        if (!splitPrefix(rest, "refs"))
+        if (!splitPrefix(rest, "refs,"))
             throw Error("Invalid CA \"%s\", \"%s\" should begin with \"refs:\"", rawCa, rest);
         PathReferences<StorePath> ret;
         size_t numReferences = 0;
@@ -210,12 +210,12 @@ ContentAddress parseContentAddress(std::string_view rawCa)
             },
             refs,
         };
-    } else if (tag == "ipfs-git") {
+    } else if (tag == "ipfs") {
         info = IPFSHashWithOptValue<IPFSGitTreeNode> {
             IPFSHash<IPFSGitTreeNode>::from_string(rest)
         };
     } else
-        throw UsageError("content address tag \"%s\" is unrecognized. Recogonized tages are \"text\", \"fixed\", or \"ipfs-git\"", tag);
+        throw UsageError("content address tag \"%s\" is unrecognized. Recogonized tages are \"text\", \"fixed\", or \"ipfs\"", tag);
 
     return ContentAddress {
         .name = std::string { name },
@@ -245,7 +245,7 @@ void to_json(nlohmann::json& j, const LegacyContentAddress & ca) {
                 { "type", "ipfs" },
                 { "hash", ih },
             };
-        }
+        },
     }, ca);
 }
 

@@ -5,20 +5,22 @@ namespace nix::untyped {
 // "f01711220" base-16, sha-256
 // "f01781114" base-16, sha-1
 
-std::string toString(Hash hash) {
+std::string toString(Hash hash)
+{
     std::string prefix;
     switch (hash.type) {
-    case htSHA1: prefix = "f01711220";
-    case htSHA256: prefix = "f01781114";
+    case htSHA1: prefix = "f01781114"; break;
+    case htSHA256: prefix = "f01711220"; break;
     default: throw Error("hash type '%s' we don't yet export to IPFS", printHashType(hash.type));
     }
     return prefix + hash.to_string(Base16, false);
 }
 
-Hash fromString(std::string_view cid) {
+Hash fromString(std::string_view cid)
+{
     auto prefix = cid.substr(0, 9);
-    HashType algo = prefix == "f01711220" ? htSHA256
-        : prefix == "f01781114" ? htSHA1
+    HashType algo = prefix == "f01781114" ? htSHA1
+        : prefix == "f01711220" ? htSHA256
         : throw Error("cid '%s' is wrong type for ipfs hash", cid);
     return Hash::parseNonSRIUnprefixed(cid.substr(9), algo);
 }
