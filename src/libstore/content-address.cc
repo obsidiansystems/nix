@@ -363,4 +363,19 @@ void from_json(const nlohmann::json& j, std::optional<ContentAddress> & c) {
     }
 }
 
+Hash getContentAddressHash(const ContentAddress & ca)
+{
+    return std::visit(overloaded {
+        [](TextHash th) {
+            return th.hash;
+        },
+        [](FixedOutputHash fsh) {
+            return fsh.hash;
+        },
+        [](IPFSHash fsh) {
+            return fsh.hash;
+        },
+    }, ca);
+}
+
 }

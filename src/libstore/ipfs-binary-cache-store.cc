@@ -326,7 +326,7 @@ void IPFSBinaryCacheStore::upsertFile(const std::string & path, const std::strin
     try {
         addLink(path, "/ipfs/" + addFile(data));
     } catch (FileTransferError & e) {
-        throw UploadToIPFS("while uploading to IPFS binary cache at '%s': %s", cacheUri, e.info());
+        throw UploadToIPFS("while uploading to IPFS binary cache at '%s': %s", cacheUri, e.msg());
     }
 }
 
@@ -621,7 +621,7 @@ void IPFSBinaryCacheStore::getGitEntry(ParseSink & sink, const Path & path,
 }
 
 void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSource,
-    RepairFlag repair, CheckSigsFlag checkSigs, std::shared_ptr<FSAccessor> accessor)
+    RepairFlag repair, CheckSigsFlag checkSigs)
 {
 
     if (!repair && isValidPath(info.path)) return;
@@ -969,7 +969,7 @@ StorePath IPFSBinaryCacheStore::addToStore(const string & name, const Path & src
     };
 
     auto source = StringSource { *sink.s };
-    addToStore(info, source, repair, CheckSigs, nullptr);
+    addToStore(info, source, repair, CheckSigs);
 
     return std::move(info.path);
 }
@@ -984,7 +984,7 @@ StorePath IPFSBinaryCacheStore::addTextToStore(const string & name, const string
         StringSink sink;
         dumpString(s, sink);
         auto source = StringSource { *sink.s };
-        addToStore(info, source, repair, CheckSigs, nullptr);
+        addToStore(info, source, repair, CheckSigs);
     }
 
     return std::move(info.path);
