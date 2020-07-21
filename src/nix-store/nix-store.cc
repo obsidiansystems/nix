@@ -77,7 +77,7 @@ static PathSet realisePath(StorePathWithOutputs path, bool build = true)
             if (i == drv.outputs.end())
                 throw Error("derivation '%s' does not have an output named '%s'",
                     store2->printStorePath(path.path), j);
-            auto outPath = store2->printStorePath(i->second.path);
+            auto outPath = store2->printStorePath(i->second.path(*store, drv.name));
             if (store2) {
                 if (gcRoot == "")
                     printGCWarning();
@@ -174,10 +174,10 @@ static void opAdd(Strings opFlags, Strings opArgs)
    store. */
 static void opAddFixed(Strings opFlags, Strings opArgs)
 {
-    auto recursive = FileIngestionMethod::Flat;
+    auto method = FileIngestionMethod::Flat;
 
     for (auto & i : opFlags)
-        if (i == "--recursive") recursive = FileIngestionMethod::Recursive;
+        if (i == "--recursive") method = FileIngestionMethod::Recursive;
         else throw UsageError("unknown flag '%1%'", i);
 
     if (opArgs.empty())
@@ -187,7 +187,7 @@ static void opAddFixed(Strings opFlags, Strings opArgs)
     opArgs.pop_front();
 
     for (auto & i : opArgs)
-        cout << fmt("%s\n", store->printStorePath(store->addToStore(std::string(baseNameOf(i)), i, recursive, hashAlgo)));
+        std::cout << fmt("%s\n", store->printStorePath(store->addToStoreSlow(baseNameOf(i), i, method, hashAlgo).path));
 }
 
 
@@ -219,7 +219,7 @@ static StorePathSet maybeUseOutputs(const StorePath & storePath, bool useOutput,
         auto drv = store->derivationFromPath(storePath);
         StorePathSet outputs;
         for (auto & i : drv.outputs)
-            outputs.insert(i.second.path);
+            outputs.insert(i.second.path(*store, drv.name));
         return outputs;
     }
     else return {storePath};
@@ -313,7 +313,7 @@ static void opQuery(Strings opFlags, Strings opArgs)
                 if (forceRealise) realisePath({i2});
                 Derivation drv = store->derivationFromPath(i2);
                 for (auto & j : drv.outputs)
-                    cout << fmt("%1%\n", store->printStorePath(j.second.path));
+                    cout << fmt("%1%\n", store->printStorePath(j.second.path(*store, drv.name)));
             }
             break;
         }
@@ -671,7 +671,7 @@ static void opImport(Strings opFlags, Strings opArgs)
     if (!opArgs.empty()) throw UsageError("no arguments expected");
 
     FdSource source(STDIN_FILENO);
-    auto paths = store->importPaths(source, nullptr, NoCheckSigs);
+    auto paths = store->importPaths(source, NoCheckSigs);
 
     for (auto & i : paths)
         cout << fmt("%s\n", store->printStorePath(i)) << std::flush;
@@ -878,7 +878,7 @@ static void opServe(Strings opFlags, Strings opArgs)
 
             case cmdImportPaths: {
                 if (!writeAllowed) throw Error("importing paths is not allowed");
-                store->importPaths(in, nullptr, NoCheckSigs); // FIXME: should we skip sig checking?
+                store->importPaths(in, NoCheckSigs); // FIXME: should we skip sig checking?
                 out << 1; // indicate success
                 break;
             }
@@ -914,9 +914,9 @@ static void opServe(Strings opFlags, Strings opArgs)
 
                 if (!writeAllowed) throw Error("building paths is not allowed");
 
-                auto drvPath = store->parseStorePath(readString(in)); // informational only
+                auto drvPath = store->parseStorePath(readString(in));
                 BasicDerivation drv;
-                readDerivation(in, *store, drv);
+                readDerivation(in, *store, drv, Derivation::nameFromPath(drvPath));
 
                 getBuildSettings();
 

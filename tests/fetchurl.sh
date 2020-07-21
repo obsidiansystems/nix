@@ -7,7 +7,10 @@ hash=$(nix-hash --flat --type sha256 ./fetchurl.sh)
 
 outPath=$(nix-build '<nix/fetchurl.nix>' --argstr url file://$(pwd)/fetchurl.sh --argstr sha256 $hash --no-out-link --hashed-mirrors '')
 
+gdbgui --args "nix-build '<nix/fetchurl.nix>' --argstr url file://$(pwd)/fetchurl.sh --argstr sha256 $hash --no-out-link --hashed-mirrors ''"
+
 cmp $outPath fetchurl.sh
+exit 1
 
 # Now using a base-64 hash.
 clearStore

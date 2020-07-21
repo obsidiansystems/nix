@@ -143,8 +143,7 @@ public:
         SubstitutablePathInfos & infos) override;
 
     void addToStore(const ValidPathInfo & info, Source & source,
-        RepairFlag repair = NoRepair, CheckSigsFlag checkSigs = CheckSigs,
-        std::shared_ptr<FSAccessor> accessor = 0) override;
+        RepairFlag repair = NoRepair, CheckSigsFlag checkSigs = CheckSigs) override;
 
     StorePath addToStore(const string & name, const Path & srcPath,
         FileIngestionMethod method, HashType hashAlgo,

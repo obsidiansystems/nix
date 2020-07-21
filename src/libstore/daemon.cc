@@ -81,7 +81,7 @@ struct TunnelLogger : public Logger
         showErrorInfo(oss, ei, false);
 
         StringSink buf;
-        buf << STDERR_NEXT << oss.str() << "\n";
+        buf << STDERR_NEXT << oss.str();
         enqueueMsg(*buf.s);
     }
 
@@ -170,31 +170,6 @@ struct TunnelSource : BufferedSource
         size_t n = readString(data, len, from);
         if (n == 0) throw EndOfFile("unexpected end-of-file");
         return n;
-    }
-};
-
-/* If the NAR archive contains a single file at top-level, then save
-   the contents of the file to `s'.  Otherwise barf. */
-struct RetrieveRegularNARSink : ParseSink
-{
-    bool regular;
-    string s;
-
-    RetrieveRegularNARSink() : regular(true) { }
-
-    void createDirectory(const Path & path)
-    {
-        regular = false;
-    }
-
-    void receiveContents(unsigned char * data, unsigned int len)
-    {
-        s.append((const char *) data, len);
-    }
-
-    void createSymlink(const Path & path, const string & target)
-    {
-        regular = false;
     }
 };
 
@@ -391,26 +366,23 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         }
         HashType hashAlgo = parseHashType(s);
 
-        TeeSource savedNAR(from);
-        RetrieveRegularNARSink savedRegular;
+        StringSink saved;
+        TeeSource savedNARSource(from, saved);
+        RetrieveRegularNARSink savedRegular { saved };
 
         if (method == FileIngestionMethod::Recursive) {
             /* Get the entire NAR dump from the client and save it to
                a string so that we can pass it to
                addToStoreFromDump(). */
             ParseSink sink; /* null sink; just parse the NAR */
-            parseDump(sink, savedNAR);
+            parseDump(sink, savedNARSource);
         } else
             parseDump(savedRegular, from);
 
         logger->startWork();
         if (!savedRegular.regular) throw Error("regular file expected");
 
-        auto path = store->addToStoreFromDump(
-            method == FileIngestionMethod::Recursive ? *savedNAR.data : savedRegular.s,
-            baseName,
-            method,
-            hashAlgo);
+        auto path = store->addToStoreFromDump(*saved.s, baseName, method, hashAlgo);
         logger->stopWork();
 
         to << store->printStorePath(path);
@@ -442,7 +414,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
     case wopImportPaths: {
         logger->startWork();
         TunnelSource source(from, to);
-        auto paths = store->importPaths(source, nullptr,
+        auto paths = store->importPaths(source,
             trusted ? NoCheckSigs : CheckSigs);
         logger->stopWork();
         Strings paths2;
@@ -474,7 +446,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
     case wopBuildDerivation: {
         auto drvPath = store->parseStorePath(readString(from));
         BasicDerivation drv;
-        readDerivation(from, *store, drv);
+        readDerivation(from, *store, drv, Derivation::nameFromPath(drvPath));
         BuildMode buildMode = (BuildMode) readInt(from);
         logger->startWork();
         if (!trusted)
@@ -726,22 +698,22 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         if (!trusted)
             info.ultimate = false;
 
-        std::string saved;
         std::unique_ptr<Source> source;
         if (GET_PROTOCOL_MINOR(clientVersion) >= 21)
             source = std::make_unique<TunnelSource>(from, to);
         else {
-            TeeSink tee(from);
-            parseDump(tee, tee.source);
-            saved = std::move(*tee.source.data);
-            source = std::make_unique<StringSource>(saved);
+            StringSink saved;
+            TeeSource tee { from, saved };
+            ParseSink ether;
+            parseDump(ether, tee);
+            source = std::make_unique<StringSource>(std::move(*saved.s));
         }
 
         logger->startWork();
 
         // FIXME: race if addToStore doesn't read source?
         store->addToStore(info, *source, (RepairFlag) repair,
-            dontCheckSigs ? NoCheckSigs : CheckSigs, nullptr);
+            dontCheckSigs ? NoCheckSigs : CheckSigs);
 
         logger->stopWork();
         break;

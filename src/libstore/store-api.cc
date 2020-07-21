@@ -8,6 +8,7 @@
 #include "derivations.hh"
 #include "url.hh"
 #include "references.hh"
+#include "archive.hh"
 
 #include <future>
 
@@ -21,15 +22,15 @@ bool Store::isInStore(const Path & path) const
 }
 
 
-Path Store::toStorePath(const Path & path) const
+std::pair<StorePath, Path> Store::toStorePath(const Path & path) const
 {
     if (!isInStore(path))
         throw Error("path '%1%' is not in the Nix store", path);
     Path::size_type slash = path.find('/', storeDir.size() + 1);
     if (slash == Path::npos)
-        return path;
+        return {parseStorePath(path), ""};
     else
-        return Path(path, 0, slash);
+        return {parseStorePath(std::string_view(path).substr(0, slash)), path.substr(slash)};
 }
 
 
@@ -42,14 +43,14 @@ Path Store::followLinksToStore(std::string_view _path) const
         path = absPath(target, dirOf(path));
     }
     if (!isInStore(path))
-        throw NotInStore("path '%1%' is not in the Nix store", path);
+        throw BadStorePath("path '%1%' is not in the Nix store", path);
     return path;
 }
 
 
 StorePath Store::followLinksToStorePath(std::string_view path) const
 {
-    return parseStorePath(toStorePath(followLinksToStore(path)));
+    return toStorePath(followLinksToStore(path)).first;
 }
 
 
@@ -222,6 +223,93 @@ StorePath Store::computeStorePathForText(const string & name, const string & s,
 }
 
 
+/*
+The aim of this function is to compute in one pass the correct ValidPathInfo for
+the files that we are trying to add to the store. To accomplish that in one
+pass, given the different kind of inputs that we can take (normal nar archives,
+nar archives with non SHA-256 hashes, and flat files), we set up a net of sinks
+and aliases. Also, since the dataflow is obfuscated by this, we include here a
+graphviz diagram:
+
+digraph graphname {
+    node [shape=box]
+    fileSource -> narSink
+    narSink [style=dashed]
+    narSink -> unsualHashTee [style = dashed, label = "Recursive && !SHA-256"]
+    narSink -> narHashSink [style = dashed, label = "else"]
+    unsualHashTee -> narHashSink
+    unsualHashTee -> caHashSink
+    fileSource -> parseSink
+    parseSink [style=dashed]
+    parseSink-> fileSink [style = dashed, label = "Flat"]
+    parseSink -> blank [style = dashed, label = "Recursive"]
+    fileSink -> caHashSink
+}
+*/
+ValidPathInfo Store::addToStoreSlow(std::string_view name, const Path & srcPath,
+    FileIngestionMethod method, HashType hashAlgo,
+    std::optional<Hash> expectedCAHash)
+{
+    HashSink narHashSink { htSHA256 };
+    HashSink caHashSink { hashAlgo };
+
+    /* Note that fileSink and unusualHashTee must be mutually exclusive, since
+       they both write to caHashSink. Note that that requisite is currently true
+       because the former is only used in the flat case. */
+    RetrieveRegularNARSink fileSink { caHashSink };
+    TeeSink unusualHashTee { narHashSink, caHashSink };
+
+    auto & narSink = method == FileIngestionMethod::Recursive && hashAlgo != htSHA256
+        ? static_cast<Sink &>(unusualHashTee)
+        : narHashSink;
+
+    /* Functionally, this means that fileSource will yield the content of
+       srcPath. The fact that we use scratchpadSink as a temporary buffer here
+       is an implementation detail. */
+    auto fileSource = sinkToSource([&](Sink & scratchpadSink) {
+        dumpPath(srcPath, scratchpadSink);
+    });
+
+    /* tapped provides the same data as fileSource, but we also write all the
+       information to narSink. */
+    TeeSource tapped { *fileSource, narSink };
+
+    ParseSink blank;
+    auto & parseSink = method == FileIngestionMethod::Flat
+        ? fileSink
+        : blank;
+
+    /* The information that flows from tapped (besides being replicated in
+       narSink), is now put in parseSink. */
+    parseDump(parseSink, tapped);
+
+    /* We extract the result of the computation from the sink by calling
+       finish. */
+    auto [narHash, narSize] = narHashSink.finish();
+
+    auto hash = method == FileIngestionMethod::Recursive && hashAlgo == htSHA256
+        ? narHash
+        : caHashSink.finish().first;
+
+    if (expectedCAHash && expectedCAHash != hash)
+        throw Error("hash mismatch for '%s'", srcPath);
+
+    ValidPathInfo info(makeFixedOutputPath(method, hash, name));
+    info.narHash = narHash;
+    info.narSize = narSize;
+    info.ca = FixedOutputHash { .method = method, .hash = hash };
+
+    if (!isValidPath(info.path)) {
+        auto source = sinkToSource([&](Sink & scratchpadSink) {
+            dumpPath(srcPath, scratchpadSink);
+        });
+        addToStore(info, *source);
+    }
+
+    return info;
+}
+
+
 Store::Store(const Params & params)
     : Config(params)
     , state({(size_t) pathInfoCacheSize})
@@ -317,6 +405,14 @@ ref<const ValidPathInfo> Store::queryPathInfo(const StorePath & storePath)
 }
 
 
+static bool goodStorePath(const StorePath & expected, const StorePath & actual)
+{
+    return
+        expected.hashPart() == actual.hashPart()
+        && (expected.name() == Store::MissingName || expected.name() == actual.name());
+}
+
+
 void Store::queryPathInfo(const StorePath & storePath,
     Callback<ref<const ValidPathInfo>> callback) noexcept
 {
@@ -344,7 +440,7 @@ void Store::queryPathInfo(const StorePath & storePath,
                     state_->pathInfoCache.upsert(hashPart,
                         res.first == NarInfoDiskCache::oInvalid ? PathInfoCacheValue{} : PathInfoCacheValue{ .value = res.second });
                     if (res.first == NarInfoDiskCache::oInvalid ||
-                        res.second->path != storePath)
+                        !goodStorePath(storePath, res.second->path))
                         throw InvalidPath("path '%s' is not valid", printStorePath(storePath));
                 }
                 return callback(ref<const ValidPathInfo>(res.second));
@@ -356,7 +452,7 @@ void Store::queryPathInfo(const StorePath & storePath,
     auto callbackPtr = std::make_shared<decltype(callback)>(std::move(callback));
 
     queryPathInfoUncached(storePath,
-        {[this, storePath{printStorePath(storePath)}, hashPart, callbackPtr](std::future<std::shared_ptr<const ValidPathInfo>> fut) {
+        {[this, storePathS{printStorePath(storePath)}, hashPart, callbackPtr](std::future<std::shared_ptr<const ValidPathInfo>> fut) {
 
             try {
                 auto info = fut.get();
@@ -369,9 +465,11 @@ void Store::queryPathInfo(const StorePath & storePath,
                     state_->pathInfoCache.upsert(hashPart, PathInfoCacheValue { .value = info });
                 }
 
-                if (!info || info->path != parseStorePath(storePath)) {
+                auto storePath = parseStorePath(storePathS);
+
+                if (!info || !goodStorePath(storePath, info->path)) {
                     stats.narInfoMissing++;
-                    throw InvalidPath("path '%s' is not valid", storePath);
+                    throw InvalidPath("path '%s' is not valid", storePathS);
                 }
 
                 (*callbackPtr)(ref<const ValidPathInfo>(info));
@@ -516,7 +614,7 @@ void Store::pathInfoToJSON(JSONPlaceholder & jsonOut, const StorePathSet & store
                     if (!narInfo->url.empty())
                         jsonPath.attr("url", narInfo->url);
                     if (narInfo->fileHash)
-                        jsonPath.attr("downloadHash", narInfo->fileHash.to_string(Base32, true));
+                        jsonPath.attr("downloadHash", narInfo->fileHash.to_string(hashBase, true));
                     if (narInfo->fileSize)
                         jsonPath.attr("downloadSize", narInfo->fileSize);
                     if (showClosureSize)
@@ -814,10 +912,6 @@ void ValidPathInfo::sign(const Store & store, const SecretKey & secretKey)
 {
     sigs.insert(secretKey.signDetached(fingerprint(store)));
 }
-
-// FIXME Put this somewhere?
-template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
-template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 bool ValidPathInfo::isContentAddressed(const Store & store) const
 {

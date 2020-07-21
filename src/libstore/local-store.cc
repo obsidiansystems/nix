@@ -544,11 +544,8 @@ void LocalStore::checkDerivationOutputs(const StorePath & drvPath, const Derivat
     std::string drvName(drvPath.name());
     drvName = string(drvName, 0, drvName.size() - drvExtension.size());
 
-    auto check = [&](const StorePath & expected, const StorePath & actual, const std::string & varName)
+    auto envHasRightPath = [&](const StorePath & actual, const std::string & varName)
     {
-        if (actual != expected)
-            throw Error("derivation '%s' has incorrect output '%s', should be '%s'",
-                printStorePath(drvPath), printStorePath(actual), printStorePath(expected));
         auto j = drv.env.find(varName);
         if (j == drv.env.end() || parseStorePath(j->second) != actual)
             throw Error("derivation '%s' has incorrect environment variable '%s', should be '%s'",
@@ -556,23 +553,34 @@ void LocalStore::checkDerivationOutputs(const StorePath & drvPath, const Derivat
     };
 
 
-    if (drv.isFixedOutput()) {
-        DerivationOutputs::const_iterator out = drv.outputs.find("out");
-        if (out == drv.outputs.end())
-            throw Error("derivation '%s' does not have an output named 'out'", printStorePath(drvPath));
+    // Don't need the answer, but do this anyways to assert is proper
+    // combination. The code below is more general and naturally allows
+    // combinations that are currently prohibited.
+    drv.type();
 
-        check(
-            makeFixedOutputPath(
-                out->second.hash->method,
-                out->second.hash->hash,
-                drvName),
-            out->second.path, "out");
-    }
-
-    else {
-        Hash h = hashDerivationModulo(*this, drv, true);
-        for (auto & i : drv.outputs)
-            check(makeOutputPath(i.first, h, drvName), i.second.path, i.first);
+    std::optional<Hash> h;
+    for (auto & i : drv.outputs) {
+        std::visit(overloaded {
+            [&](DerivationOutputInputAddressed doia) {
+                if (!h) {
+                    // somewhat expensive so we do lazily
+                    auto temp = hashDerivationModulo(*this, drv, true);
+                    h = std::get<Hash>(temp);
+                }
+                StorePath recomputed = makeOutputPath(i.first, *h, drvName);
+                if (doia.path != recomputed)
+                    throw Error("derivation '%s' has incorrect output '%s', should be '%s'",
+                        printStorePath(drvPath), printStorePath(doia.path), printStorePath(recomputed));
+                envHasRightPath(doia.path, i.first);
+            },
+            [&](DerivationOutputFixed dof) {
+                StorePath path = makeFixedOutputPath(dof.hash.method, dof.hash.hash, drvName);
+                envHasRightPath(path, i.first);
+            },
+            [&](DerivationOutputFloating _) {
+                throw UnimplementedError("Floating CA output derivations are not yet implemented");
+            },
+        }, i.second.output);
     }
 }
 
@@ -605,7 +613,7 @@ uint64_t LocalStore::addValidPath(State & state,
         (concatStringsSep(" ", info.sigs), !info.sigs.empty())
         (renderContentAddress(info.ca), (bool) info.ca)
         .exec();
-    uint64_t id = sqlite3_last_insert_rowid(state.db);
+    uint64_t id = state.db.getLastInsertedRowId();
 
     /* If this is a derivation, then store the derivation outputs in
        the database.  This is useful for the garbage collector: it can
@@ -625,7 +633,7 @@ uint64_t LocalStore::addValidPath(State & state,
             state.stmtAddDerivationOutput.use()
                 (id)
                 (i.first)
-                (printStorePath(i.second.path))
+                (printStorePath(i.second.path(*this, drv.name)))
                 .exec();
         }
     }
@@ -973,7 +981,7 @@ const PublicKeys & LocalStore::getPublicKeys()
 
 
 void LocalStore::addToStore(const ValidPathInfo & info, Source & source,
-    RepairFlag repair, CheckSigsFlag checkSigs, std::shared_ptr<FSAccessor> accessor)
+    RepairFlag repair, CheckSigsFlag checkSigs)
 {
     if (!info.narHash)
         throw Error("cannot add path '%s' because it lacks a hash", printStorePath(info.path));
@@ -987,7 +995,7 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source,
 
         PathLocks outputLock;
 
-        Path realPath = realStoreDir + "/" + std::string(info.path.to_string());
+        auto realPath = Store::toRealPath(info.path);
 
         /* Lock the output path.  But don't lock if we're being called
            from a build hook (whose parent process already acquired a
@@ -1058,8 +1066,7 @@ StorePath LocalStore::addToStoreFromDump(const string & dump, const string & nam
         /* The first check above is an optimisation to prevent
            unnecessary lock acquisition. */
 
-        Path realPath = realStoreDir + "/";
-        realPath += dstPath.to_string();
+        auto realPath = Store::toRealPath(dstPath);
 
         PathLocks outputLock({realPath});
 
@@ -1109,16 +1116,119 @@ StorePath LocalStore::addToStore(const string & name, const Path & _srcPath,
 {
     Path srcPath(absPath(_srcPath));
 
-    /* Read the whole path into memory. This is not a very scalable
-       method for very large paths, but `copyPath' is mainly used for
-       small files. */
-    StringSink sink;
-    if (method == FileIngestionMethod::Recursive)
-        dumpPath(srcPath, sink, filter);
-    else
-        sink.s = make_ref<std::string>(readFile(srcPath));
+    if (method != FileIngestionMethod::Recursive)
+        return addToStoreFromDump(readFile(srcPath), name, method, hashAlgo, repair);
 
-    return addToStoreFromDump(*sink.s, name, method, hashAlgo, repair);
+    /* For computing the NAR hash. */
+    auto sha256Sink = std::make_unique<HashSink>(htSHA256);
+
+    /* For computing the store path. In recursive SHA-256 mode, this
+       is the same as the NAR hash, so no need to do it again. */
+    std::unique_ptr<HashSink> hashSink =
+        hashAlgo == htSHA256
+        ? nullptr
+        : std::make_unique<HashSink>(hashAlgo);
+
+    /* Read the source path into memory, but only if it's up to
+       narBufferSize bytes. If it's larger, write it to a temporary
+       location in the Nix store. If the subsequently computed
+       destination store path is already valid, we just delete the
+       temporary path. Otherwise, we move it to the destination store
+       path. */
+    bool inMemory = true;
+    std::string nar;
+
+    auto source = sinkToSource([&](Sink & sink) {
+
+        LambdaSink sink2([&](const unsigned char * buf, size_t len) {
+            (*sha256Sink)(buf, len);
+            if (hashSink) (*hashSink)(buf, len);
+
+            if (inMemory) {
+                if (nar.size() + len > settings.narBufferSize) {
+                    inMemory = false;
+                    sink << 1;
+                    sink((const unsigned char *) nar.data(), nar.size());
+                    nar.clear();
+                } else {
+                    nar.append((const char *) buf, len);
+                }
+            }
+
+            if (!inMemory) sink(buf, len);
+        });
+
+        dumpPath(srcPath, sink2, filter);
+    });
+
+    std::unique_ptr<AutoDelete> delTempDir;
+    Path tempPath;
+
+    try {
+        /* Wait for the source coroutine to give us some dummy
+           data. This is so that we don't create the temporary
+           directory if the NAR fits in memory. */
+        readInt(*source);
+
+        auto tempDir = createTempDir(realStoreDir, "add");
+        delTempDir = std::make_unique<AutoDelete>(tempDir);
+        tempPath = tempDir + "/x";
+
+        restorePath(tempPath, *source);
+
+    } catch (EndOfFile &) {
+        if (!inMemory) throw;
+        /* The NAR fits in memory, so we didn't do restorePath(). */
+    }
+
+    auto sha256 = sha256Sink->finish();
+
+    Hash hash = hashSink ? hashSink->finish().first : sha256.first;
+
+    auto dstPath = makeFixedOutputPath(method, hash, name);
+
+    addTempRoot(dstPath);
+
+    if (repair || !isValidPath(dstPath)) {
+
+        /* The first check above is an optimisation to prevent
+           unnecessary lock acquisition. */
+
+        auto realPath = Store::toRealPath(dstPath);
+
+        PathLocks outputLock({realPath});
+
+        if (repair || !isValidPath(dstPath)) {
+
+            deletePath(realPath);
+
+            autoGC();
+
+            if (inMemory) {
+                /* Restore from the NAR in memory. */
+                StringSource source(nar);
+                restorePath(realPath, source);
+            } else {
+                /* Move the temporary path we restored above. */
+                if (rename(tempPath.c_str(), realPath.c_str()))
+                    throw Error("renaming '%s' to '%s'", tempPath, realPath);
+            }
+
+            canonicalisePathMetaData(realPath, -1); // FIXME: merge into restorePath
+
+            optimisePath(realPath);
+
+            ValidPathInfo info(dstPath);
+            info.narHash = sha256.first;
+            info.narSize = sha256.second;
+            info.ca = FixedOutputHash { .method = method, .hash = hash };
+            registerValidPath(info);
+        }
+
+        outputLock.setDeletion(true);
+    }
+
+    return dstPath;
 }
 
 
@@ -1132,8 +1242,7 @@ StorePath LocalStore::addTextToStore(const string & name, const string & s,
 
     if (repair || !isValidPath(dstPath)) {
 
-        Path realPath = realStoreDir + "/";
-        realPath += dstPath.to_string();
+        auto realPath = Store::toRealPath(dstPath);
 
         PathLocks outputLock({realPath});
 

@@ -24,10 +24,6 @@ std::string makeFixedOutputCA(FileIngestionMethod method, const Hash & hash)
         + hash.to_string(Base32, true);
 }
 
-// FIXME Put this somewhere?
-template<class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
-template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
-
 std::string renderContentAddress(ContentAddress ca) {
     return std::visit(overloaded {
         [](TextHash th) {
@@ -80,6 +76,18 @@ std::optional<ContentAddress> parseContentAddressOpt(std::string_view rawCaOpt) 
 
 std::string renderContentAddress(std::optional<ContentAddress> ca) {
     return ca ? renderContentAddress(*ca) : "";
+}
+
+Hash getContentAddressHash(const ContentAddress & ca)
+{
+    return std::visit(overloaded {
+        [](TextHash th) {
+            return th.hash;
+        },
+        [](FixedOutputHash fsh) {
+            return fsh.hash;
+        }
+    }, ca);
 }
 
 }
