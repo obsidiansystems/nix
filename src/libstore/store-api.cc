@@ -347,6 +347,8 @@ ValidPathInfo Store::addToStoreSlow(std::string_view name, const Path & srcPath,
         ? hashAlgo == htSHA256
           ? narHash
           : hashPath(hashAlgo, srcPath).first
+        : method == FileIngestionMethod::Git
+        ? hashGit(hashAlgo, srcPath).first
         : hashFile(hashAlgo, srcPath);
 
     if (expectedCAHash && expectedCAHash != hash)
