@@ -20,10 +20,9 @@ struct LocalStoreAccessor : public FSAccessor
 
     Path toRealPath(const Path & path)
     {
-        Path storePath = store->toStorePath(path);
-        auto p = store->parseStorePath(storePath);
-        if (!store->isValidPath(p))
-            throw InvalidPath("path '%1%' is not a valid store path", storePath);
+        auto storePath = store->toStorePath(path).first;
+        if (!store->isValidPath(storePath))
+            throw InvalidPath("path '%1%' is not a valid store path", store->printStorePath(storePath));
         return store->getRealStoreDir() + std::string(path, store->storeDir.size());
     }
 

@@ -8,6 +8,7 @@
 #include "derivations.hh"
 #include "url.hh"
 #include "references.hh"
+#include "archive.hh"
 
 #include <future>
 
@@ -21,15 +22,15 @@ bool Store::isInStore(const Path & path) const
 }
 
 
-Path Store::toStorePath(const Path & path) const
+std::pair<StorePath, Path> Store::toStorePath(const Path & path) const
 {
     if (!isInStore(path))
         throw Error("path '%1%' is not in the Nix store", path);
     Path::size_type slash = path.find('/', storeDir.size() + 1);
     if (slash == Path::npos)
-        return path;
+        return {parseStorePath(path), ""};
     else
-        return Path(path, 0, slash);
+        return {parseStorePath(std::string_view(path).substr(0, slash)), path.substr(slash)};
 }
 
 
@@ -42,14 +43,14 @@ Path Store::followLinksToStore(std::string_view _path) const
         path = absPath(target, dirOf(path));
     }
     if (!isInStore(path))
-        throw NotInStore("path '%1%' is not in the Nix store", path);
+        throw BadStorePath("path '%1%' is not in the Nix store", path);
     return path;
 }
 
 
 StorePath Store::followLinksToStorePath(std::string_view path) const
 {
-    return parseStorePath(toStorePath(followLinksToStore(path)));
+    return toStorePath(followLinksToStore(path)).first;
 }
 
 
@@ -333,6 +334,53 @@ StorePath Store::computeStorePathForText(const string & name, const string & s,
 }
 
 
+ValidPathInfo Store::addToStoreSlow(std::string_view name, const Path & srcPath,
+    FileIngestionMethod method, HashType hashAlgo,
+    std::optional<Hash> expectedCAHash)
+{
+    /* FIXME: inefficient: we're reading/hashing 'tmpFile' three
+       times. */
+
+    auto [narHash, narSize] = hashPath(htSHA256, srcPath);
+
+    auto hash = method == FileIngestionMethod::Recursive
+        ? hashAlgo == htSHA256
+          ? narHash
+          : hashPath(hashAlgo, srcPath).first
+        : method == FileIngestionMethod::Git
+        ? hashGit(hashAlgo, srcPath).first
+        : hashFile(hashAlgo, srcPath);
+
+    if (expectedCAHash && expectedCAHash != hash)
+        throw Error("hash mismatch for '%s'", srcPath);
+
+    ValidPathInfo info {
+        *this,
+        StorePathDescriptor {
+            std::string { name },
+            FixedOutputInfo {
+                {
+                    .method = method,
+                    .hash = hash,
+                },
+                {},
+            },
+        },
+    };
+    info.narHash = narHash;
+    info.narSize = narSize;
+
+    if (!isValidPath(info.path)) {
+        auto source = sinkToSource([&](Sink & sink) {
+            dumpPath(srcPath, sink);
+        });
+        addToStore(info, *source);
+    }
+
+    return info;
+}
+
+
 Store::Store(const Params & params)
     : Config(params)
     , state({(size_t) pathInfoCacheSize})
@@ -427,6 +475,15 @@ ref<const ValidPathInfo> Store::queryPathInfo(StorePathOrDesc storePath)
     return promise.get_future().get();
 }
 
+
+static bool goodStorePath(const StorePath & expected, const StorePath & actual)
+{
+    return
+        expected.hashPart() == actual.hashPart()
+        && (expected.name() == Store::MissingName || expected.name() == actual.name());
+}
+
+
 void Store::queryPathInfo(StorePathOrDesc pathOrCa,
     Callback<ref<const ValidPathInfo>> callback) noexcept
 {
@@ -456,7 +513,7 @@ void Store::queryPathInfo(StorePathOrDesc pathOrCa,
                     state_->pathInfoCache.upsert(hashPart,
                         res.first == NarInfoDiskCache::oInvalid ? PathInfoCacheValue{} : PathInfoCacheValue{ .value = res.second });
                     if (res.first == NarInfoDiskCache::oInvalid ||
-                        res.second->path != storePath)
+                        !goodStorePath(storePath, res.second->path))
                         throw InvalidPath("path '%s' is not valid", printStorePath(storePath));
                 }
                 return callback(ref<const ValidPathInfo>(res.second));
@@ -481,7 +538,7 @@ void Store::queryPathInfo(StorePathOrDesc pathOrCa,
                     state_->pathInfoCache.upsert(hashPart, PathInfoCacheValue { .value = info });
                 }
 
-                if (!info || info->path != storePath) {
+                if (!info || !goodStorePath(storePath, info->path)) {
                     stats.narInfoMissing++;
                     throw InvalidPath("path '%s' is not valid", printStorePath(storePath));
                 }
@@ -627,7 +684,7 @@ void Store::pathInfoToJSON(JSONPlaceholder & jsonOut, const StorePathSet & store
                     if (!narInfo->url.empty())
                         jsonPath.attr("url", narInfo->url);
                     if (narInfo->fileHash)
-                        jsonPath.attr("downloadHash", narInfo->fileHash->to_string(Base32, true));
+                        jsonPath.attr("downloadHash", narInfo->fileHash->to_string(hashBase, true));
                     if (narInfo->fileSize)
                         jsonPath.attr("downloadSize", narInfo->fileSize);
                     if (showClosureSize)

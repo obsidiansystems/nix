@@ -79,10 +79,10 @@ struct TunnelLogger : public Logger
         if (ei.level > verbosity) return;
 
         std::stringstream oss;
-        oss << ei;
+        showErrorInfo(oss, ei, false);
 
         StringSink buf;
-        buf << STDERR_NEXT << oss.str() << "\n"; // (fs.s + "\n");
+        buf << STDERR_NEXT << oss.str();
         enqueueMsg(*buf.s);
     }
 
@@ -376,24 +376,27 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
     }
 
     case wopAddToStore: {
-        std::string s, baseName;
+        HashType hashAlgo;
+        std::string baseName;
         FileIngestionMethod method;
         {
             bool fixed;
             uint8_t recursive;
-            from >> baseName >> fixed /* obsolete */ >> recursive >> s;
+            std::string hashAlgoRaw;
+            from >> baseName >> fixed /* obsolete */ >> recursive >> hashAlgoRaw;
             if (recursive > (uint8_t) FileIngestionMethod::Recursive)
                 throw Error("unsupported FileIngestionMethod with value of %i; you may need to upgrade nix-daemon", recursive);
             method = FileIngestionMethod { recursive };
             /* Compatibility hack. */
             if (!fixed) {
-                s = "sha256";
+                hashAlgoRaw = "sha256";
                 method = FileIngestionMethod::Recursive;
             }
+            hashAlgo = parseHashType(hashAlgoRaw);
         }
-        HashType hashAlgo = parseHashType(s);
 
-        TeeSource savedNAR(from);
+        StringSink savedNAR;
+        TeeSource savedNARSource(from, savedNAR);
         RetrieveRegularNARSink savedRegular;
 
         if (method == FileIngestionMethod::Flat)
@@ -403,18 +406,28 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
                a string so that we can pass it to
                addToStoreFromDump(). */
             ParseSink sink; /* null sink; just parse the NAR */
-            parseDump(sink, savedNAR);
+            parseDump(sink, savedNARSource);
         }
 
         logger->startWork();
         if (!savedRegular.regular) throw Error("regular file expected");
 
+        StringSource dumpSource {
+            method == FileIngestionMethod::Recursive ? *savedNAR.s : savedRegular.s
+        };
         auto path = store->addToStoreFromDump(
-            method == FileIngestionMethod::Flat ? savedRegular.s : *savedNAR.data,
+            dumpSource,
             baseName,
-            method,
-            hashAlgo);
+            method == FileIngestionMethod::Git ? FileIngestionMethod::Recursive : method,
+            method == FileIngestionMethod::Git ? htSHA256 : hashAlgo);
         logger->stopWork();
+
+        // ugh... we need a path calculated from the git hash, and unlike with
+        // "flat" it isn't trival to turn a nar into git objects, so we just
+        // re-add to the store.
+        if (method == FileIngestionMethod::Git) {
+            path = store->addToStore(baseName, store->toRealPath(path), method, hashAlgo);
+        }
 
         to << store->printStorePath(path);
         break;
@@ -445,7 +458,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
     case wopImportPaths: {
         logger->startWork();
         TunnelSource source(from, to);
-        auto paths = store->importPaths(source, nullptr,
+        auto paths = store->importPaths(source,
             trusted ? NoCheckSigs : CheckSigs);
         logger->stopWork();
         Strings paths2;
@@ -737,18 +750,18 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         if (GET_PROTOCOL_MINOR(clientVersion) >= 21)
             source = std::make_unique<TunnelSource>(from, to);
         else {
-            TeeSource tee(from);
+            StringSink saved;
+            TeeSource tee { from, saved };
             ParseSink sink;
             parseDump(sink, tee);
-            saved = std::move(*tee.data);
-            source = std::make_unique<StringSource>(saved);
+            source = std::make_unique<StringSource>(std::move(*saved.s));
         }
 
         logger->startWork();
 
         // FIXME: race if addToStore doesn't read source?
         store->addToStore(info, *source, (RepairFlag) repair,
-            dontCheckSigs ? NoCheckSigs : CheckSigs, nullptr);
+            dontCheckSigs ? NoCheckSigs : CheckSigs);
 
         logger->stopWork();
         break;

@@ -167,40 +167,32 @@ struct StringSource : Source
 };
 
 
-/* Adapter class of a Source that saves all data read to `s'. */
-struct TeeSource : Source
+/* A sink that writes all incoming data to two other sinks. */
+struct TeeSink : Sink
 {
-    Source & orig;
-    ref<std::string> data;
-    TeeSource(Source & orig)
-        : orig(orig), data(make_ref<std::string>()) { }
-    size_t read(unsigned char * data, size_t len)
+    Sink & sink1, & sink2;
+    TeeSink(Sink & sink1, Sink & sink2) : sink1(sink1), sink2(sink2) { }
+    virtual void operator () (const unsigned char * data, size_t len)
     {
-        size_t n = orig.read(data, len);
-        this->data->append((const char *) data, n);
-        return n;
+        sink1(data, len);
+        sink2(data, len);
     }
 };
 
-#define MAKE_TEE_SINK(T) \
-    T orig; \
-    ref<std::string> data; \
-    TeeSink(T && orig) \
-        : orig(std::move(orig)), data(make_ref<std::string>()) { } \
-    void operator () (const unsigned char * data, size_t len) { \
-        this->data->append((const char *) data, len); \
-        (*this->orig)(data, len); \
-    } \
-    void operator () (const std::string & s) \
-    { \
-        *data += s; \
-        (*this->orig)(s); \
-    }
 
-template<typename T>
-struct TeeSink : Sink
+/* Adapter class of a Source that saves all data read to a sink. */
+struct TeeSource : Source
 {
-    MAKE_TEE_SINK(T);
+    Source & orig;
+    Sink & sink;
+    TeeSource(Source & orig, Sink & sink)
+        : orig(orig), sink(sink) { }
+    size_t read(unsigned char * data, size_t len)
+    {
+        size_t n = orig.read(data, len);
+        sink(data, n);
+        return n;
+    }
 };
 
 
@@ -264,6 +256,19 @@ struct LambdaSource : Source
     {
         return lambda(data, len);
     }
+};
+
+/* Chain two sources together so after the first is exhausted, the second is
+   used */
+struct ChainSource : Source
+{
+    Source & source1, & source2;
+    bool useSecond = false;
+    ChainSource(Source & s1, Source & s2)
+        : source1(s1), source2(s2)
+    { }
+
+    size_t read(unsigned char * data, size_t len) override;
 };
 
 
@@ -357,6 +362,29 @@ Source & operator >> (Source & in, bool & b)
     b = readNum<uint64_t>(in);
     return in;
 }
+
+
+/* An adapter that converts a std::basic_istream into a source. */
+struct StreamToSourceAdapter : Source
+{
+    std::shared_ptr<std::basic_istream<char>> istream;
+
+    StreamToSourceAdapter(std::shared_ptr<std::basic_istream<char>> istream)
+        : istream(istream)
+    { }
+
+    size_t read(unsigned char * data, size_t len) override
+    {
+        if (!istream->read((char *) data, len)) {
+            if (istream->eof()) {
+                if (istream->gcount() == 0)
+                    throw EndOfFile("end of file");
+            } else
+                throw Error("I/O error in StreamToSourceAdapter");
+        }
+        return istream->gcount();
+    }
+};
 
 
 }
