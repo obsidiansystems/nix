@@ -16,7 +16,7 @@ struct RewritingSink : Sink
 
     std::vector<uint64_t> matches;
 
-    RewritingSink(const std::string & from, const std::string & to, Sink & nextSink);
+    RewritingSink(std::string_view from, std::string_view to, Sink & nextSink);
 
     void operator () (const unsigned char * data, size_t len) override;
 
@@ -28,11 +28,15 @@ struct HashModuloSink : AbstractHashSink
     HashSink hashSink;
     RewritingSink rewritingSink;
 
-    HashModuloSink(HashType ht, const std::string & modulus);
+    HashModuloSink(HashType ht, std::string_view modulus);
 
     void operator () (const unsigned char * data, size_t len) override;
 
     HashResult finish() override;
 };
+
+/* It is quite common for us to be conditionally hashing modulo, so this tiny
+   little helper function is worth writing */
+std::unique_ptr<AbstractHashSink> hashMaybeModulo(HashType ht, std::optional<std::string_view> optModulus);
 
 }

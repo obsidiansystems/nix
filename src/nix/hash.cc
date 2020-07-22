@@ -55,12 +55,8 @@ struct CmdHash : Command
     void run() override
     {
         for (auto path : paths) {
-
-            std::unique_ptr<AbstractHashSink> hashSink;
-            if (modulus)
-                hashSink = std::make_unique<HashModuloSink>(ht, *modulus);
-            else
-                hashSink = std::make_unique<HashSink>(ht);
+            auto temp = !modulus ? std::optional<std::string_view> {} : *modulus;
+            std::unique_ptr<AbstractHashSink> hashSink = hashMaybeModulo(ht, temp);
 
             switch (mode) {
             case FileIngestionMethod::Flat:

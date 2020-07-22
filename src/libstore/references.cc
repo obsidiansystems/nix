@@ -118,7 +118,7 @@ PathSet scanForReferences(const string & path,
 }
 
 
-RewritingSink::RewritingSink(const std::string & from, const std::string & to, Sink & nextSink)
+RewritingSink::RewritingSink(std::string_view from, std::string_view to, Sink & nextSink)
     : from(from), to(to), nextSink(nextSink)
 {
     assert(from.size() == to.size());
@@ -152,7 +152,7 @@ void RewritingSink::flush()
     prev.clear();
 }
 
-HashModuloSink::HashModuloSink(HashType ht, const std::string & modulus)
+HashModuloSink::HashModuloSink(HashType ht, std::string_view modulus)
     : hashSink(ht)
     , rewritingSink(modulus, std::string(modulus.size(), 0), hashSink)
 {
@@ -178,6 +178,12 @@ HashResult HashModuloSink::finish()
 
     auto h = hashSink.finish();
     return {h.first, rewritingSink.pos};
+}
+
+std::unique_ptr<AbstractHashSink> hashMaybeModulo(HashType ht, std::optional<std::string_view> optModulus) {
+    return !optModulus
+        ? static_cast<std::unique_ptr<AbstractHashSink>>(std::make_unique<HashSink>(ht))
+        : std::make_unique<HashModuloSink>(ht, *optModulus);
 }
 
 }

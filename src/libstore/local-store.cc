@@ -995,11 +995,10 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source,
 
             /* While restoring the path from the NAR, compute the hash
                of the NAR. */
-            std::unique_ptr<AbstractHashSink> hashSink;
-            if (!info.ca.has_value() || !info.references.count(info.path))
-                hashSink = std::make_unique<HashSink>(htSHA256);
-            else
-                hashSink = std::make_unique<HashModuloSink>(htSHA256, std::string(info.path.hashPart()));
+            std::unique_ptr<AbstractHashSink> hashSink = hashMaybeModulo(htSHA256,
+                !(info.ca.has_value() && refersToSelf)
+                ? std::optional<std::string_view> {}
+                : info.path.hashPart());
 
             LambdaSource wrapperSource([&](unsigned char * data, size_t len) -> size_t {
                 size_t n = source.read(data, len);
@@ -1307,11 +1306,10 @@ bool LocalStore::verifyStore(bool checkContents, RepairFlag repair)
                 /* Check the content hash (optionally - slow). */
                 printMsg(lvlTalkative, "checking contents of '%s'", printStorePath(i));
 
-                std::unique_ptr<AbstractHashSink> hashSink;
-                if (!info->ca || !info->references.count(info->path))
-                    hashSink = std::make_unique<HashSink>(*info->narHash.type);
-                else
-                    hashSink = std::make_unique<HashModuloSink>(*info->narHash.type, std::string(info->path.hashPart()));
+                std::unique_ptr<AbstractHashSink> hashSink = hashMaybeModulo(*info->narHash.type,
+                    !(info->ca.has_value() && info->references.count(info->path))
+                    ? std::optional<std::string_view> {}
+                    : info->path.hashPart());
 
                 dumpPath(Store::toRealPath(i), *hashSink);
                 auto current = hashSink->finish();
