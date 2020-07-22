@@ -15,7 +15,7 @@ std::optional<StorePath> DerivationOutput::pathOpt(const Store & store, std::str
         },
         [&](DerivationOutputFixed dof) -> std::optional<StorePath> {
             return {
-                store.makeFixedOutputPath(dof.hash.method, dof.hash.hash, drvName)
+                store.makeFixedOutputPath(drvName, FixedOutputInfo { dof.hash, {} })
             };
         },
         [](DerivationOutputFloating dof) -> std::optional<StorePath> {
@@ -166,7 +166,7 @@ static DerivationOutput parseDerivationOutput(const Store & store, std::istrings
                   .output = DerivationOutputFixed {
                       .hash = FixedOutputHash {
                           .method = std::move(method),
-                          .hash = Hash(hash, hashType),
+                          .hash = Hash::parseNonSRIUnprefixed(hash, hashType),
                       },
                   }
                }
@@ -388,6 +388,16 @@ bool isDerivation(const string & fileName)
 }
 
 
+std::string outputPathName(std::string_view drvName, std::string_view outputName) {
+    std::string res { drvName };
+    if (outputName != "out") {
+        res += "-";
+        res += drvName;
+    }
+    return res;
+}
+
+
 DerivationType BasicDerivation::type() const
 {
     std::set<std::string_view> inputAddressedOutputs, fixedCAOutputs, floatingCAOutputs;
@@ -562,7 +572,7 @@ static DerivationOutput readDerivationOutput(Source & in, const Store & store)
                   .output = DerivationOutputFixed {
                       .hash = FixedOutputHash {
                           .method = std::move(method),
-                          .hash = Hash(hash, hashType),
+                          .hash = Hash::parseNonSRIUnprefixed(hash, hashType),
                       },
                   }
                }

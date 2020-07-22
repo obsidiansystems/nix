@@ -9,6 +9,7 @@ struct CmdAddToStore : MixDryRun, StoreCommand
 {
     Path path;
     std::optional<std::string> namePart;
+    FileIngestionMethod ingestionMethod = FileIngestionMethod::Recursive;
 
     CmdAddToStore()
     {
@@ -20,6 +21,13 @@ struct CmdAddToStore : MixDryRun, StoreCommand
             .description = "name component of the store path",
             .labels = {"name"},
             .handler = {&namePart},
+        });
+
+        addFlag({
+            .longName = "flat",
+            .shortName = 0,
+            .description = "add flat file to the Nix store",
+            .handler = {&ingestionMethod, FileIngestionMethod::Flat},
         });
     }
 
@@ -45,13 +53,35 @@ struct CmdAddToStore : MixDryRun, StoreCommand
 
         auto narHash = hashString(htSHA256, *sink.s);
 
-        ValidPathInfo info(store->makeFixedOutputPath(FileIngestionMethod::Recursive, narHash, *namePart));
+        Hash hash { htSHA256 }; // throwaway def to appease C++
+        switch (ingestionMethod) {
+        case FileIngestionMethod::Recursive: {
+            hash = narHash;
+            break;
+        }
+        case FileIngestionMethod::Flat: {
+            HashSink hsink(htSHA256);
+            readFile(path, hsink);
+            hash = hsink.finish().first;
+            break;
+        }
+        }
+
+        ValidPathInfo info {
+            *store,
+            StorePathDescriptor {
+                .name = *namePart,
+                .info = FixedOutputInfo {
+                    {
+                        .method = std::move(ingestionMethod),
+                        .hash = std::move(hash),
+                    },
+                    {},
+                },
+            },
+        };
         info.narHash = narHash;
         info.narSize = sink.s->size();
-        info.ca = std::optional { FixedOutputHash {
-            .method = FileIngestionMethod::Recursive,
-            .hash = info.narHash,
-        } };
 
         if (!dryRun) {
             auto source = StringSource { *sink.s };

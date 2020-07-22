@@ -289,7 +289,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         logger->startWork();
         auto hash = store->queryPathInfo(path)->narHash;
         logger->stopWork();
-        to << hash.to_string(Base16, false);
+        to << hash->to_string(Base16, false);
         break;
     }
 
@@ -301,7 +301,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         logger->startWork();
         StorePathSet paths;
         if (op == wopQueryReferences)
-            for (auto & i : store->queryPathInfo(path)->references)
+            for (auto & i : store->queryPathInfo(path)->referencesPossiblyToSelf())
                 paths.insert(i);
         else if (op == wopQueryReferrers)
             store->queryReferrers(path, paths);
@@ -350,21 +350,24 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
     }
 
     case wopAddToStore: {
-        std::string s, baseName;
+        HashType hashAlgo;
+        std::string baseName;
         FileIngestionMethod method;
         {
-            bool fixed; uint8_t recursive;
-            from >> baseName >> fixed /* obsolete */ >> recursive >> s;
+            bool fixed;
+            uint8_t recursive;
+            std::string hashAlgoRaw;
+            from >> baseName >> fixed /* obsolete */ >> recursive >> hashAlgoRaw;
             if (recursive > (uint8_t) FileIngestionMethod::Recursive)
                 throw Error("unsupported FileIngestionMethod with value of %i; you may need to upgrade nix-daemon", recursive);
             method = FileIngestionMethod { recursive };
             /* Compatibility hack. */
             if (!fixed) {
-                s = "sha256";
+                hashAlgoRaw = "sha256";
                 method = FileIngestionMethod::Recursive;
             }
+            hashAlgo = parseHashType(hashAlgoRaw);
         }
-        HashType hashAlgo = parseHashType(s);
 
         StringSink saved;
         TeeSource savedNARSource(from, saved);
@@ -382,7 +385,9 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         logger->startWork();
         if (!savedRegular.regular) throw Error("regular file expected");
 
-        auto path = store->addToStoreFromDump(*saved.s, baseName, method, hashAlgo);
+        // FIXME: try to stream directly from `from`.
+        StringSource dumpSource { *saved.s };
+        auto path = store->addToStoreFromDump(dumpSource, baseName, method, hashAlgo);
         logger->stopWork();
 
         to << store->printStorePath(path);
@@ -574,7 +579,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         auto path = store->parseStorePath(readString(from));
         logger->startWork();
         SubstitutablePathInfos infos;
-        store->querySubstitutablePathInfos({path}, infos);
+        store->querySubstitutablePathInfos({path}, {}, infos);
         logger->stopWork();
         auto i = infos.find(path);
         if (i == infos.end())
@@ -582,7 +587,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         else {
             to << 1
                << (i->second.deriver ? store->printStorePath(*i->second.deriver) : "");
-            writeStorePaths(*store, to, i->second.references);
+            writeStorePaths(*store, to, i->second.referencesPossiblyToSelf(path));
             to << i->second.downloadSize
                << i->second.narSize;
         }
@@ -590,16 +595,19 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
     }
 
     case wopQuerySubstitutablePathInfos: {
-        auto paths = readStorePaths<StorePathSet>(*store, from);
-        logger->startWork();
         SubstitutablePathInfos infos;
-        store->querySubstitutablePathInfos(paths, infos);
+        auto paths = readStorePaths<StorePathSet>(*store, from);
+        std::set<StorePathDescriptor> caPaths;
+        if (GET_PROTOCOL_MINOR(clientVersion) > 22)
+            caPaths = readStorePathDescriptorSet(*store, from);
+        logger->startWork();
+        store->querySubstitutablePathInfos(paths, caPaths, infos);
         logger->stopWork();
         to << infos.size();
         for (auto & i : infos) {
             to << store->printStorePath(i.first)
                << (i.second.deriver ? store->printStorePath(*i.second.deriver) : "");
-            writeStorePaths(*store, to, i.second.references);
+            writeStorePaths(*store, to, i.second.referencesPossiblyToSelf(i.first));
             to << i.second.downloadSize << i.second.narSize;
         }
         break;
@@ -627,8 +635,8 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
             if (GET_PROTOCOL_MINOR(clientVersion) >= 17)
                 to << 1;
             to << (info->deriver ? store->printStorePath(*info->deriver) : "")
-               << info->narHash.to_string(Base16, false);
-            writeStorePaths(*store, to, info->references);
+               << info->narHash->to_string(Base16, false);
+            writeStorePaths(*store, to, info->referencesPossiblyToSelf());
             to << info->registrationTime << info->narSize;
             if (GET_PROTOCOL_MINOR(clientVersion) >= 16) {
                 to << info->ultimate
@@ -687,8 +695,8 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         auto deriver = readString(from);
         if (deriver != "")
             info.deriver = store->parseStorePath(deriver);
-        info.narHash = Hash(readString(from), htSHA256);
-        info.references = readStorePaths<StorePathSet>(*store, from);
+        info.narHash = Hash::parseAny(readString(from), htSHA256);
+        info.setReferencesPossiblyToSelf(readStorePaths<StorePathSet>(*store, from));
         from >> info.registrationTime >> info.narSize >> info.ultimate;
         info.sigs = readStrings<StringSet>(from);
         info.ca = parseContentAddressOpt(readString(from));

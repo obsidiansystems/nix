@@ -134,6 +134,8 @@ Derivation readDerivation(const Store & store, const Path & drvPath, std::string
 // FIXME: remove
 bool isDerivation(const string & fileName);
 
+std::string outputPathName(std::string_view drvName, std::string_view outputName);
+
 // known CA drv's output hashes, current just for fixed-output derivations
 // whose output hashes are always known since they are fixed up-front.
 typedef std::map<std::string, Hash> CaOutputHashes;

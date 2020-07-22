@@ -38,14 +38,14 @@ void Store::exportPath(const StorePath & path, Sink & sink)
        filesystem corruption from spreading to other machines.
        Don't complain if the stored hash is zero (unknown). */
     Hash hash = hashSink.currentHash().first;
-    if (hash != info->narHash && info->narHash != Hash(*info->narHash.type))
+    if (hash != info->narHash && info->narHash != Hash(info->narHash->type))
         throw Error("hash of path '%s' has changed from '%s' to '%s'!",
-            printStorePath(path), info->narHash.to_string(Base32, true), hash.to_string(Base32, true));
+            printStorePath(path), info->narHash->to_string(Base32, true), hash.to_string(Base32, true));
 
     teeSink
         << exportMagic
         << printStorePath(path);
-    writeStorePaths(*this, teeSink, info->references);
+    writeStorePaths(*this, teeSink, info->referencesPossiblyToSelf());
     teeSink
         << (info->deriver ? printStorePath(*info->deriver) : "")
         << 0;
@@ -73,7 +73,7 @@ StorePaths Store::importPaths(Source & source, CheckSigsFlag checkSigs)
 
         //Activity act(*logger, lvlInfo, format("importing path '%s'") % info.path);
 
-        info.references = readStorePaths<StorePathSet>(*this, source);
+        info.setReferencesPossiblyToSelf(readStorePaths<StorePathSet>(*this, source));
 
         auto deriver = readString(source);
         if (deriver != "")
