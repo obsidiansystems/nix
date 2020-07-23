@@ -43,11 +43,7 @@ struct DerivationOutput
     std::optional<HashType> hashAlgoOpt(const Store & store) const;
     std::optional<StorePath> pathOpt(const Store & store, std::string_view drvName) const;
     /* DEPRECATED: Remove after CA drvs are fully implemented */
-    StorePath path(const Store & store, std::string_view drvName) const {
-        auto p = pathOpt(store, drvName);
-        if (!p) throw UnimplementedError("floating content-addressed derivations are not yet implemented");
-        return *p;
-    }
+    StorePath path(const Store & store, std::string_view drvName) const;
 };
 
 typedef std::map<string, DerivationOutput> DerivationOutputs;

@@ -24,6 +24,13 @@ std::optional<StorePath> DerivationOutput::pathOpt(const Store & store, std::str
     }, output);
 }
 
+/* DEPRECATED: Remove after CA drvs are fully implemented */
+StorePath DerivationOutput::path(const Store & store, std::string_view drvName) const {
+    auto p = pathOpt(store, drvName);
+    if (!p) throw UnimplementedError("floating content-addressed derivations are not yet implemented");
+    return *p;
+}
+
 bool derivationIsCA(DerivationType dt) {
     switch (dt) {
     case DerivationType::Regular: return false;
