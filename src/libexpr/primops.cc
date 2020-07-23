@@ -44,16 +44,6 @@ void EvalState::realiseContext(const PathSet & context)
             throw InvalidPathError(store->printStorePath(ctx));
         if (!outputName.empty() && ctx.isDerivation()) {
             drvs.push_back(StorePathWithOutputs{ctx, {outputName}});
-
-            /* Add the output of this derivation to the allowed
-               paths. */
-            if (allowedPaths) {
-                auto drv = store->derivationFromPath(ctx);
-                DerivationOutputs::iterator i = drv.outputs.find(outputName);
-                if (i == drv.outputs.end())
-                    throw Error("derivation '%s' does not have an output named '%s'", ctxS, outputName);
-                allowedPaths->insert(store->printStorePath(i->second.path(*store, drv.name)));
-            }
         }
     }
 
@@ -69,8 +59,38 @@ void EvalState::realiseContext(const PathSet & context)
     store->queryMissing(drvs, willBuild, willSubstitute, unknown, downloadSize, narSize);
 
     store->buildPaths(drvs);
+
+    /* Add the output of this derivations to the allowed
+       paths. */
+    if (allowedPaths) {
+        for (auto & [drvPath, outputs] : drvs) {
+            auto outputPaths = store->queryDerivationOutputMap(drvPath);
+            for (auto & outputName : outputs) {
+                if (outputPaths.count(outputName) == 0)
+                    throw Error("derivation '%s' does not have an output named '%s'",
+                            store->printStorePath(drvPath), outputName);
+                allowedPaths->insert(store->printStorePath(outputPaths.at(outputName)));
+            }
+        }
+    }
 }
 
+static void mkOutputString(EvalState & state, Value & v,
+    const Path & drvPathS, const BasicDerivation & drv,
+    std::pair<string, DerivationOutput> o)
+{
+    auto optOutputPath = o.second.pathOpt(*state.store, drv.name);
+    mkString(
+        *state.allocAttr(v, state.symbols.create(o.first)),
+        optOutputPath
+            ? state.store->printStorePath(*optOutputPath)
+            /* Downstream we would substitute this for an actual path once
+               we build the floating CA derivation */
+            /* FIXME: we need to depend on the basic derivation, not
+               derivation */
+            : drvPathS + "!" + o.first,
+        {"!" + o.first + "!" + drvPathS});
+}
 
 /* Load and evaluate an expression from path specified by the
    argument. */
@@ -114,8 +134,7 @@ static void prim_scopedImport(EvalState & state, const Pos & pos, Value * * args
         unsigned int outputs_index = 0;
 
         for (const auto & o : drv.outputs) {
-            v2 = state.allocAttr(w, state.symbols.create(o.first));
-            mkString(*v2, state.store->printStorePath(o.second.path(*state.store, drv.name)), {"!" + o.first + "!" + path});
+            mkOutputString(state, w, path, drv, o);
             outputsVal->listElems()[outputs_index] = state.allocValue();
             mkString(*(outputsVal->listElems()[outputs_index++]), o.first);
         }
@@ -860,19 +879,8 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
 
     state.mkAttrs(v, 1 + drv.outputs.size());
     mkString(*state.allocAttr(v, state.sDrvPath), drvPathS, {"=" + drvPathS});
-    for (auto & i : drv.outputs) {
-        auto optOutputPath = i.second.pathOpt(*state.store, drv.name);
-        mkString(
-            *state.allocAttr(v, state.symbols.create(i.first)),
-            optOutputPath
-                ? state.store->printStorePath(*optOutputPath)
-                /* Downstream we would substitute this for an actual path once
-                   we build the floating CA derivation */
-                /* FIXME: we need to depend on the basic derivation, not
-                   derivation */
-                : drvPathS + "!" + i.first,
-            {"!" + i.first + "!" + drvPathS});
-    }
+    for (auto & i : drv.outputs)
+        mkOutputString(state, v, drvPathS, drv, i);
     v.attrs->sort();
 }
 

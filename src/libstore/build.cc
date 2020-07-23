@@ -2761,7 +2761,11 @@ struct RestrictedStore : public LocalFSStore
     { }
 
     OutputPathMap queryDerivationOutputMap(const StorePath & path) override
-    { throw Error("queryDerivationOutputMap"); }
+    {
+        if (!goal.isAllowed(path))
+            throw InvalidPath("cannot query output map for unknown path '%s' in recursive Nix", printStorePath(path));
+        return next->queryDerivationOutputMap(path);
+    }
 
     std::optional<StorePath> queryPathFromHashPart(const std::string & hashPart) override
     { throw Error("queryPathFromHashPart"); }
