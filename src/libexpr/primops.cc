@@ -850,15 +850,28 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
 
     /* Optimisation, but required in read-only mode! because in that
        case we don't actually write store derivations, so we can't
-       read them later. */
-    drvHashes.insert_or_assign(drvPath,
-        hashDerivationModulo(*state.store, Derivation(drv), false));
+       read them later.
+
+       However, we don't bother doing this for floating CA derivations because
+       their "hash modulo" is indeterminate until built. */
+    if (drv.type() != DerivationType::CAFloating)
+        drvHashes.insert_or_assign(drvPath,
+            hashDerivationModulo(*state.store, Derivation(drv), false));
 
     state.mkAttrs(v, 1 + drv.outputs.size());
     mkString(*state.allocAttr(v, state.sDrvPath), drvPathS, {"=" + drvPathS});
     for (auto & i : drv.outputs) {
-        mkString(*state.allocAttr(v, state.symbols.create(i.first)),
-            state.store->printStorePath(i.second.path(*state.store, drv.name)), {"!" + i.first + "!" + drvPathS});
+        auto optOutputPath = i.second.pathOpt(*state.store, drv.name);
+        mkString(
+            *state.allocAttr(v, state.symbols.create(i.first)),
+            optOutputPath
+                ? state.store->printStorePath(*optOutputPath)
+                /* Downstream we would substitute this for an actual path once
+                   we build the floating CA derivation */
+                /* FIXME: we need to depend on the basic derivation, not
+                   derivation */
+                : drvPathS + "!" + i.first,
+            {"!" + i.first + "!" + drvPathS});
     }
     v.attrs->sort();
 }

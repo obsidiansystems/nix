@@ -24,6 +24,7 @@ struct DerivationOutputInputAddressed
 struct DerivationOutputFixed
 {
     FixedOutputHash hash; /* hash used for expected hash computation */
+    StorePath path(const Store & store, std::string_view drvName, std::string_view outputName) const;
 };
 
 struct DerivationOutputFloating

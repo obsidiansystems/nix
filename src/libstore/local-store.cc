@@ -578,7 +578,7 @@ void LocalStore::checkDerivationOutputs(const StorePath & drvPath, const Derivat
                 envHasRightPath(path, i.first);
             },
             [&](DerivationOutputFloating _) {
-                throw UnimplementedError("Floating CA output derivations are not yet implemented");
+                /* Nothing to check */
             },
         }, i.second.output);
     }
@@ -619,11 +619,15 @@ uint64_t LocalStore::addValidPath(State & state,
         if (checkOutputs) checkDerivationOutputs(info.path, drv);
 
         for (auto & i : drv.outputs) {
-            state.stmtAddDerivationOutput.use()
-                (id)
-                (i.first)
-                (printStorePath(i.second.path(*this, drv.name)))
-                .exec();
+            /* Floating CA derivations have indeterminate output paths until
+               they are built, so don't register anything in that case */
+            auto optPath = i.second.pathOpt(*this, drv.name);
+            if (optPath)
+                state.stmtAddDerivationOutput.use()
+                   (id)
+                   (i.first)
+                   (printStorePath(*optPath))
+                   .exec();
         }
     }
 
