@@ -86,7 +86,7 @@ string DrvInfo::queryOutPath() const
             outPath = state->coerceToPath(*i->pos, *i->value, context);
     }
     if (!outPath)
-        throw Error("CA derivations are not yet supported");
+        throw UnimplementedError("CA derivations are not yet supported");
     return *outPath;
 }
 

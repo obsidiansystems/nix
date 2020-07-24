@@ -217,7 +217,7 @@ void Store::queryMissing(const std::vector<StorePathWithOutputs> & targets,
             for (auto & j : drv->outputs) {
                 auto storePathOpt = j.second.pathOpt(*this, drv->name);
                 if (!storePathOpt)
-                    throw Error("CA derivations are not yet supported by query missing");
+                    throw UnimplementedError("CA derivations are not yet supported by query missing");
                 if (wantOutput(j.first, path.outputs)
                     && !isValidPath(StorePathOrDesc { *storePathOpt }))
                     invalid.insert(printStorePath(*storePathOpt));
