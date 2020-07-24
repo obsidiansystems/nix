@@ -76,20 +76,20 @@ void EvalState::realiseContext(const PathSet & context)
 }
 
 static void mkOutputString(EvalState & state, Value & v,
-    const Path & drvPathS, const BasicDerivation & drv,
+    const StorePath & drvPath, const BasicDerivation & drv,
     std::pair<string, DerivationOutput> o)
 {
     auto optOutputPath = o.second.pathOpt(*state.store, drv.name);
     mkString(
         *state.allocAttr(v, state.symbols.create(o.first)),
-        optOutputPath
-            ? state.store->printStorePath(*optOutputPath)
+        state.store->printStorePath(optOutputPath
+            ? *optOutputPath
             /* Downstream we would substitute this for an actual path once
                we build the floating CA derivation */
             /* FIXME: we need to depend on the basic derivation, not
                derivation */
-            : drvPathS + "!" + o.first,
-        {"!" + o.first + "!" + drvPathS});
+            : downstreamPlaceholder(*state.store, drvPath, o.first)),
+        {"!" + o.first + "!" + state.store->printStorePath(drvPath)});
 }
 
 /* Load and evaluate an expression from path specified by the
@@ -134,7 +134,7 @@ static void prim_scopedImport(EvalState & state, const Pos & pos, Value * * args
         unsigned int outputs_index = 0;
 
         for (const auto & o : drv.outputs) {
-            mkOutputString(state, w, path, drv, o);
+            mkOutputString(state, w, storePath, drv, o);
             outputsVal->listElems()[outputs_index] = state.allocValue();
             mkString(*(outputsVal->listElems()[outputs_index++]), o.first);
         }
@@ -880,7 +880,7 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
     state.mkAttrs(v, 1 + drv.outputs.size());
     mkString(*state.allocAttr(v, state.sDrvPath), drvPathS, {"=" + drvPathS});
     for (auto & i : drv.outputs)
-        mkOutputString(state, v, drvPathS, drv, i);
+        mkOutputString(state, v, drvPath, drv, i);
     v.attrs->sort();
 }
 

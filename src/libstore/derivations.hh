@@ -178,4 +178,6 @@ void writeDerivation(Sink & out, const Store & store, const BasicDerivation & dr
 
 std::string hashPlaceholder(const std::string & outputName);
 
+StorePath downstreamPlaceholder(const Store & store, const StorePath & drvPath, std::string_view outputName);
+
 }
