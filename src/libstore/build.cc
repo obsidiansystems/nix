@@ -2760,7 +2760,7 @@ struct RestrictedStore : public LocalFSStore
     void queryReferrers(const StorePath & path, StorePathSet & referrers) override
     { }
 
-    OutputPathMap queryDerivationOutputMap(const StorePath & path) override
+    std::map<std::string, std::optional<StorePath>> queryDerivationOutputMap(const StorePath & path) override
     {
         if (!goal.isAllowed(path))
             throw InvalidPath("cannot query output map for unknown path '%s' in recursive Nix", printStorePath(path));
@@ -4995,7 +4995,7 @@ void Worker::waitForInput()
         std::vector<unsigned char> buffer(4096);
         for (auto & k : fds2) {
             if (pollStatus.at(fdToPollStatus.at(k)).revents) {
-                ssize_t rd = read(k, buffer.data(), buffer.size());
+                ssize_t rd = ::read(k, buffer.data(), buffer.size());
                 // FIXME: is there a cleaner way to handle pt close
                 // than EIO? Is this even standard?
                 if (rd == 0 || (rd == -1 && errno == EIO)) {
