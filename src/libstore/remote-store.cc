@@ -71,6 +71,7 @@ void write(const Store & store, Sink & out, const StorePath & storePath)
 	out << path;
 }
 
+
 /* TODO: Separate these store impls into different files, give them better names */
 RemoteStore::RemoteStore(const Params & params)
     : Store(params)
