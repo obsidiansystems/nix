@@ -1004,6 +1004,10 @@ private:
     /* Forcibly kill the child process, if any. */
     void killChild();
 
+    /* Map a path to another (reproducably) so we can avoid overwriting outputs
+       that already exist. */
+    StorePath makeFallbackPath(const StorePath & path);
+
     void addHashRewrite(const StorePath & path);
 
     void repairClosure();
@@ -1047,7 +1051,7 @@ DerivationGoal::DerivationGoal(const StorePath & drvPath, const BasicDerivation 
 {
     this->drv = std::make_unique<BasicDerivation>(BasicDerivation(drv));
     state = &DerivationGoal::haveDerivation;
-    name = fmt("building of %s", worker.store.showPaths(drv.outputPaths(worker.store)));
+    name = fmt("building of %s", StorePathWithOutputs { drvPath, drv.outputNames() }.to_string(worker.store));
     trace("created");
 
     mcExpectedBuilds = std::make_unique<MaintainCount<uint64_t>>(worker.expectedBuilds);
@@ -1179,10 +1183,19 @@ void DerivationGoal::haveDerivation()
 {
     trace("have derivation");
 
+    if (drv->type() == DerivationType::CAFloating) {
+        settings.requireExperimentalFeature("ca-derivations");
+        throw UnimplementedError("ca-derivations isn't implemented yet");
+    }
+
     retrySubstitution = false;
 
-    for (auto & i : drv->outputs)
-        worker.store.addTempRoot(i.second.path(worker.store, drv->name));
+    /* Temporarily root output paths that are known a priori building */
+    for (auto & i : drv->outputs) {
+        auto optOutputPath = i.second.pathOpt(worker.store, drv->name);
+        if (optOutputPath)
+            worker.store.addTempRoot(*optOutputPath);
+    }
 
     /* Check what outputs paths are not already valid. */
     auto invalidOutputs = checkPathValidity(false, buildMode == bmRepair);
@@ -1194,11 +1207,6 @@ void DerivationGoal::haveDerivation()
     }
 
     parsedDrv = std::make_unique<ParsedDerivation>(drvPath, *drv);
-
-    if (drv->type() == DerivationType::CAFloating) {
-        settings.requireExperimentalFeature("ca-derivations");
-        throw UnimplementedError("ca-derivations isn't implemented yet");
-    }
 
 
     /* We are first going to try to create the invalid output paths
@@ -1373,20 +1381,19 @@ void DerivationGoal::inputsRealised()
 
     /* First, the input derivations. */
     if (useDerivation)
-        for (auto & i : dynamic_cast<Derivation *>(drv.get())->inputDrvs) {
+        for (auto & [drvPath, wantedOutputs] : dynamic_cast<Derivation *>(drv.get())->inputDrvs) {
             /* Add the relevant output closures of the input derivation
                `i' as input paths.  Only add the closures of output paths
                that are specified as inputs. */
-            assert(worker.store.isValidPath(i.first));
-            Derivation inDrv = worker.store.derivationFromPath(i.first);
-            for (auto & j : i.second) {
-                auto k = inDrv.outputs.find(j);
-                if (k != inDrv.outputs.end())
-                    worker.store.computeFSClosure(k->second.path(worker.store, inDrv.name), inputPaths);
+            assert(worker.store.isValidPath(drvPath));
+            auto outputs = worker.store.queryDerivationOutputMapAssumeTotal(drvPath);
+            for (auto & j : wantedOutputs) {
+                if (outputs.count(j) > 0)
+                    worker.store.computeFSClosure(outputs.at(j), inputPaths);
                 else
                     throw Error(
                         "derivation '%s' requires non-existent output '%s' from input derivation '%s'",
-                        worker.store.printStorePath(drvPath), j, worker.store.printStorePath(i.first));
+                        worker.store.printStorePath(drvPath), j, worker.store.printStorePath(drvPath));
             }
         }
 
@@ -1429,14 +1436,20 @@ void DerivationGoal::tryToBuild()
 {
     trace("trying to build");
 
-    /* Obtain locks on all output paths.  The locks are automatically
-       released when we exit this function or Nix crashes.  If we
-       can't acquire the lock, then continue; hopefully some other
-       goal can start a build, and if not, the main loop will sleep a
-       few seconds and then retry this goal. */
+    /* Obtain locks on all output paths, if the paths are known a priori.
+
+       The locks are automatically released when we exit this function or Nix
+       crashes.  If we can't acquire the lock, then continue; hopefully some
+       other goal can start a build, and if not, the main loop will sleep a few
+       seconds and then retry this goal. */
     PathSet lockFiles;
-    for (auto & outPath : drv->outputPaths(worker.store))
-        lockFiles.insert(worker.store.Store::toRealPath(outPath));
+    /* FIXME: Should lock something like the drv itself so we don't build same
+       CA drv concurrently */
+    for (auto & i : drv->outputs) {
+        auto optPath = i.second.pathOpt(worker.store, drv->name);
+        if (optPath)
+            lockFiles.insert(worker.store.Store::toRealPath(*optPath));
+    }
 
     if (!outputLocks.lockPaths(lockFiles, "", false)) {
         if (!actLock)
@@ -1923,8 +1936,16 @@ StorePathSet DerivationGoal::exportReferences(const StorePathSet & storePaths)
     for (auto & j : paths2) {
         if (j.isDerivation()) {
             Derivation drv = worker.store.derivationFromPath(j);
-            for (auto & k : drv.outputs)
-                worker.store.computeFSClosure(k.second.path(worker.store, drv.name), paths);
+            for (auto & k : drv.outputs) {
+                auto optPath = k.second.pathOpt(worker.store, drv.name);
+                if (!optPath)
+                    /* FIXME: I am confused why we are calling
+                       `computeFSClosure` on the output path, rather than
+                       derivation itself. That doesn't seem right to me, so I
+                       won't try to implemented this for CA derivations. */
+                    throw UnimplementedError("export references including CA derivations (themselves) is not yet implemented");
+                worker.store.computeFSClosure(*optPath, paths);
+            }
         }
     }
 
@@ -2018,8 +2039,13 @@ void DerivationGoal::startBuilder()
     chownToBuilder(tmpDir);
 
     /* Substitute output placeholders with the actual output paths. */
-    for (auto & output : drv->outputs)
-        inputRewrites[hashPlaceholder(output.first)] = worker.store.printStorePath(output.second.path(worker.store, drv->name));
+    for (auto & output : drv->outputs) {
+        auto optPath = output.second.pathOpt(worker.store, drv->name);
+        if (!optPath)
+            throw UnimplementedError("Randomized output dirs for building CA derivations not yet implemented");
+        auto path = *optPath;
+        inputRewrites[hashPlaceholder(output.first)] = worker.store.printStorePath(path);
+    }
 
     /* Construct the environment passed to the builder. */
     initEnv();
@@ -2203,8 +2229,14 @@ void DerivationGoal::startBuilder()
            rebuilding a path that is in settings.dirsInChroot
            (typically the dependencies of /bin/sh).  Throw them
            out. */
-        for (auto & i : drv->outputs)
-            dirsInChroot.erase(worker.store.printStorePath(i.second.path(worker.store, drv->name)));
+        for (auto & i : drv->outputs) {
+            /* If the name isn't known a prior (i.e. floating content-addressed
+               derivation), the temporary location we use should be fresh and
+               never in the sandbox in the first place. */
+            auto optPath = i.second.pathOpt(worker.store, drv->name);
+            if (optPath)
+                dirsInChroot.erase(worker.store.printStorePath(*optPath));
+        }
 
 #elif __APPLE__
         /* We don't really have any parent prep work to do (yet?)
@@ -2616,8 +2648,11 @@ void DerivationGoal::writeStructuredAttrs()
 
     /* Add an "outputs" object containing the output paths. */
     nlohmann::json outputs;
-    for (auto & i : drv->outputs)
-        outputs[i.first] = rewriteStrings(worker.store.printStorePath(i.second.path(worker.store, drv->name)), inputRewrites);
+    for (auto & i : drv->outputs) {
+        /* The placeholder must have a rewrite, so we use it to cover both the
+           cases where we know or don't know the output path ahead of time. */
+        outputs[i.first] = rewriteStrings(hashPlaceholder(i.first), inputRewrites);
+    }
     json["outputs"] = outputs;
 
     /* Handle exportReferencesGraph. */
@@ -3623,12 +3658,17 @@ void DerivationGoal::registerOutputs()
 {
     /* When using a build hook, the build hook can register the output
        as valid (by doing `nix-store --import').  If so we don't have
-       to do anything here. */
+       to do anything here.
+
+       We can only early return when the outputs are known a priori. For
+       floating content-addressed derivations this isn't the case.
+     */
     if (hook) {
         bool allValid = true;
         for (auto & i : drv->outputs) {
-            StorePath storePath = i.second.path(worker.store, drv->name);
-            if (!worker.store.isValidPath( StorePathOrDesc { storePath } )) allValid = false;
+            auto optStorePath = i.second.pathOpt(worker.store, drv->name);
+            if (!optStorePath || !worker.store.isValidPath( StorePathOrDesc { *optStorePath } ))
+                allValid = false;
         }
         if (allValid) return;
     }
@@ -3657,16 +3697,22 @@ void DerivationGoal::registerOutputs()
        output path to determine what other paths it references.  Also make all
        output paths read-only. */
     for (auto & i : drv->outputs) {
-        auto path = worker.store.printStorePath(i.second.path(worker.store, drv->name));
+        auto optStorePath = i.second.pathOpt(worker.store, drv->name);
+        if (!optStorePath)
+            throw UnimplementedError("CA derivations not yet implemented");
+        auto storePath = *optStorePath;
+        auto path = worker.store.printStorePath(storePath);
+
+        /* Don't register if already valid */
         if (!missingPaths.count(i.second.path(worker.store, drv->name))) continue;
 
         Path actualPath = path;
         if (needsHashRewrite()) {
-            auto r = redirectedOutputs.find(i.second.path(worker.store, drv->name));
+            auto r = redirectedOutputs.find(storePath);
             if (r != redirectedOutputs.end()) {
                 auto redirected = worker.store.Store::toRealPath(r->second);
                 if (buildMode == bmRepair
-                    && redirectedBadOutputs.count(i.second.path(worker.store, drv->name))
+                    && redirectedBadOutputs.count(storePath)
                     && pathExists(redirected))
                     replaceValidPath(path, redirected);
                 if (buildMode == bmCheck)
@@ -4270,13 +4316,17 @@ StorePathSet DerivationGoal::checkPathValidity(bool returnValid, bool checkHash)
     return result;
 }
 
+StorePath DerivationGoal::makeFallbackPath(const StorePath & path)
+{
+    return worker.store.makeStorePath(
+        "rewrite:" + std::string(drvPath.to_string()) + ":" + std::string(path.to_string()),
+        Hash(htSHA256), path.name());
+}
 
 void DerivationGoal::addHashRewrite(const StorePath & path)
 {
     auto h1 = std::string(((std::string_view) path.to_string()).substr(0, 32));
-    auto p = worker.store.makeStorePath(
-        "rewrite:" + std::string(drvPath.to_string()) + ":" + std::string(path.to_string()),
-        Hash(htSHA256), path.name());
+    auto p = makeFallbackPath(path);
     auto h2 = std::string(((std::string_view) p.to_string()).substr(0, 32));
     deletePath(worker.store.printStorePath(p));
     inputRewrites[h1] = h2;
