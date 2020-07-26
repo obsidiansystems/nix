@@ -1301,12 +1301,15 @@ void DerivationGoal::repairClosure()
     StorePathSet outputClosure;
     for (auto & i : drv->outputs) {
         if (!wantOutput(i.first, wantedOutputs)) continue;
-        worker.store.computeFSClosure(i.second.path(worker.store, drv->name), outputClosure);
+        auto path = i.second.pathOpt(worker.store, drv->name).value();
+        worker.store.computeFSClosure(path, outputClosure);
     }
 
     /* Filter out our own outputs (which we have already checked). */
-    for (auto & i : drv->outputs)
-        outputClosure.erase(i.second.path(worker.store, drv->name));
+    for (auto & i : drv->outputs) {
+        auto path = i.second.pathOpt(worker.store, drv->name).value();
+        outputClosure.erase(path);
+    }
 
     /* Get all dependencies of this derivation so that we know which
        derivation is responsible for which path in the output
@@ -1317,8 +1320,10 @@ void DerivationGoal::repairClosure()
     for (auto & i : inputClosure)
         if (i.isDerivation()) {
             Derivation drv = worker.store.derivationFromPath(i);
-            for (auto & j : drv.outputs)
-                outputsToDrv.insert_or_assign(j.second.path(worker.store, drv.name), i);
+            for (auto & j : drv.outputs) {
+                auto path = j.second.pathOpt(worker.store, drv.name).value();
+                outputsToDrv.insert_or_assign(path, i);
+            }
         }
 
     /* Check each path (slow!). */
@@ -1476,17 +1481,20 @@ void DerivationGoal::tryToBuild()
         return;
     }
 
-    missingPaths = drv->outputPaths(worker.store);
+    for (auto & i : drv->outputs) {
+        auto storePath = i.second.pathOpt(worker.store, drv->name).value();
+        missingPaths.insert(storePath);
+    }
     if (buildMode != bmCheck)
         for (auto & i : validPaths) missingPaths.erase(i);
 
     /* If any of the outputs already exist but are not valid, delete
        them. */
     for (auto & i : drv->outputs) {
-        StorePath storePath = i.second.path(worker.store, drv->name);
+        StorePath storePath = i.second.pathOpt(worker.store, drv->name).value();
         if (worker.store.isValidPath(StorePathOrDesc { storePath })) continue;
-        debug("removing invalid path '%s'", worker.store.printStorePath(i.second.path(worker.store, drv->name)));
-        deletePath(worker.store.Store::toRealPath(i.second.path(worker.store, drv->name)));
+        debug("removing invalid path '%s'", worker.store.printStorePath(storePath));
+        deletePath(worker.store.Store::toRealPath(storePath));
     }
 
     /* Don't do a remote build if the derivation has the attribute
@@ -1709,7 +1717,11 @@ void DerivationGoal::buildDone()
                 fmt("running post-build-hook '%s'", settings.postBuildHook),
                 Logger::Fields{worker.store.printStorePath(drvPath)});
             PushActivity pact(act.id);
-            auto outputPaths = drv->outputPaths(worker.store);
+            StorePathSet outputPaths;
+            for (auto & i : drv->outputs) {
+                auto storePath = i.second.pathOpt(worker.store, drv->name).value();
+                outputPaths.insert(storePath);
+            }
             std::map<std::string, std::string> hookEnvironment = getEnv();
 
             hookEnvironment.emplace("DRV_PATH", worker.store.printStorePath(drvPath));
@@ -2861,8 +2873,10 @@ struct RestrictedStore : public LocalFSStore
                     throw InvalidPath("cannot build unknown path '%s' in recursive Nix", printStorePath(path.path));
                 auto drv = derivationFromPath(path.path);
                 for (auto & output : drv.outputs)
-                    if (wantOutput(output.first, path.outputs))
-                        newPaths.insert(output.second.path(*this, drv.name));
+                    if (wantOutput(output.first, path.outputs)) {
+                        auto path = output.second.pathOpt(*this, drv.name).value();
+                        newPaths.insert(path);
+                    }
             } else if (!goal.isAllowed(path.path))
                 throw InvalidPath("cannot build unknown path '%s' in recursive Nix", printStorePath(path.path));
         }
@@ -3623,8 +3637,10 @@ StorePathSet parseReferenceSpecifiers(Store & store, const BasicDerivation & drv
     for (auto & i : paths) {
         if (store.isStorePath(i))
             result.insert(store.parseStorePath(i));
-        else if (drv.outputs.count(i))
-            result.insert(drv.outputs.find(i)->second.path(store, drv.name));
+        else if (drv.outputs.count(i)) {
+            auto path = drv.outputs.find(i)->second.pathOpt(store, drv.name).value();
+            result.insert(path);
+        }
         else throw BuildError("derivation contains an illegal reference specifier '%s'", i);
     }
     return result;
@@ -3690,7 +3706,10 @@ void DerivationGoal::registerOutputs()
        Nix calls. */
     StorePathSet referenceablePaths;
     for (auto & p : inputPaths) referenceablePaths.insert(p);
-    for (auto & i : drv->outputs) referenceablePaths.insert(i.second.path(worker.store, drv->name));
+    for (auto & i : drv->outputs) {
+        auto path = i.second.pathOpt(worker.store, drv->name).value();
+        referenceablePaths.insert(path);
+    }
     for (auto & p : addedPaths) referenceablePaths.insert(p);
 
     /* Check whether the output paths were created, and grep each
@@ -3704,7 +3723,7 @@ void DerivationGoal::registerOutputs()
         auto path = worker.store.printStorePath(storePath);
 
         /* Don't register if already valid */
-        if (!missingPaths.count(i.second.path(worker.store, drv->name))) continue;
+        if (!missingPaths.count(storePath)) continue;
 
         Path actualPath = path;
         if (needsHashRewrite()) {
@@ -3881,7 +3900,7 @@ void DerivationGoal::registerOutputs()
         auto references = worker.store.parseStorePathSet(pathSetAndHash.first);
         HashResult hash = pathSetAndHash.second;
 
-        auto outputStorePath = i.second.path(worker.store, drv->name);
+        auto outputStorePath = i.second.pathOpt(worker.store, drv->name).value();
         if (buildMode == bmCheck) {
             if (!worker.store.isValidPath(outputStorePath)) continue;
             ValidPathInfo info(*worker.store.queryPathInfo(outputStorePath));
@@ -3989,7 +4008,8 @@ void DerivationGoal::registerOutputs()
     /* If this is the first round of several, then move the output out of the way. */
     if (nrRounds > 1 && curRound == 1 && curRound < nrRounds && keepPreviousRound) {
         for (auto & i : drv->outputs) {
-            auto path = worker.store.printStorePath(i.second.path(worker.store, drv->name));
+            auto storePath = i.second.pathOpt(worker.store, drv->name).value();
+            auto path = worker.store.printStorePath(storePath);
             Path prev = path + checkSuffix;
             deletePath(prev);
             Path dst = path + checkSuffix;
@@ -4007,7 +4027,8 @@ void DerivationGoal::registerOutputs()
        if the result was not determistic? */
     if (curRound == nrRounds) {
         for (auto & i : drv->outputs) {
-            Path prev = worker.store.printStorePath(i.second.path(worker.store, drv->name)) + checkSuffix;
+            auto storePath = i.second.pathOpt(worker.store, drv->name).value();
+            Path prev = worker.store.printStorePath(storePath) + checkSuffix;
             deletePath(prev);
         }
     }
@@ -4307,11 +4328,11 @@ StorePathSet DerivationGoal::checkPathValidity(bool returnValid, bool checkHash)
     StorePathSet result;
     for (auto & i : drv->outputs) {
         if (!wantOutput(i.first, wantedOutputs)) continue;
-        auto outputPath = i.second.path(worker.store, drv->name);
+        auto outputPath = i.second.pathOpt(worker.store, drv->name).value();
         bool good =
             worker.store.isValidPath(outputPath) &&
-            (!checkHash || worker.pathContentsGood(i.second.path(worker.store, drv->name)));
-        if (good == returnValid) result.insert(i.second.path(worker.store, drv->name));
+            (!checkHash || worker.pathContentsGood(outputPath));
+        if (good == returnValid) result.insert(outputPath);
     }
     return result;
 }

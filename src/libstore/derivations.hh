@@ -43,8 +43,6 @@ struct DerivationOutput
     > output;
     std::optional<HashType> hashAlgoOpt(const Store & store) const;
     std::optional<StorePath> pathOpt(const Store & store, std::string_view drvName) const;
-    /* DEPRECATED: Remove after CA drvs are fully implemented */
-    StorePath path(const Store & store, std::string_view drvName) const;
 };
 
 typedef std::map<string, DerivationOutput> DerivationOutputs;
@@ -91,9 +89,6 @@ struct BasicDerivation
 
     /* Return true iff this is a fixed-output derivation. */
     DerivationType type() const;
-
-    /* Return the output paths of a derivation. */
-    StorePathSet outputPaths(const Store & store) const;
 
     /* Return the output names of a derivation. */
     StringSet outputNames() const;

@@ -25,13 +25,6 @@ std::optional<StorePath> DerivationOutput::pathOpt(const Store & store, std::str
     }, output);
 }
 
-/* DEPRECATED: Remove after CA drvs are fully implemented */
-StorePath DerivationOutput::path(const Store & store, std::string_view drvName) const {
-    auto p = pathOpt(store, drvName);
-    if (!p) throw UnimplementedError("floating content-addressed derivations are not yet implemented");
-    return *p;
-}
-
 StorePath DerivationOutputFixed::path(const Store & store, std::string_view drvName, std::string_view outputName) const {
     return store.makeFixedOutputPath(
         outputPathName(drvName, outputName),
@@ -561,14 +554,6 @@ bool wantOutput(const string & output, const std::set<string> & wanted)
     return wanted.empty() || wanted.find(output) != wanted.end();
 }
 
-
-StorePathSet BasicDerivation::outputPaths(const Store & store) const
-{
-    StorePathSet paths;
-    for (auto & i : outputs)
-        paths.insert(i.second.path(store, name));
-    return paths;
-}
 
 static DerivationOutput readDerivationOutput(Source & in, const Store & store)
 {
