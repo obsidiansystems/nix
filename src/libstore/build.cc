@@ -975,7 +975,8 @@ private:
     void getDerivation();
     void loadDerivation();
     void haveDerivation();
-    void outputsSubstituted();
+    void outputsSubstitutionTried();
+    void gaveUpOnSubstitution();
     void closureRepaired();
     void inputsRealised();
     void tryToBuild();
@@ -1051,8 +1052,6 @@ private:
     /* Map a path to another (reproducably) so we can avoid overwriting outputs
        that already exist. */
     StorePath makeFallbackPath(const StorePath & path);
-
-    void addHashRewrite(const StorePath & path);
 
     void repairClosure();
 
@@ -1267,21 +1266,24 @@ void DerivationGoal::haveDerivation()
     if (settings.useSubstitutes && parsedDrv->substitutesAllowed())
         for (auto & [_, status] : initialOutputs) {
             if (!status.wanted) continue;
-            if (!status.known)
-                throw UnimplementedError("Do not know how to query for unknown floating CA drv output yet");
+            if (!status.known) {
+                warn("Do not know how to query for unknown floating CA drv output yet");
+                /* Nothing to wait for; tail call */
+                return DerivationGoal::gaveUpOnSubstitution();
+            }
             auto optCA = getDerivationCA(*drv);
             auto p = optCA ? StorePathOrDesc { *optCA } : status.known->path;
             addWaitee(worker.makeSubstitutionGoal(p, buildMode == bmRepair ? Repair : NoRepair));
         }
 
     if (waitees.empty()) /* to prevent hang (no wake-up event) */
-        outputsSubstituted();
+        outputsSubstitutionTried();
     else
-        state = &DerivationGoal::outputsSubstituted;
+        state = &DerivationGoal::outputsSubstitutionTried;
 }
 
 
-void DerivationGoal::outputsSubstituted()
+void DerivationGoal::outputsSubstitutionTried()
 {
     trace("all outputs substituted (maybe)");
 
@@ -1325,6 +1327,12 @@ void DerivationGoal::outputsSubstituted()
         throw Error("some outputs of '%s' are not valid, so checking is not possible",
             worker.store.printStorePath(drvPath));
 
+    /* Nothing to wait for; tail call */
+    gaveUpOnSubstitution();
+}
+
+void DerivationGoal::gaveUpOnSubstitution()
+{
     /* Otherwise, at least one of the output paths could not be
        produced using a substitute.  So we have to build instead. */
 
@@ -2117,8 +2125,10 @@ void DerivationGoal::startBuilder()
 
     chownToBuilder(tmpDir);
 
-    if (needsHashRewrite()) {
-        /* We're not doing a chroot build, but we have some valid
+    for (auto & [outputName, status] : initialOutputs) {
+        /* Set scratch path we'll actually use during the build.
+
+           If we're not doing a chroot build, but we have some valid
            output paths.  Since we can't just overwrite or delete
            them, we have to do hash rewriting: i.e. in the
            environment/arguments passed to the build, we replace the
@@ -2127,30 +2137,55 @@ void DerivationGoal::startBuilder()
            corresponding to the valid outputs, and rewrite the
            contents of the new outputs to replace the dummy strings
            with the actual hashes. */
-        for (auto & [_, status] : initialOutputs) {
-            if (!status.known) continue;
-            if (!status.known->valid) continue;
-            /* If we're not repairing, then we deleted the
-               corrupt outputs in advance, so there is no need to rewrite
-               them. */
-            if (buildMode != bmRepair && !*status.known->valid) continue;
-            addHashRewrite(status.known->path);
-            /* A non-removed corrupted path needs to be stored here, too */
-            if (!*status.known->valid)
-                redirectedBadOutputs.insert(status.known->path);
-        }
-    }
+        auto scratchPath =
+            !status.known
+                ? throw UnimplementedError("Randomized output dirs for building CA derivations not yet implemented")
+            : !needsHashRewrite()
+                /* Can always use original path in sandbox */
+                ? status.known->path
+            : !status.known->valid
+                /* If path doesn't yet exist can just use it */
+                ? status.known->path
+            : buildMode != bmRepair && !*status.known->valid
+                /* If we aren't repairing we'll delete a corrupted path, so we
+                   can use original path */
+                ? status.known->path
+            :   /* If we are repairing or the path is totally valid, we'll need
+                   to use a temporary path */
+                makeFallbackPath(status.known->path);
+        scratchOutputs.insert_or_assign(outputName, scratchPath);
 
-    /* Substitute output placeholders with the actual output paths. */
-    for (auto & output : drv->outputs) {
-        auto optPath = output.second.pathOpt(worker.store, drv->name);
-        if (!optPath)
-            throw UnimplementedError("Randomized output dirs for building CA derivations not yet implemented");
-        auto path = *optPath;
-        // FIXME this is wrong:
-        scratchOutputs.insert_or_assign(output.first, path);
-        finalOutputs.insert_or_assign(output.first, path);
-        inputRewrites[hashPlaceholder(output.first)] = worker.store.printStorePath(path);
+        /* A non-removed corrupted path needs to be stored here, too */
+        if (buildMode == bmRepair && !*status.known->valid)
+            redirectedBadOutputs.insert(status.known->path);
+
+        /* Substitute output placeholders with the scratch output paths.
+           We'll use during the build. */
+        inputRewrites[hashPlaceholder(outputName)] = worker.store.printStorePath(scratchPath);
+
+        /* Additional tasks if we know the final path a priori. */
+        if (!status.known) continue;
+        auto finalPath = status.known->path;
+
+        /* Store the final path */
+        finalOutputs.insert_or_assign(outputName, finalPath);
+
+        /* Additional tasks if the final and scratch are both known and
+           differ. */
+        if (finalPath == scratchPath) continue;
+
+        /* Ensure scratch scratch path is ours to use */
+        deletePath(worker.store.printStorePath(scratchPath));
+
+        /* Rewrite and unrewrite paths */
+        {
+            std::string h1 { finalPath.hashPart() };
+            std::string h2 { scratchPath.hashPart() };
+            inputRewrites[h1] = h2;
+            outputRewrites[h2] = h1;
+        }
+
+        redirectedOutputs.insert_or_assign(std::move(finalPath), std::move(scratchPath));
     }
 
     /* Construct the environment passed to the builder. */
@@ -4424,22 +4459,12 @@ void DerivationGoal::checkPathValidity()
     }
 }
 
+
 StorePath DerivationGoal::makeFallbackPath(const StorePath & path)
 {
     return worker.store.makeStorePath(
         "rewrite:" + std::string(drvPath.to_string()) + ":" + std::string(path.to_string()),
         Hash(htSHA256), path.name());
-}
-
-void DerivationGoal::addHashRewrite(const StorePath & path)
-{
-    auto h1 = std::string(((std::string_view) path.to_string()).substr(0, 32));
-    auto p = makeFallbackPath(path);
-    auto h2 = std::string(((std::string_view) p.to_string()).substr(0, 32));
-    deletePath(worker.store.printStorePath(p));
-    inputRewrites[h1] = h2;
-    outputRewrites[h2] = h1;
-    redirectedOutputs.insert_or_assign(path, std::move(p));
 }
 
 
