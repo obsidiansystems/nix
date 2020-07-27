@@ -25,11 +25,13 @@ std::optional<StorePath> DerivationOutput::pathOpt(const Store & store, std::str
     }, output);
 }
 
+
 StorePath DerivationOutputFixed::path(const Store & store, std::string_view drvName, std::string_view outputName) const {
     return store.makeFixedOutputPath(
         outputPathName(drvName, outputName),
         FixedOutputInfo { hash, {} });
 }
+
 
 bool derivationIsCA(DerivationType dt) {
     switch (dt) {
@@ -173,6 +175,7 @@ static DerivationOutput parseDerivationOutput(const Store & store, std::istrings
                 },
             };
         } else {
+            settings.requireExperimentalFeature("ca-derivations");
             assert(pathS == "");
             return DerivationOutput {
                 .output = DerivationOutputFloating {
@@ -579,6 +582,7 @@ static DerivationOutput readDerivationOutput(Source & in, const Store & store)
                 },
             };
         } else {
+            settings.requireExperimentalFeature("ca-derivations");
             assert(pathS == "");
             return DerivationOutput {
                 .output = DerivationOutputFloating {
@@ -681,8 +685,8 @@ std::string hashPlaceholder(const std::string & outputName)
 
 StorePath downstreamPlaceholder(const Store & store, const StorePath & drvPath, std::string_view outputName)
 {
-	auto drvNameWithExtension = drvPath.name();
-	auto drvName = drvNameWithExtension.substr(0, drvNameWithExtension.size() - 4);
+    auto drvNameWithExtension = drvPath.name();
+    auto drvName = drvNameWithExtension.substr(0, drvNameWithExtension.size() - 4);
     return store.makeStorePath(
         "downstream-placeholder:" + std::string { drvPath.name() } + ":" + std::string { outputName },
         "compressed:" + std::string { drvPath.hashPart() },
