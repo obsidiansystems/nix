@@ -147,10 +147,13 @@ struct BuildResult
 
 /* Useful for many store functions which can take advantage of content
    addresses or work with regular store paths */
+typedef std::variant<StorePath, StorePathDescriptor> OwnedStorePathOrDesc;
 typedef std::variant<
     std::reference_wrapper<const StorePath>,
     std::reference_wrapper<const StorePathDescriptor>
 > StorePathOrDesc;
+
+StorePathOrDesc borrowStorePathOrDesc(const OwnedStorePathOrDesc &);
 
 class Store : public std::enable_shared_from_this<Store>, public Config
 {
