@@ -3959,11 +3959,11 @@ void DerivationGoal::registerOutputs()
                     std::string { requiredFinalPath.hashPart() };
             rewriteOutput();
             auto narHashAndSize = hashPath(htSHA256, actualPath);
-            ValidPathInfo newInfo { requiredFinalPath };
-            newInfo.narHash = narHashAndSize.first;
-            newInfo.narSize = narHashAndSize.second;
-            newInfo.setReferencesPossiblyToSelf(rewriteRefs());
-            return newInfo;
+            ValidPathInfo newInfo0 { requiredFinalPath };
+            newInfo0.narHash = narHashAndSize.first;
+            newInfo0.narSize = narHashAndSize.second;
+            newInfo0.setReferencesPossiblyToSelf(rewriteRefs());
+            return newInfo0;
         } else {
             /* content-addressed case */
             DerivationOutputFloating outputHash = std::visit(overloaded {
@@ -4025,15 +4025,15 @@ void DerivationGoal::registerOutputs()
                     std::move(referencesRewritten),
                 },
             };
+
+            ValidPathInfo newInfo0 { worker.store, std::move(desc) };
             {
                 HashModuloSink narSink { htSHA256, oldHashPart };
                 dumpPath(actualPath, narSink);
                 auto narHashAndSize = narSink.finish();
-                newInfo.narHash = narHashAndSize.first;
-                newInfo.narSize = narHashAndSize.second;
+                newInfo0.narHash = narHashAndSize.first;
+                newInfo0.narSize = narHashAndSize.second;
             }
-
-            ValidPathInfo newInfo { worker.store, std::move(desc) };
 
             /* Check wanted hash if output is fixed */
             if (auto p = std::get_if<DerivationOutputFixed>(&output.output)) {
@@ -4050,7 +4050,7 @@ void DerivationGoal::registerOutputs()
                 }
             }
 
-            return newInfo;
+            return newInfo0;
         }}();
 
         /* Calculate where we'll move the output files. In the checking case we
