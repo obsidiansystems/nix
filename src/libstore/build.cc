@@ -3961,6 +3961,17 @@ void DerivationGoal::registerOutputs()
                         referencesRewritten.references.erase(scratchPath);
                         referencesRewritten.hasSelfReference = true;
                     }
+                    /* FIXME optimize and deduplicate with addToStore */
+                    std::string oldHashPart { scratchPath.hashPart() };
+                    HashModuloSink caSink { outputHash.hashType, oldHashPart };
+                    switch (outputHash.method) {
+                    case FileIngestionMethod::Recursive:
+                        dumpPath(actualPath, caSink);
+                        break;
+                    case FileIngestionMethod::Recursive:
+                        readFile(actualPath, caSink);
+                        break;
+                    }
                     // FIXME calculate nar hash and CA hash with
                     // HashModuloSync, to fill in the missing identifers below.
                     auto ca = StorePathDescriptor {
@@ -3968,11 +3979,18 @@ void DerivationGoal::registerOutputs()
                         .info = {
                             {
                                 .method = outputHash.method,
-                                .hash = h2
+                                .hash = narSink.finsh().first,
                             },
                             referencesRewritten,
                         },
                     };
+                    {
+                        HashModuloSink narSink { htSHA256, oldHashPart };
+                        dumpPath(actualPath, narSink);
+                        auto narHashAndSize narSink.finsh();
+                        newInfo.narHash = narHashAndSize.first;
+                        newInfo.narSize = narHashAndSize.second;
+                    }
                     ValidPathInfo newInfo { worker.store, StorePathDescriptor { *ca } };
                     return newInfo;
                 }
