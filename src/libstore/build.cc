@@ -3805,7 +3805,7 @@ void DerivationGoal::registerOutputs()
     std::map<std::string, std::variant<StorePath, StorePathSet>> outputReferences;
     std::map<std::string, struct stat> outputStats;
     for (auto & [outputName, _] : drv->outputs) {
-        auto actualPath = rootPrefix + worker.store.printStorePath(scratchOutputs.at(rootPrefix));
+        auto actualPath = rootPrefix + worker.store.printStorePath(scratchOutputs.at(outputName));
 
         outputsToSort.insert(outputName);
 
