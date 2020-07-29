@@ -3932,18 +3932,26 @@ void DerivationGoal::registerOutputs()
             }
         };
 
-        auto rewriteRefs = [&]() -> StorePathSet {
-            StorePathSet res;
+        auto rewriteRefs = [&]() -> PathReferences<StorePath> {
+            /* In the CA case, we need the rewritten refs to calculate the
+               final path, therefore we look for a *non-rewritten
+               self-reference, and use a bool rather try to solve the
+               computationally intractable fixed point. */
+            PathReferences<StorePath> res {
+                .hasSelfReference = false,
+            };
             for (auto & r : references) {
                 auto name = r.name();
                 auto origHash = std::string { r.hashPart() };
-                if (outputRewrites.count(origHash) == 0)
-                    res.insert(r);
+                if (r == scratchPath)
+                    res.hasSelfReference = true;
+                else if (outputRewrites.count(origHash) == 0)
+                    res.references.insert(r);
                 else {
                     std::string newRef = outputRewrites.at(origHash);
                     newRef += '-';
                     newRef += name;
-                    res.insert(StorePath { newRef });
+                    res.references.insert(StorePath { newRef });
                 }
             }
             return res;
@@ -3955,14 +3963,15 @@ void DerivationGoal::registerOutputs()
             /* Preemtively add rewrite rule for final hash, as that is
                what the NAR hash will use rather than normalized-self references */
             if (scratchPath != requiredFinalPath)
-                outputRewrites[std::string { scratchPath.hashPart() }] =
-                    std::string { requiredFinalPath.hashPart() };
+                outputRewrites.insert_or_assign(
+                    std::string { scratchPath.hashPart() },
+                    std::string { requiredFinalPath.hashPart() });
             rewriteOutput();
             auto narHashAndSize = hashPath(htSHA256, actualPath);
             ValidPathInfo newInfo0 { requiredFinalPath };
             newInfo0.narHash = narHashAndSize.first;
             newInfo0.narSize = narHashAndSize.second;
-            newInfo0.setReferencesPossiblyToSelf(rewriteRefs());
+            static_cast<PathReferences<StorePath> &>(newInfo0) = rewriteRefs();
             return newInfo0;
         } else {
             /* content-addressed case */
@@ -3991,18 +4000,6 @@ void DerivationGoal::registerOutputs()
                         actualPath);
             }
             rewriteOutput();
-            PathReferences<StorePath> referencesRewritten {
-                .references = rewriteRefs(),
-                .hasSelfReference = false,
-            };
-            /* We need the rewritten refs to calculate the final path,
-               therefore we look for a *non-rewritten self-reference,
-               and use a bool rather try to solve the computationally
-               intractable fixed point. */
-            if (referencesRewritten.references.count(scratchPath) > 0) {
-                referencesRewritten.references.erase(scratchPath);
-                referencesRewritten.hasSelfReference = true;
-            }
             /* FIXME optimize and deduplicate with addToStore */
             std::string oldHashPart { scratchPath.hashPart() };
             HashModuloSink caSink { outputHash.hashType, oldHashPart };
@@ -4022,7 +4019,7 @@ void DerivationGoal::registerOutputs()
                         .method = outputHash.method,
                         .hash = got,
                     },
-                    std::move(referencesRewritten),
+                    rewriteRefs(),
                 },
             };
 
