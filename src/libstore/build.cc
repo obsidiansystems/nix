@@ -4092,7 +4092,7 @@ void DerivationGoal::registerOutputs()
 
         /* Get rid of all weird permissions.  This also checks that
            all files are owned by the build user, if applicable. */
-        canonicalisePathMetaData(actualPath,
+        canonicalisePathMetaData(currentDestPath,
             buildUser && !rewritten ? buildUser->getUID() : -1, inodesSeen);
 
         if (buildMode == bmCheck) {
