@@ -763,7 +763,7 @@ private:
 
     /* The remainder is state held during the build. */
 
-    /* Locks on the output paths. */
+    /* Locks on (fixed) output paths. */
     PathLocks outputLocks;
 
     /* All input paths (that is, the union of FS closures of the
@@ -1569,7 +1569,6 @@ void DerivationGoal::tryToBuild()
        supported for local builds. */
     bool buildLocally = buildMode != bmNormal || parsedDrv->willBuildLocally();
 
-    /* Is the build hook willing to accept this job? */
     if (!buildLocally) {
         switch (tryBuildHook()) {
             case rpAccept:
@@ -4065,13 +4064,13 @@ void DerivationGoal::registerOutputs()
         /* Lock final output path, if not already locked. This happens with
            floating CA derivations and hash-mismatching fixed-output
            derivations. */
+        PathLocks dynamicOutputLock;
+        auto optFixedPath = output.pathOpt(worker.store, drv->name);
+        if (!optFixedPath ||
+            worker.store.toRealPath(worker.store.printStorePath(*optFixedPath)) != finalDestPath)
         {
-            auto optFixedPath = output.pathOpt(worker.store, drv->name);
-            if (optFixedPath &&
-                worker.store.toRealPath(worker.store.printStorePath(*optFixedPath)) != finalDestPath)
-            {
-                outputLocks.lockPaths({finalDestPath});
-            }
+            assert(newInfo.ca);
+            dynamicOutputLock.lockPaths({finalDestPath});
         }
 
         /* Move files, if needed */
@@ -4080,7 +4079,7 @@ void DerivationGoal::registerOutputs()
                 /* Path already exists, need to replace it */
                 replaceValidPath(currentDestPath, actualPath);
             } else if (finalDestPath == currentDestPath && worker.store.isValidPath(newInfo.path)) {
-                /* Path already exists because CA path produced by somethign
+                /* Path already exists because CA path produced by something
                    else. No moving needed. */
                 assert(newInfo.ca);
             } else {
@@ -4145,9 +4144,16 @@ void DerivationGoal::registerOutputs()
         newInfo.deriver = drvPath;
         newInfo.ultimate = true;
         worker.store.signPathInfo(newInfo);
-        infos.emplace(outputName, std::move(newInfo));
 
         finish(newInfo.path);
+
+        /* If it's a CA path, register it right away. This is necessary if it
+           isn't statically known so that we can safely unlock the path before
+           the next iteration */
+        if (newInfo.ca)
+            worker.store.registerValidPaths({newInfo});
+
+        infos.emplace(outputName, std::move(newInfo));
     }
 
     if (buildMode == bmCheck) return;
