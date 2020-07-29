@@ -876,7 +876,7 @@ private:
          ends up being. (Note that fixed outputs derivations that produce the
          "wrong" output still install that data under its true content-address.)
      */
-    std::map<std::string, OwnedStorePathOrDesc> finalOutputs;
+    std::map<std::string, StorePath> finalOutputs;
 
     BuildMode buildMode;
 
@@ -1788,8 +1788,7 @@ void DerivationGoal::buildDone()
             PushActivity pact(act.id);
             StorePathSet outputPaths;
             for (auto i : drv->outputs) {
-                outputPaths.insert(worker.store.bakeCaIfNeeded(
-                    borrowStorePathOrDesc(finalOutputs.at(i.first))));
+                outputPaths.insert(finalOutputs.at(i.first));
             }
             std::map<std::string, std::string> hookEnvironment = getEnv();
 
@@ -3901,11 +3900,11 @@ void DerivationGoal::registerOutputs()
 
         bool rewritten = false;
         std::optional<StorePathSet> referencesOpt = std::visit(overloaded {
-            [&](StorePath skippedFinalPath) {
+            [&](StorePath skippedFinalPath) -> std::optional<StorePathSet> {
                 finish(skippedFinalPath);
-                return std::optional<StorePathSet> {};
+                return std::nullopt;
             },
-            [&](StorePathSet references) {
+            [&](StorePathSet references) -> std::optional<StorePathSet> {
                 return references;
             },
         }, outputReferences.at(outputName));
@@ -3937,11 +3936,16 @@ void DerivationGoal::registerOutputs()
         auto rewriteRefs = [&]() -> StorePathSet {
             StorePathSet res;
             for (auto & r : references) {
-                /* FIXME quadratic */
-                /* FIXME need to get underlying string to rewrite,
-                   assert rewrite did not change length, or just
-                   convert from StorePath <-> std::string. */
-                res.insert(rewriteStrings(r, outputRewrites));
+                auto name = r.name();
+                auto origHash = std::string { r.hashPart() };
+                if (outputRewrites.count(origHash) == 0)
+                    res.insert(r);
+                else {
+                    std::string newRef = outputRewrites.at(origHash);
+                    newRef += '-';
+                    newRef += name;
+                    res.insert(StorePath { newRef });
+                }
             }
             return res;
         };
@@ -4011,16 +4015,15 @@ void DerivationGoal::registerOutputs()
                 readFile(actualPath, caSink);
                 break;
             }
-            // FIXME calculate nar hash and CA hash with
-            // HashModuloSync, to fill in the missing identifers below.
-            auto ca = StorePathDescriptor {
+            auto got = caSink.finish().first;
+            StorePathDescriptor desc {
                 .name = outputPathName(drv->name, outputName),
-                .info = {
+                .info = FixedOutputInfo {
                     {
                         .method = outputHash.method,
-                        .hash = caSink.finish().first,
+                        .hash = got,
                     },
-                    referencesRewritten,
+                    std::move(referencesRewritten),
                 },
             };
             {
@@ -4030,20 +4033,21 @@ void DerivationGoal::registerOutputs()
                 newInfo.narHash = narHashAndSize.first;
                 newInfo.narSize = narHashAndSize.second;
             }
-            ValidPathInfo newInfo { worker.store, StorePathDescriptor { *ca } };
 
-            /* Check expected hash if output is fixed */
+            ValidPathInfo newInfo { worker.store, std::move(desc) };
+
+            /* Check wanted hash if output is fixed */
             if (auto p = std::get_if<DerivationOutputFixed>(&output.output)) {
-                Hash & expected = p->hash.hash;
-                if (expected != ca.getContentAddressHash()) {
+                Hash & wanted = p->hash.hash;
+                if (wanted != got) {
                     /* Throw an error after registering the path as
                        valid. */
                     worker.hashMismatch = true;
                     delayedException = std::make_exception_ptr(
                         BuildError("hash mismatch in fixed-output derivation '%s':\n  wanted: %s\n  got:    %s",
                             worker.store.printStorePath(drvPath),
-                            expected.to_string(SRI, true),
-                            ca.getContentAddressHash().to_string(SRI, true)));
+                            wanted.to_string(SRI, true),
+                            got.to_string(SRI, true)));
                 }
             }
 
@@ -4186,8 +4190,8 @@ void DerivationGoal::registerOutputs()
 
     /* If this is the first round of several, then move the output out of the way. */
     if (nrRounds > 1 && curRound == 1 && curRound < nrRounds && keepPreviousRound) {
-        for (auto & i : drv->outputs) {
-            auto path = worker.store.printStorePath(finalOutputs.at(i.first));
+        for (auto & [_, outputStorePath] : finalOutputs) {
+            auto path = worker.store.printStorePath(outputStorePath);
             Path prev = path + checkSuffix;
             deletePath(prev);
             Path dst = path + checkSuffix;
@@ -4204,8 +4208,8 @@ void DerivationGoal::registerOutputs()
     /* Remove the .check directories if we're done. FIXME: keep them
        if the result was not determistic? */
     if (curRound == nrRounds) {
-        for (auto & i : drv->outputs) {
-            Path prev = worker.store.printStorePath(finalOutputs.at(i.first)) + checkSuffix;
+        for (auto & [_, outputStorePath] : finalOutputs) {
+            Path prev = worker.store.printStorePath(outputStorePath) + checkSuffix;
             deletePath(prev);
         }
     }
@@ -4298,7 +4302,7 @@ void DerivationGoal::checkOutputs(const std::map<Path, ValidPathInfo> & outputs)
                 for (auto & i : *value) {
                     if (worker.store.isStorePath(i))
                         spec.insert(worker.store.parseStorePath(i));
-                    else if (drv->outputs.count(i))
+                    else if (finalOutputs.count(i))
                         spec.insert(finalOutputs.at(i));
                     else throw BuildError("derivation contains an illegal reference specifier '%s'", i);
                 }
