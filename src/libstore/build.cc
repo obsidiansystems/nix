@@ -28,6 +28,7 @@
 #include <regex>
 #include <queue>
 #include <climits>
+#include <filesystem>
 
 #include <sys/time.h>
 #include <sys/wait.h>
@@ -3791,9 +3792,11 @@ void DerivationGoal::registerOutputs()
 
     /* FIXME `needsHashRewrite` should probably be removed and we get to the
        real reason why we aren't using the chroot dir */
-    auto rootPrefix = useChroot && !needsHashRewrite()
-        ? chrootRootDir
-        : "";
+    auto toRealPathChroot = [&](const Path & p) -> Path {
+        return useChroot && !needsHashRewrite()
+            ? chrootRootDir + p
+            : worker.store.toRealPath(p);
+    };
 
     /* Check whether the output paths were created, and make all
        output paths read-only.  Then get the references of each output (that we
@@ -3804,7 +3807,7 @@ void DerivationGoal::registerOutputs()
     std::map<std::string, std::variant<StorePath, StorePathSet>> outputReferences;
     std::map<std::string, struct stat> outputStats;
     for (auto & [outputName, _] : drv->outputs) {
-        auto actualPath = rootPrefix + worker.store.printStorePath(scratchOutputs.at(outputName));
+        auto actualPath = toRealPathChroot(worker.store.printStorePath(scratchOutputs.at(outputName)));
 
         outputsToSort.insert(outputName);
 
@@ -3887,7 +3890,7 @@ void DerivationGoal::registerOutputs()
     for (auto & outputName : sortedOutputNames) {
         auto output = drv->outputs.at(outputName);
         auto & scratchPath = scratchOutputs.at(outputName);
-        auto actualPath = rootPrefix + worker.store.printStorePath(scratchPath);
+        auto actualPath = toRealPathChroot(worker.store.printStorePath(scratchOutputs.at(outputName)));
 
         auto finish = [&](StorePath finalStorePath) {
             /* Store the final path */
@@ -4033,6 +4036,7 @@ void DerivationGoal::registerOutputs()
                 newInfo0.narHash = narHashAndSize.first;
                 newInfo0.narSize = narHashAndSize.second;
             }
+            assert(newInfo0.ca);
 
             /* Check wanted hash if output is fixed */
             if (auto p = std::get_if<DerivationOutputFixed>(&output.output)) {
@@ -4049,6 +4053,7 @@ void DerivationGoal::registerOutputs()
                 }
             }
 
+            assert(newInfo0.ca);
             return newInfo0;
         }}();
 
@@ -4057,7 +4062,7 @@ void DerivationGoal::registerOutputs()
            their usual "final destination" */
         auto finalDestPath = worker.store.printStorePath(newInfo.path);
         auto currentDestPath = buildMode == bmCheck
-            ? actualPath
+            ? worker.store.printStorePath(scratchPath)
             : finalDestPath;
 
         /* Lock final output path, if not already locked. This happens with
@@ -4066,22 +4071,25 @@ void DerivationGoal::registerOutputs()
         PathLocks dynamicOutputLock;
         auto optFixedPath = output.pathOpt(worker.store, drv->name);
         if (!optFixedPath ||
-            worker.store.toRealPath(worker.store.printStorePath(*optFixedPath)) != finalDestPath)
+            worker.store.printStorePath(*optFixedPath) != finalDestPath)
         {
             assert(newInfo.ca);
-            dynamicOutputLock.lockPaths({finalDestPath});
+            dynamicOutputLock.lockPaths({worker.store.toRealPath(finalDestPath)});
         }
 
         /* Move files, if needed */
-        if (currentDestPath != actualPath) {
+        if (worker.store.toRealPath(currentDestPath) != actualPath) {
             if (buildMode == bmRepair) {
                 /* Path already exists, need to replace it */
-                replaceValidPath(currentDestPath, actualPath);
+                replaceValidPath(worker.store.toRealPath(currentDestPath), actualPath);
             } else if (finalDestPath == currentDestPath && worker.store.isValidPath(newInfo.path)) {
                 /* Path already exists because CA path produced by something
                    else. No moving needed. */
                 assert(newInfo.ca);
             } else {
+                std::filesystem::permissions(actualPath.c_str(),
+                    std::filesystem::perms::owner_write,
+                    std::filesystem::perm_options::add);
                 if (rename(
                         actualPath.c_str(),
                         worker.store.toRealPath(currentDestPath).c_str()) == -1)
@@ -4091,7 +4099,7 @@ void DerivationGoal::registerOutputs()
 
         /* Get rid of all weird permissions.  This also checks that
            all files are owned by the build user, if applicable. */
-        canonicalisePathMetaData(currentDestPath,
+        canonicalisePathMetaData(worker.store.toRealPath(currentDestPath),
             buildUser && !rewritten ? buildUser->getUID() : -1, inodesSeen);
 
         if (buildMode == bmCheck) {
