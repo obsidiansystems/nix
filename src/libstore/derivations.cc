@@ -404,7 +404,7 @@ std::string outputPathName(std::string_view drvName, std::string_view outputName
     std::string res { drvName };
     if (outputName != "out") {
         res += "-";
-        res += drvName;
+        res += outputName;
     }
     return res;
 }
