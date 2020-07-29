@@ -3872,13 +3872,12 @@ void DerivationGoal::registerOutputs()
 
     for (auto & outputName : sortedOutputNames) {
         auto & scratchPath = scratchOutputs.at(outputName);
+        auto actualPath = rootPrefix + scratchPath;
 
-           bool rewritten = false;
+        bool rewritten = false;
         ValidPathInfo newInfo = std::visit(overloaded {
             [&](StorePath skippedFinalPath) return skippedFinalPath,
             [&](StorePathSet references) {
-                auto actualPath = rootPrefix + scratchPath;
-
                 auto rewriteOutput = [&]() {
                     /* Apply hash rewriting if necessary. */
                     if (!outputRewrites.empty()) {
@@ -3992,10 +3991,66 @@ void DerivationGoal::registerOutputs()
                         newInfo.narSize = narHashAndSize.second;
                     }
                     ValidPathInfo newInfo { worker.store, StorePathDescriptor { *ca } };
+
+                    /* Check expected hash if output is fixed */
+                    if (auto p = std::get_if<DerivationOutputFixed>(& i.second.output)) {
+                        Hash & expected = p->hash.hash;
+                        if (expected != ca.getContentAddressHash()) {
+                            /* Throw an error after registering the path as
+                               valid. */
+                            worker.hashMismatch = true;
+                            delayedException = std::make_exception_ptr(
+                                BuildError("hash mismatch in fixed-output derivation '%s':\n  wanted: %s\n  got:    %s",
+                                    worker.store.printStorePath(dest),
+                                    h.to_string(SRI, true),
+                                    h2.to_string(SRI, true)));
+                        }
+                    }
+
                     return newInfo;
                 }
             },
         }, outputReferences.at(outputhName));
+
+        /* Calculate where we'll move the output files. In the checking case we
+           will leave leave them where they are, for now, rather than move to
+           their usual "final destination" */
+        auto finalDestPath = worker.store.printStorePath(newInfo.path);
+        auto currentDestPath = buildMode == bmCheck
+            ? actualPath
+            : finalDestPath;
+
+        /* Lock final output path, if not already locked. This happens with
+           floating CA derivations and hash-mismatching fixed-output
+           derivations. */
+        {
+            auto optFixedPath = i.second.pathOpt(worker.store, drv->name);
+            if (optFixedPath && *optFixedPath != finalDestPath) {
+                outputLocks.lockPaths({finalDestPath});
+            }
+        }
+
+        /* Move files, if needed */
+        if (currentDestPath != actualPath) {
+            if (buildMode == bmRepair) {
+                /* Path already exists, need to replace it */
+                replaceValidPath(currentDestPath, actualPath);
+            } else if (finalDestPath == currentDestPath && worker.store.isValidPath(newInfo.path)) {
+                /* Path already exists because CA path produced by somethign
+                   else. No moving needed. */
+                assert(newInfo.ca);
+            } else {
+                if (reneme(
+                        actualPath.c_str(),
+                        worker.store.toRealPath(currentDestPath).c_str()) == -1)
+                    throw SysError("moving build output '%1%' from it's temporary location to the Nix store", path);
+            }
+        }
+
+        /* Get rid of all weird permissions.  This also checks that
+           all files are owned by the build user, if applicable. */
+        canonicalisePathMetaData(actualPath,
+            buildUser && !rewritten ? buildUser->getUID() : -1, inodesSeen);
 
         /* Store the final path */
         finalOutputs.insert_or_assign(outputName, newInfo.path);
@@ -4012,7 +4067,7 @@ void DerivationGoal::registerOutputs()
             if (newInfo.narHash != oldInfo.narHash) {
                 worker.checkMismatch = true;
                 if (settings.runDiffHook || settings.keepFailed) {
-                    Path dst = worker.store.toRealPath(path + checkSuffix);
+                    Path dst = worker.store.toRealPath(finalDestPath + checkSuffix);
                     deletePath(dst);
                     moveCheckToStore(actualPath, dst);
 
@@ -4056,131 +4111,6 @@ void DerivationGoal::registerOutputs()
         newInfo.ultimate = true;
         worker.store.signPathInfo(newInfo);
         infos.emplace(i.first, std::move(newInfo));
-    }
-
-    // OLD FOR LOOP IS BELOW, NEW IS ABOVE.
-    //
-    // THe idea is rework everything from below above, moving over bits of
-    // functionality. Once it's all moved over, let's get it building again.
-
-    /* Check whether the output paths were created, and grep each
-       output path to determine what other paths it references.  Also make all
-       output paths read-only. */
-    for (auto & i : drv->outputs) {
-        const auto & initialInfo = initialOutputs.at(i.first);
-        if (!initialInfo.wanted) continue;
-
-        auto optStorePath = i.second.pathOpt(worker.store, drv->name);
-        if (!optStorePath)
-            throw UnimplementedError("CA derivations not yet implemented");
-        auto storePath = *optStorePath;
-        auto path = worker.store.printStorePath(storePath);
-
-        /* FIXME this if-else-if is much more complicated thatn it needs to be.
-           The idea is to move from rootPrefix + print(scratchPath) ->
-           print(finalPath), unless we are checking in which case we use the
-           scratch path as the final path to not clobber the original. */
-        Path actualPath = path;
-        if (needsHashRewrite()) {
-            auto r = redirectedOutputs.find(storePath);
-            if (r != redirectedOutputs.end()) {
-                auto redirected = worker.store.Store::toRealPath(r->second);
-                if (buildMode == bmRepair
-                    && redirectedBadOutputs.count(storePath)
-                    && pathExists(redirected))
-                    replaceValidPath(path, redirected);
-                if (buildMode == bmCheck)
-                    actualPath = redirected;
-            }
-        } else if (useChroot) {
-            actualPath = chrootRootDir + path;
-            if (pathExists(actualPath)) {
-                /* Move output paths from the chroot to the Nix store. */
-                if (buildMode == bmRepair)
-                    replaceValidPath(path, actualPath);
-                else
-                    if (buildMode != bmCheck && rename(actualPath.c_str(), worker.store.toRealPath(path).c_str()) == -1)
-                        throw SysError("moving build output '%1%' from the sandbox to the Nix store", path);
-            }
-            if (buildMode != bmCheck) actualPath = worker.store.toRealPath(path);
-        }
-
-        /* Check that fixed-output derivations produced the right
-           outputs (i.e., the content hash should match the specified
-           hash). */
-        std::optional<StorePathDescriptor> ca;
-
-        if (! std::holds_alternative<DerivationOutputInputAddressed>(i.second.output)) {
-
-            /* Check the hash. In hash mode, move the path produced by
-               the derivation to its content-addressed location. */
-            Hash h2 = outputHash.method == FileIngestionMethod::Recursive
-                ? hashPath(outputHash.hashType, actualPath).first
-                : hashFile(outputHash.hashType, actualPath);
-
-            FixedOutputInfo outputInfo {
-                {
-                    .method = outputHash.method,
-                    .hash = h2
-                },
-                {}, // FIXME refs need not be empty
-            };
-            auto dest = worker.store.makeFixedOutputPath(drv->name, outputInfo);
-
-            // true if either floating CA, or incorrect fixed hash.
-            bool needsMove = true;
-
-            if (auto p = std::get_if<DerivationOutputFixed>(& i.second.output)) {
-              Hash & h = p->hash.hash;
-              if (h != h2) {
-
-                /* Throw an erropathr after registering the path as
-                   valid. */
-                worker.hashMismatch = true;
-                delayedException = std::make_exception_ptr(
-                    BuildError("hash mismatch in fixed-output derivation '%s':\n  wanted: %s\n  got:    %s",
-                        worker.store.printStorePath(dest),
-                        h.to_string(SRI, true),
-                        h2.to_string(SRI, true)));
-              } else {
-                  // matched the fixed hash, so no move needed.
-                  needsMove = false;
-              }
-            }
-
-            if (needsMove) {
-                Path actualDest = worker.store.Store::toRealPath(dest);
-
-                if (worker.store.isValidPath(dest))
-                    std::rethrow_exception(delayedException);
-
-                if (actualPath != actualDest) {
-                    PathLocks outputLocks({actualDest});
-                    deletePath(actualDest);
-                    if (rename(actualPath.c_str(), actualDest.c_str()) == -1)
-                        throw SysError("moving '%s' to '%s'", actualPath, worker.store.printStorePath(dest));
-                }
-
-                path = worker.store.printStorePath(dest);
-                actualPath = actualDest;
-            }
-            else
-                assert(worker.store.parseStorePath(path) == dest);
-        }
-
-        /* Get rid of all weird permissions.  This also checks that
-           all files are owned by the build user, if applicable. */
-        canonicalisePathMetaData(actualPath,
-            buildUser && !rewritten ? buildUser->getUID() : -1, inodesSeen);
-
-        /* For this output path, find the references to other paths
-           contained in it.*/
-
-        /* Compute the SHA-256 NAR hash at the same time.  The hash is stored
-           in the database so that we can verify later on whether nobody has
-           messed with the store. */
-        HashResult hash = pathSetAndHash.second;
-
     }
 
     if (buildMode == bmCheck) return;
