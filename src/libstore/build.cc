@@ -3872,7 +3872,7 @@ void DerivationGoal::registerOutputs()
                             if (r == p)
                                 referencedOutputs.insert(o);
                     return referencedOutputs;
-                   },
+                },
             }, x);
         }},
         {[&](const std::string & path, const std::string & parent) {
@@ -3881,6 +3881,8 @@ void DerivationGoal::registerOutputs()
                 "cycle detected in build of '%s' in the references of output '%s' from output '%s'",
                 worker.store.printStorePath(drvPath), path, parent);
         }});
+
+	std::reverse(sortedOutputNames.begin(), sortedOutputNames.end());
 
     for (auto & outputName : sortedOutputNames) {
         auto output = drv->outputs.at(outputName);
