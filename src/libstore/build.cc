@@ -4584,7 +4584,7 @@ StorePath DerivationGoal::makeFallbackPath(std::string_view outputName)
 {
     return worker.store.makeStorePath(
         "rewrite:" + std::string(drvPath.to_string()) + ":name:" + std::string(outputName),
-        Hash(htSHA256), outputName);
+        Hash(htSHA256), outputPathName(drv->name, outputName));
 }
 
 
