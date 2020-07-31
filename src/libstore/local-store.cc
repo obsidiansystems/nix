@@ -585,6 +585,25 @@ void LocalStore::checkDerivationOutputs(const StorePath & drvPath, const Derivat
 }
 
 
+void LocalStore::linkDeriverToPath(const StorePath & deriver, const string & outputName, const StorePath & output)
+{
+    auto state(_state.lock());
+    return linkDeriverToPath(*state, queryValidPathId(*state, deriver), outputName, output);
+}
+
+void LocalStore::linkDeriverToPath(State & state, uint64_t deriver, const string & outputName, const StorePath & output)
+{
+    retrySQLite<void>([&]() {
+        state.stmtAddDerivationOutput.use()
+            (deriver)
+            (outputName)
+            (printStorePath(output))
+            .exec();
+    });
+
+}
+
+
 uint64_t LocalStore::addValidPath(State & state,
     const ValidPathInfo & info, bool checkOutputs)
 {
@@ -623,11 +642,7 @@ uint64_t LocalStore::addValidPath(State & state,
                they are built, so don't register anything in that case */
             auto optPath = i.second.pathOpt(*this, drv.name);
             if (optPath)
-                state.stmtAddDerivationOutput.use()
-                   (id)
-                   (i.first)
-                   (printStorePath(*optPath))
-                   .exec();
+                linkDeriverToPath(state, id, i.first, *optPath);
         }
     }
 

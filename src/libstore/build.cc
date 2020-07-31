@@ -4239,7 +4239,10 @@ void DerivationGoal::registerOutputs()
        outputs, this will fail. */
     {
         ValidPathInfos infos2;
-        for (auto & i : infos) infos2.push_back(i.second);
+        for (auto & [outputName, newInfo] : infos) {
+            worker.store.linkDeriverToPath(drvPath, outputName, newInfo.path);
+            infos2.push_back(newInfo);
+        }
         worker.store.registerValidPaths(infos2);
     }
 
