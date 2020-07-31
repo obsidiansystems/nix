@@ -4,6 +4,7 @@
 #include "local-store.hh"
 #include "store-api.hh"
 #include "thread-pool.hh"
+#include "topo-sort.hh"
 
 
 namespace nix {
@@ -210,21 +211,25 @@ void Store::queryMissing(const std::vector<StorePathWithOutputs> & targets,
                 return;
             }
 
+            PathSet invalid;
+            /* true for regular derivations, and CA derivations for which we
+               have a trust mapping for all wanted outputs. */
+            auto knownOutputPaths = true;
+            for (auto & [outputName, pathOpt] : queryDerivationOutputMap(path.path)) {
+                if (!pathOpt) {
+                    knownOutputPaths = false;
+                    break;
+                }
+                if (wantOutput(outputName, path.outputs)
+                    && !isValidPath(StorePathOrDesc { *pathOpt }))
+                    invalid.insert(printStorePath(*pathOpt));
+            }
+            if (knownOutputPaths && invalid.empty()) return;
+
             auto drv = make_ref<Derivation>(derivationFromPath(path.path));
             ParsedDerivation parsedDrv(StorePath(path.path), *drv);
 
-            PathSet invalid;
-            for (auto & j : drv->outputs) {
-                auto storePathOpt = j.second.pathOpt(*this, drv->name);
-                if (!storePathOpt)
-                    throw UnimplementedError("CA derivations are not yet supported by query missing");
-                if (wantOutput(j.first, path.outputs)
-                    && !isValidPath(StorePathOrDesc { *storePathOpt }))
-                    invalid.insert(printStorePath(*storePathOpt));
-            }
-            if (invalid.empty()) return;
-
-            if (settings.useSubstitutes && parsedDrv.substitutesAllowed()) {
+            if (knownOutputPaths && settings.useSubstitutes && parsedDrv.substitutesAllowed()) {
                 auto drvState = make_ref<Sync<DrvState>>(DrvState(invalid.size()));
                 for (auto & output : invalid)
                     pool.enqueue(std::bind(checkOutput, printStorePath(path.path), drv, output, drvState));
@@ -268,41 +273,21 @@ void Store::queryMissing(const std::vector<StorePathWithOutputs> & targets,
 
 StorePaths Store::topoSortPaths(const StorePathSet & paths)
 {
-    StorePaths sorted;
-    StorePathSet visited, parents;
-
-    std::function<void(const StorePath & path, const StorePath * parent)> dfsVisit;
-
-    dfsVisit = [&](const StorePath & path, const StorePath * parent) {
-        if (parents.count(path))
-            throw BuildError("cycle detected in the references of '%s' from '%s'",
-                printStorePath(path), printStorePath(*parent));
-
-        if (!visited.insert(path).second) return;
-        parents.insert(path);
-
-        StorePathSet references;
-        try {
-            references = queryPathInfo(path)->references;
-        } catch (InvalidPath &) {
-        }
-
-        for (auto & i : references)
-            /* Don't traverse into paths that don't exist.  That can
-               happen due to substitutes for non-existent paths. */
-            if (paths.count(i))
-                dfsVisit(i, &path);
-
-        sorted.push_back(path);
-        parents.erase(path);
-    };
-
-    for (auto & i : paths)
-        dfsVisit(i, nullptr);
-
-    std::reverse(sorted.begin(), sorted.end());
-
-    return sorted;
+    return topoSort(paths,
+        {[&](const StorePath & path) {
+            StorePathSet references;
+            try {
+                references = queryPathInfo(path)->references;
+            } catch (InvalidPath &) {
+            }
+            return references;
+        }},
+        {[&](const StorePath & path, const StorePath & parent) {
+            return BuildError(
+                "cycle detected in the references of '%s' from '%s'",
+                printStorePath(path),
+                printStorePath(parent));
+        }});
 }
 
 
