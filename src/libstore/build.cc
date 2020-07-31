@@ -28,7 +28,6 @@
 #include <regex>
 #include <queue>
 #include <climits>
-#include <filesystem>
 
 #include <sys/time.h>
 #include <sys/wait.h>
@@ -3601,14 +3600,10 @@ void DerivationGoal::runChild()
                 if (derivationIsImpure(derivationType))
                     sandboxProfile += "(import \"sandbox-network.sb\")\n";
 
-                /* Our rwx outputs */
+                /* Add the output paths we'll use at build-time to the chroot */
                 sandboxProfile += "(allow file-read* file-write* process-exec\n";
-                for (auto & i : missingPaths)
-                    sandboxProfile += fmt("\t(subpath \"%s\")\n", worker.store.printStorePath(i));
-
-                /* Also add redirected outputs to the chroot */
-                for (auto & i : redirectedOutputs)
-                    sandboxProfile += fmt("\t(subpath \"%s\")\n", worker.store.printStorePath(i.second));
+                for (auto & [_, path] : scratchOutputs)
+                    sandboxProfile += fmt("\t(subpath \"%s\")\n", worker.store.printStorePath(path));
 
                 sandboxProfile += ")\n";
 
@@ -4093,9 +4088,15 @@ void DerivationGoal::registerOutputs()
             } else {
                 /* Temporarily add write perm so we can move, will be fixed
                    later. */
-                std::filesystem::permissions(actualPath.c_str(),
-                    std::filesystem::perms::owner_write,
-                    std::filesystem::perm_options::add);
+                {
+                    struct stat st;
+                    auto & mode = st.st_mode;
+                    if (lstat(actualPath.c_str(), &st))
+                        throw SysError("getting attributes of path '%1%'", actualPath);
+                    mode |= 0200;
+                    if (chmod(actualPath.c_str(), mode) == -1)
+                        throw SysError("changing mode of '%1%' to %2$o", actualPath, mode);
+                }
                 if (rename(
                         actualPath.c_str(),
                         worker.store.toRealPath(finalDestPath).c_str()) == -1)
