@@ -4240,7 +4240,10 @@ void DerivationGoal::registerOutputs()
     {
         ValidPathInfos infos2;
         for (auto & [outputName, newInfo] : infos) {
-            worker.store.linkDeriverToPath(drvPath, outputName, newInfo.path);
+            /* FIXME: we will want to track this mapping in the DB whether or
+               not we have a drv file. */
+            if (useDerivation)
+                worker.store.linkDeriverToPath(drvPath, outputName, newInfo.path);
             infos2.push_back(newInfo);
         }
         worker.store.registerValidPaths(infos2);
