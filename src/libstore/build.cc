@@ -1054,6 +1054,9 @@ private:
     /* Map a path to another (reproducably) so we can avoid overwriting outputs
        that already exist. */
     StorePath makeFallbackPath(const StorePath & path);
+    /* Make a path to another based on the output name alone, if one doesn't
+       want to use a random path for CA builds. */
+    StorePath makeFallbackPath(std::string_view path);
 
     void repairClosure();
 
@@ -1228,10 +1231,8 @@ void DerivationGoal::haveDerivation()
 {
     trace("have derivation");
 
-    if (drv->type() == DerivationType::CAFloating) {
+    if (drv->type() == DerivationType::CAFloating)
         settings.requireExperimentalFeature("ca-derivations");
-        throw UnimplementedError("ca-derivations isn't implemented yet");
-    }
 
     retrySubstitution = false;
 
@@ -2140,7 +2141,9 @@ void DerivationGoal::startBuilder()
            with the actual hashes. */
         auto scratchPath =
             !status.known
-                ? throw UnimplementedError("Randomized output dirs for building CA derivations not yet implemented")
+                /* FIXME add option to randomize, so we can audit whether our
+                 * rewrites caught everything */
+                ? makeFallbackPath(outputName)
             : !needsHashRewrite()
                 /* Can always use original path in sandbox */
                 ? status.known->path
@@ -4574,6 +4577,14 @@ void DerivationGoal::checkPathValidity()
         }
         initialOutputs.insert_or_assign(i.first, status);
     }
+}
+
+
+StorePath DerivationGoal::makeFallbackPath(std::string_view outputName)
+{
+    return worker.store.makeStorePath(
+        "rewrite:" + std::string(drvPath.to_string()) + ":name:" + std::string(outputName),
+        Hash(htSHA256), outputName);
 }
 
 

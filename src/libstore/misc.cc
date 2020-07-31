@@ -211,21 +211,25 @@ void Store::queryMissing(const std::vector<StorePathWithOutputs> & targets,
                 return;
             }
 
+            PathSet invalid;
+            /* true for regular derivations, and CA derivations for which we
+               have a trust mapping for all wanted outputs. */
+            auto knownOutputPaths = true;
+            for (auto & [outputName, pathOpt] : queryDerivationOutputMap(path.path)) {
+                if (!pathOpt) {
+                    knownOutputPaths = false;
+                    break;
+                }
+                if (wantOutput(outputName, path.outputs)
+                    && !isValidPath(StorePathOrDesc { *pathOpt }))
+                    invalid.insert(printStorePath(*pathOpt));
+            }
+            if (knownOutputPaths && invalid.empty()) return;
+
             auto drv = make_ref<Derivation>(derivationFromPath(path.path));
             ParsedDerivation parsedDrv(StorePath(path.path), *drv);
 
-            PathSet invalid;
-            for (auto & j : drv->outputs) {
-                auto storePathOpt = j.second.pathOpt(*this, drv->name);
-                if (!storePathOpt)
-                    throw UnimplementedError("CA derivations are not yet supported by query missing");
-                if (wantOutput(j.first, path.outputs)
-                    && !isValidPath(StorePathOrDesc { *storePathOpt }))
-                    invalid.insert(printStorePath(*storePathOpt));
-            }
-            if (invalid.empty()) return;
-
-            if (settings.useSubstitutes && parsedDrv.substitutesAllowed()) {
+            if (knownOutputPaths && settings.useSubstitutes && parsedDrv.substitutesAllowed()) {
                 auto drvState = make_ref<Sync<DrvState>>(DrvState(invalid.size()));
                 for (auto & output : invalid)
                     pool.enqueue(std::bind(checkOutput, printStorePath(path.path), drv, output, drvState));

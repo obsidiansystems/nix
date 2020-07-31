@@ -14,5 +14,6 @@ mkDerivation {
     echo "Hello World" > $out/hello
   '';
   __contentAddressed = true;
+  outputHashMode = "recursive";
   outputHashAlgo = "sha256";
 }
