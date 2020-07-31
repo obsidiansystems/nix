@@ -3885,7 +3885,7 @@ void DerivationGoal::registerOutputs()
                 worker.store.printStorePath(drvPath), path, parent);
         }});
 
-	std::reverse(sortedOutputNames.begin(), sortedOutputNames.end());
+    std::reverse(sortedOutputNames.begin(), sortedOutputNames.end());
 
     for (auto & outputName : sortedOutputNames) {
         auto output = drv->outputs.at(outputName);
@@ -4061,9 +4061,6 @@ void DerivationGoal::registerOutputs()
            will leave leave them where they are, for now, rather than move to
            their usual "final destination" */
         auto finalDestPath = worker.store.printStorePath(newInfo.path);
-        auto currentDestPath = buildMode == bmCheck
-            ? worker.store.printStorePath(scratchPath)
-            : finalDestPath;
 
         /* Lock final output path, if not already locked. This happens with
            floating CA derivations and hash-mismatching fixed-output
@@ -4078,28 +4075,35 @@ void DerivationGoal::registerOutputs()
         }
 
         /* Move files, if needed */
-        if (worker.store.toRealPath(currentDestPath) != actualPath) {
+        if (worker.store.toRealPath(finalDestPath) != actualPath) {
             if (buildMode == bmRepair) {
                 /* Path already exists, need to replace it */
-                replaceValidPath(worker.store.toRealPath(currentDestPath), actualPath);
-            } else if (finalDestPath == currentDestPath && worker.store.isValidPath(newInfo.path)) {
+                replaceValidPath(worker.store.toRealPath(finalDestPath), actualPath);
+                actualPath = worker.store.toRealPath(finalDestPath);
+            } else if (buildMode == bmCheck) {
+                /* Path already exists, and we want to compare, so we leave out
+                   new path in place. */
+            } else if (finalDestPath == finalDestPath && worker.store.isValidPath(newInfo.path)) {
                 /* Path already exists because CA path produced by something
                    else. No moving needed. */
                 assert(newInfo.ca);
             } else {
+                /* Temporarily add write perm so we can move, will be fixed
+                   later. */
                 std::filesystem::permissions(actualPath.c_str(),
                     std::filesystem::perms::owner_write,
                     std::filesystem::perm_options::add);
                 if (rename(
                         actualPath.c_str(),
-                        worker.store.toRealPath(currentDestPath).c_str()) == -1)
-                    throw SysError("moving build output '%1%' from it's temporary location to the Nix store", currentDestPath);
+                        worker.store.toRealPath(finalDestPath).c_str()) == -1)
+                    throw SysError("moving build output '%1%' from it's temporary location to the Nix store", finalDestPath);
+                actualPath = worker.store.toRealPath(finalDestPath);
             }
         }
 
         /* Get rid of all weird permissions.  This also checks that
            all files are owned by the build user, if applicable. */
-        canonicalisePathMetaData(worker.store.toRealPath(currentDestPath),
+        canonicalisePathMetaData(actualPath,
             buildUser && !rewritten ? buildUser->getUID() : -1, inodesSeen);
 
         if (buildMode == bmCheck) {
@@ -4115,13 +4119,13 @@ void DerivationGoal::registerOutputs()
                     handleDiffHook(
                         buildUser ? buildUser->getUID() : getuid(),
                         buildUser ? buildUser->getGID() : getgid(),
-                        currentDestPath, dst, worker.store.printStorePath(drvPath), tmpDir);
+                        finalDestPath, dst, worker.store.printStorePath(drvPath), tmpDir);
 
                     throw NotDeterministic("derivation '%s' may not be deterministic: output '%s' differs from '%s'",
-                        worker.store.printStorePath(drvPath), worker.store.toRealPath(currentDestPath), dst);
+                        worker.store.printStorePath(drvPath), worker.store.toRealPath(finalDestPath), dst);
                 } else
                     throw NotDeterministic("derivation '%s' may not be deterministic: output '%s' differs",
-                        worker.store.printStorePath(drvPath), worker.store.toRealPath(currentDestPath));
+                        worker.store.printStorePath(drvPath), worker.store.toRealPath(finalDestPath));
             }
 
             /* Since we verified the build, it's now ultimately trusted. */
