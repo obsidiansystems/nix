@@ -125,7 +125,7 @@ std::optional<StorePathDescriptor> getDerivationCA(const BasicDerivation & drv)
 
 void Store::queryMissing(const std::vector<StorePathWithOutputs> & targets,
     StorePathSet & willBuild_, StorePathSet & willSubstitute_, StorePathSet & unknown_,
-    unsigned long long & downloadSize_, unsigned long long & narSize_)
+    uint64_t & downloadSize_, uint64_t & narSize_)
 {
     Activity act(*logger, lvlDebug, actUnknown, "querying info about missing paths");
 
@@ -137,8 +137,8 @@ void Store::queryMissing(const std::vector<StorePathWithOutputs> & targets,
     {
         std::unordered_set<std::string> done;
         StorePathSet & unknown, & willSubstitute, & willBuild;
-        unsigned long long & downloadSize;
-        unsigned long long & narSize;
+        uint64_t & downloadSize;
+        uint64_t & narSize;
     };
 
     struct DrvState
