@@ -25,17 +25,17 @@ struct CmdAddToStore : MixDryRun, StoreCommand
         });
 
         addFlag({
-            .longName = "git",
-            .shortName = 0,
-            .description = "treat path as a git object",
-            .handler = {&ingestionMethod, FileIngestionMethod::Git},
-        });
-
-        addFlag({
             .longName = "flat",
             .shortName = 0,
             .description = "add flat file to the Nix store",
             .handler = {&ingestionMethod, FileIngestionMethod::Flat},
+        });
+
+        addFlag({
+            .longName = "git",
+            .shortName = 0,
+            .description = "treat path as a git object",
+            .handler = {&ingestionMethod, FileIngestionMethod::Git},
         });
     }
 

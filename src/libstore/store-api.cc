@@ -298,7 +298,7 @@ StorePath Store::makeFixedOutputPathFromCA(const StorePathDescriptor & info) con
 std::pair<StorePath, Hash> Store::computeStorePathForPath(std::string_view name,
     const Path & srcPath, FileIngestionMethod method, HashType hashAlgo, PathFilter & filter) const
 {
-    Hash h { htSHA256 };
+    Hash h { htSHA256 }; // throwaway def to appease C++
     switch (method) {
     case FileIngestionMethod::Recursive: {
         h = hashPath(hashAlgo, srcPath, filter).first;
@@ -313,6 +313,7 @@ std::pair<StorePath, Hash> Store::computeStorePathForPath(std::string_view name,
         break;
     }
     }
+
     FixedOutputInfo caInfo {
         {
             .method = method,

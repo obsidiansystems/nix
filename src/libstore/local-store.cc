@@ -1185,7 +1185,7 @@ StorePath LocalStore::addToStoreFromDump(Source & source0, const string & name,
             autoGC();
 
             if (inMemory) {
-                 StringSource dumpSource { dump };
+                StringSource dumpSource { dump };
                 /* Restore from the NAR in memory. */
                 switch (method) {
                 case FileIngestionMethod::Flat:
