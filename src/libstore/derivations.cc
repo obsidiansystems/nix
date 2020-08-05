@@ -41,7 +41,7 @@ bool derivationIsCA(DerivationType dt) {
     };
     // Since enums can have non-variant values, but making a `default:` would
     // disable exhaustiveness warnings.
-    abort();
+    assert(false);
 }
 
 bool derivationIsFixed(DerivationType dt) {
@@ -50,7 +50,7 @@ bool derivationIsFixed(DerivationType dt) {
     case DerivationType::CAFixed: return true;
     case DerivationType::CAFloating: return false;
     };
-    abort();
+    assert(false);
 }
 
 bool derivationIsImpure(DerivationType dt) {
@@ -59,7 +59,7 @@ bool derivationIsImpure(DerivationType dt) {
     case DerivationType::CAFixed: return true;
     case DerivationType::CAFloating: return false;
     };
-    abort();
+    assert(false);
 }
 
 
@@ -631,7 +631,7 @@ Source & readDerivation(Source & in, const Store & store, BasicDerivation & drv,
         drv.outputs.emplace(std::move(name), std::move(output));
     }
 
-    drv.inputSrcs = readStorePaths<StorePathSet>(store, in);
+    drv.inputSrcs = read(store, in, Proxy<StorePathSet> {});
     in >> drv.platform >> drv.builder;
     drv.args = readStrings<Strings>(in);
 
@@ -669,7 +669,7 @@ void writeDerivation(Sink & out, const Store & store, const BasicDerivation & dr
             },
         }, i.second.output);
     }
-    writeStorePaths(store, out, drv.inputSrcs);
+    write(store, out, drv.inputSrcs);
     out << drv.platform << drv.builder << drv.args;
     out << drv.env.size();
     for (auto & i : drv.env)

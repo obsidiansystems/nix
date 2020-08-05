@@ -221,17 +221,17 @@ StorePath Store::makeTextPath(std::string_view name, const TextInfo & info) cons
 }
 
 
-StorePath Store::makeFixedOutputPathFromCA(const StorePathDescriptor & info) const
+StorePath Store::makeFixedOutputPathFromCA(const StorePathDescriptor & desc) const
 {
     // New template
     return std::visit(overloaded {
         [&](TextInfo ti) {
-            return makeTextPath(info.name, ti);
+            return makeTextPath(desc.name, ti);
         },
         [&](FixedOutputInfo foi) {
-            return makeFixedOutputPath(info.name, foi);
+            return makeFixedOutputPath(desc.name, foi);
         }
-    }, info.info);
+    }, desc.info);
 }
 
 
@@ -259,6 +259,20 @@ StorePath Store::computeStorePathForText(const string & name, const string & s,
         { .hash = hashString(htSHA256, s) },
         references,
     });
+}
+
+
+StorePath Store::addToStore(const string & name, const Path & _srcPath,
+    FileIngestionMethod method, HashType hashAlgo, PathFilter & filter, RepairFlag repair)
+{
+    Path srcPath(absPath(_srcPath));
+    auto source = sinkToSource([&](Sink & sink) {
+        if (method == FileIngestionMethod::Recursive)
+            dumpPath(srcPath, sink, filter);
+        else
+            readFile(srcPath, sink);
+    });
+    return addToStoreFromDump(*source, name, method, hashAlgo, repair);
 }
 
 

@@ -1961,7 +1961,7 @@ HookReply DerivationGoal::tryBuildHook()
 
     /* Tell the hook all the inputs that have to be copied to the
        remote system. */
-    writeStorePaths(worker.store, hook->sink, inputPaths);
+    write(worker.store, hook->sink, inputPaths);
 
     /* Tell the hooks the missing outputs that have to be copied back
        from the remote system. */
@@ -1972,7 +1972,7 @@ HookReply DerivationGoal::tryBuildHook()
             if (buildMode != bmCheck && status.known->isValid()) continue;
             missingPaths.insert(status.known->path);
         }
-        writeStorePaths(worker.store, hook->sink, missingPaths);
+        write(worker.store, hook->sink, missingPaths);
     }
 
     hook->sink = FdSink();
