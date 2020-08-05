@@ -26,7 +26,7 @@ struct Sink
 struct NullSink : Sink
 {
     void operator () (const unsigned char * data, size_t len) override
-	{ }
+    { }
 };
 
 /* A buffered abstract sink. */

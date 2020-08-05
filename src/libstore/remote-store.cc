@@ -61,14 +61,14 @@ void writeStorePathDescriptorSet(const Store & store, Sink & out, const std::set
 
 StorePath read(const Store & store, Source & from, Proxy<StorePath> _)
 {
-	auto path = readString(from);
-	return store.parseStorePath(path);
+    auto path = readString(from);
+    return store.parseStorePath(path);
 }
 
 void write(const Store & store, Sink & out, const StorePath & storePath)
 {
-	auto path = store.printStorePath(storePath);
-	out << path;
+    auto path = store.printStorePath(storePath);
+    out << path;
 }
 
 

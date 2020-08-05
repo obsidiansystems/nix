@@ -513,7 +513,7 @@ static void _main(int argc, char * * argv)
         std::vector<StorePath> outPaths;
 
         for (auto & [drvPath, info] : drvMap) {
-			auto & [counter, wantedOutputs] = info;
+            auto & [counter, wantedOutputs] = info;
             std::string drvPrefix = outLink;
             if (counter)
                 drvPrefix += fmt("-%d", counter + 1);

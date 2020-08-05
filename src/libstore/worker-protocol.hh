@@ -81,8 +81,8 @@ struct Proxy {};
 template<typename T>
 std::map<std::string, T> read(const Store & store, Source & from, Proxy<std::map<std::string, T>> _)
 {
-	std::map<string, T> resMap;
-	auto size = (size_t)readInt(from);
+    std::map<string, T> resMap;
+    auto size = (size_t)readInt(from);
     while (size--) {
         auto thisKey = readString(from);
         resMap.insert_or_assign(std::move(thisKey), read(store, from, Proxy<T> {}));
@@ -103,13 +103,13 @@ void write(const Store & store, Sink & out, const std::map<string, T> & resMap)
 template<typename T>
 std::optional<T> read(const Store & store, Source & from, Proxy<std::optional<T>> _)
 {
-	auto tag = readNum<uint8_t>(from);
-	switch (tag) {
-	case 0:
-		return std::nullopt;
-	case 1:
-		return read(store, from, Proxy<T> {});
-	default:
+    auto tag = readNum<uint8_t>(from);
+    switch (tag) {
+    case 0:
+        return std::nullopt;
+    case 1:
+        return read(store, from, Proxy<T> {});
+    default:
         throw Error("got an invalid tag bit for std::optional: %#04x", tag);
     }
 }
@@ -119,7 +119,7 @@ void write(const Store & store, Sink & out, const std::optional<T> & optVal)
 {
     out << (optVal ? 1 : 0);
     if (optVal)
-    	write(store, out, *optVal);
+        write(store, out, *optVal);
 }
 
 StorePath read(const Store & store, Source & from, Proxy<StorePath> _);
