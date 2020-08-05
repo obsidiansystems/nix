@@ -21,13 +21,13 @@ struct DerivationOutputInputAddressed
     StorePath path;
 };
 
-struct DerivationOutputFixed
+struct DerivationOutputCAFixed
 {
     FixedOutputHash hash; /* hash used for expected hash computation */
     StorePath path(const Store & store, std::string_view drvName, std::string_view outputName) const;
 };
 
-struct DerivationOutputFloating
+struct DerivationOutputCAFloating
 {
     /* information used for expected hash computation */
     FileIngestionMethod method;
@@ -38,8 +38,8 @@ struct DerivationOutput
 {
     std::variant<
         DerivationOutputInputAddressed,
-        DerivationOutputFixed,
-        DerivationOutputFloating
+        DerivationOutputCAFixed,
+        DerivationOutputCAFloating
     > output;
     std::optional<HashType> hashAlgoOpt(const Store & store) const;
     std::optional<StorePath> pathOpt(const Store & store, std::string_view drvName) const;
@@ -54,7 +54,7 @@ typedef std::map<StorePath, StringSet> DerivationInputs;
 typedef std::map<string, string> StringPairs;
 
 enum struct DerivationType : uint8_t {
-    Regular,
+    InputAddressed,
     CAFixed,
     CAFloating,
 };

@@ -573,11 +573,11 @@ void LocalStore::checkDerivationOutputs(const StorePath & drvPath, const Derivat
                         printStorePath(drvPath), printStorePath(doia.path), printStorePath(recomputed));
                 envHasRightPath(doia.path, i.first);
             },
-            [&](DerivationOutputFixed dof) {
+            [&](DerivationOutputCAFixed dof) {
                 StorePath path = makeFixedOutputPath(drvName, { dof.hash, {} });
                 envHasRightPath(path, i.first);
             },
-            [&](DerivationOutputFloating _) {
+            [&](DerivationOutputCAFloating _) {
                 /* Nothing to check */
             },
         }, i.second.output);

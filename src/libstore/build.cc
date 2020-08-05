@@ -3978,18 +3978,18 @@ void DerivationGoal::registerOutputs()
             return newInfo0;
         } else {
             /* content-addressed case */
-            DerivationOutputFloating outputHash = std::visit(overloaded {
-                [&](DerivationOutputInputAddressed doi) -> DerivationOutputFloating {
+            DerivationOutputCAFloating outputHash = std::visit(overloaded {
+                [&](DerivationOutputInputAddressed doi) -> DerivationOutputCAFloating {
                     // Enclosing `if` handles this case in other branch
                     throw Error("ought to unreachable, handled in other branch");
                 },
-                [&](DerivationOutputFixed dof) {
-                    return DerivationOutputFloating {
+                [&](DerivationOutputCAFixed dof) {
+                    return DerivationOutputCAFloating {
                         .method = dof.hash.method,
                         .hashType = dof.hash.hash.type,
                     };
                 },
-                [&](DerivationOutputFloating dof) {
+                [&](DerivationOutputCAFloating dof) {
                    return dof;
                 },
             }, output.output);
@@ -4037,7 +4037,7 @@ void DerivationGoal::registerOutputs()
             assert(newInfo0.ca);
 
             /* Check wanted hash if output is fixed */
-            if (auto p = std::get_if<DerivationOutputFixed>(&output.output)) {
+            if (auto p = std::get_if<DerivationOutputCAFixed>(&output.output)) {
                 Hash & wanted = p->hash.hash;
                 if (wanted != got) {
                     /* Throw an error after registering the path as

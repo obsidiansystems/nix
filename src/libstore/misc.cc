@@ -114,7 +114,7 @@ std::optional<StorePathDescriptor> getDerivationCA(const BasicDerivation & drv)
     auto out = drv.outputs.find("out");
     if (out == drv.outputs.end())
         return std::nullopt;
-    if (auto dof = std::get_if<DerivationOutputFixed>(&out->second.output)) {
+    if (auto dof = std::get_if<DerivationOutputCAFixed>(&out->second.output)) {
         return StorePathDescriptor {
             .name =  drv.name,
             .info = FixedOutputInfo { dof->hash, {} },
