@@ -235,7 +235,7 @@ void from_json(const nlohmann::json& j, ContentAddress & ca) {
     std::string_view type = j.at("type").get<std::string_view>();
     if (type == "text") {
         ca = TextHash {
-            .hash = Hash { j.at("hash").get<std::string_view>(), htSHA256 },
+            .hash = Hash::parseNonSRIUnprefixed(j.at("hash").get<std::string_view>(), htSHA256),
         };
     } else if (type == "fixed") {
         std::string_view methodRaw = j.at("method").get<std::string_view>();
@@ -245,7 +245,7 @@ void from_json(const nlohmann::json& j, ContentAddress & ca) {
         auto hashAlgo = parseHashType(j.at("algo").get<std::string>());
         ca = FixedOutputHash {
             .method = method,
-            .hash = Hash { j.at("hash").get<std::string_view>(), hashAlgo },
+            .hash = Hash::parseNonSRIUnprefixed(j.at("hash").get<std::string_view>(), hashAlgo),
         };
     } else
         throw Error("invalid type: %s", type);
