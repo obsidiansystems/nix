@@ -1,4 +1,3 @@
-#include "lazy.hh"
 #include "util.hh"
 #include "affinity.hh"
 #include "sync.hh"
@@ -512,7 +511,8 @@ std::string getUserName()
 }
 
 
-static Lazy<Path> getHome2([]() {
+static Path getHome2()
+{
     auto homeDir = getEnv("HOME");
     if (!homeDir) {
         std::vector<char> buf(16384);
@@ -524,7 +524,7 @@ static Lazy<Path> getHome2([]() {
         homeDir = pw->pw_dir;
     }
     return *homeDir;
-});
+};
 
 Path getHome() { return getHome2(); }
 
