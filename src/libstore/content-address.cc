@@ -2,7 +2,7 @@
 
 #include "args.hh"
 #include "content-address.hh"
-#include "parser.hh"
+#include "split.hh"
 
 namespace nix {
 
@@ -23,6 +23,12 @@ std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
     abort();
 }
 
+std::string makeFixedOutputCA(FileIngestionMethod method, const Hash & hash)
+{
+    return "fixed:"
+        + makeFileIngestionPrefix(method)
+        + hash.to_string(Base32, true);
+}
 
 std::string renderContentAddress(ContentAddress ca) {
     return std::visit(overloaded {
@@ -106,7 +112,8 @@ std::string renderContentAddress(std::optional<ContentAddress> ca) {
 // FIXME Deduplicate with store-api.cc path computation
 std::string renderStorePathDescriptor(StorePathDescriptor ca)
 {
-    std::string result = ca.name;
+    std::string result { ca.name };
+    result += ":";
 
     auto dumpRefs = [&](auto references, bool hasSelfReference) {
         result += "refs:";
@@ -116,23 +123,20 @@ std::string renderStorePathDescriptor(StorePathDescriptor ca)
             result += i.to_string();
         }
         if (hasSelfReference) result += ":self";
+        result += ":";
     };
 
     std::visit(overloaded {
         [&](TextInfo th) {
             result += "text:";
             dumpRefs(th.references, false);
-            result += ":" + renderContentAddress(ContentAddress {TextHash {
-                .hash = th.hash,
-            }});
+            result += th.hash.to_string(Base32, true);
         },
         [&](FixedOutputInfo fsh) {
             result += "fixed:";
             dumpRefs(fsh.references.references, fsh.references.hasSelfReference);
-            result += ":" + renderContentAddress(ContentAddress {FixedOutputHash {
-                .method = fsh.method,
-                .hash = fsh.hash
-            }});
+            result += makeFileIngestionPrefix(fsh.method);
+            result += fsh.hash.to_string(Base32, true);
         },
         [](IPFSInfo fsh) {
             throw Error("ipfs info not handled");
@@ -149,6 +153,7 @@ std::string renderStorePathDescriptor(StorePathDescriptor ca)
 
 StorePathDescriptor parseStorePathDescriptor(std::string_view rawCa)
 {
+    warn("%s", rawCa);
     auto rest = rawCa;
 
     std::string_view name;
@@ -163,7 +168,7 @@ StorePathDescriptor parseStorePathDescriptor(std::string_view rawCa)
     }
 
     auto parseRefs = [&]() -> PathReferences<StorePath> {
-        if (!splitPrefix(rest, "refs,"))
+        if (!splitPrefix(rest, "refs:"))
             throw Error("Invalid CA \"%s\", \"%s\" should begin with \"refs:\"", rawCa, rest);
         PathReferences<StorePath> ret;
         size_t numReferences = 0;

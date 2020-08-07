@@ -167,6 +167,12 @@ struct StorePathDescriptor {
     std::string name;
     ContentAddressWithReferences info;
 
+    bool operator == (const StorePathDescriptor & other) const
+    {
+        return name == other.name;
+        // FIXME second field
+    }
+
     bool operator < (const StorePathDescriptor & other) const
     {
         return name < other.name;
@@ -177,6 +183,7 @@ struct StorePathDescriptor {
 std::string renderStorePathDescriptor(StorePathDescriptor ca);
 
 StorePathDescriptor parseStorePathDescriptor(std::string_view rawCa);
+
 
 void to_json(nlohmann::json& j, const StorePathDescriptor & c);
 void from_json(const nlohmann::json& j, StorePathDescriptor & c);

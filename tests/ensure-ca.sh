@@ -15,7 +15,7 @@ jqCaHash='.[0].ca | split(":") | .[1:] | join(":")'
 
 caHash=$(nix path-info --json $body | jq -r "$jqCaHash")
 
-path=$(nix ensure-ca fixed:fixed:refs,0:$caHash)
+path=$(nix ensure-ca fixed:fixed:refs:0:$caHash)
 
 [ $body = $path ]
 
@@ -27,6 +27,6 @@ caHash=$(nix path-info --json $rewrite | jq -r "$jqCaHash")
 numRefs=$(nix-store -q --references $rewrite | grep -v $rewrite | wc -l)
 refs=$(nix-store -q --references $rewrite | sed s,$rewrite,self, | sed s,$NIX_STORE_DIR/,, | tr \\n :)
 
-path2=$(nix ensure-ca dependencies-top:fixed:refs,$numRefs:$refs$caHash)
+path2=$(nix ensure-ca dependencies-top:fixed:refs:$numRefs:$refs$caHash)
 [ -d $path2 ]
 [ fixed:$caHash = $(nix path-info --json $path2 | jq -r .\[0\].ca) ]

@@ -54,11 +54,13 @@ touch $TEST_FILE
 
 # We try to do the evaluation with a known wrong hash to get the suggestion for
 # the correct one
-CORRECT_ADDRESS=$(nix eval --raw '(builtins.fetchurl 'file://$PWD/$TEST_FILE')' --store ipfs://$EMPTY_HASH?allow-modify=true |& \
-                  grep '^warning: created new store' | sed "s/^warning: created new store at '\(.*\)'\. .*$/\1/")
+CORRECT_ADDRESS=$( \
+    nix eval --impure --raw --expr '(builtins.fetchurl 'file://$PWD/$TEST_FILE')' --store ipfs://$EMPTY_HASH?allow-modify=true \
+    |& grep '^warning: created new store' \
+    | sed "s/^warning: created new store at '\(.*\)'\. .*$/\1/")
 
 # Then we eval and get back the hash-name part of the store path
-RESULT=$(nix eval '(builtins.fetchurl 'file://$PWD/$TEST_FILE')' --store $CORRECT_ADDRESS --json \
+RESULT=$(nix eval --impure --expr '(builtins.fetchurl 'file://$PWD/$TEST_FILE')' --store "$CORRECT_ADDRESS" --json \
     | jq -r | awk -F/ '{print $NF}')
 
 # Finally, we ask back the info from IPFS (formatting the address the right way
@@ -183,7 +185,7 @@ if [[ -n $(type -p git) ]]; then
 
     treeHash=$(git -C $repo rev-parse HEAD:)
 
-    path=$(nix eval --raw "(builtins.fetchTree { type = \"git\"; url = file://$repo; treeHash = \"$treeHash\"; }).outPath")
+    path=$(nix eval --raw --expr "(builtins.fetchTree { type = \"git\"; url = file://$repo; treeHash = \"$treeHash\"; }).outPath")
 
     # copy to ipfs in trustless mode, doesn’t require syncing
     nix copy $path --to ipfs:// --experimental-features nix-command
@@ -203,15 +205,15 @@ if [[ -n $(type -p git) ]]; then
     clearStore
 
     # verify we can substitute from global ipfs store
-    path2=$(nix eval --raw "(builtins.fetchTree { type = \"git\"; url = file:///no-such-repo; treeHash = \"$helloBlob\"; }).outPath" --substituters ipfs:// --option substitute true)
+    path2=$(nix eval --raw --expr "(builtins.fetchTree { type = \"git\"; url = file:///no-such-repo; treeHash = \"$helloBlob\"; }).outPath" --substituters ipfs:// --option substitute true)
     [[ "$(cat $path2)" = hello ]]
 
-    path3=$(nix eval --raw "(builtins.fetchTree { type = \"git\"; url = file:///no-such-repo; treeHash = \"$treeHash\"; }).outPath" --substituters ipfs:// --option substitute true)
+    path3=$(nix eval --raw --expr "(builtins.fetchTree { type = \"git\"; url = file:///no-such-repo; treeHash = \"$treeHash\"; }).outPath" --substituters ipfs:// --option substitute true)
 
     [[ "$(ls $path3)" = hello ]]
     diff $path2 $path3/hello
 
-    path4=$(nix eval --store ipfs:// --raw "(builtins.fetchTree { type = \"git\"; url = file://$repo; treeHash = \"$treeHash\"; }).outPath")
+    path4=$(nix eval --store ipfs:// --raw --expr "(builtins.fetchTree { type = \"git\"; url = file://$repo; treeHash = \"$treeHash\"; }).outPath")
     [[ "$(ls $path4)" = hello ]]
     diff $path2 $path4/hello
 else

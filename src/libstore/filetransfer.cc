@@ -450,11 +450,16 @@ struct curlFileTransfer : public FileTransfer
                     code == CURLE_ABORTED_BY_CALLBACK && _isInterrupted
                     ? FileTransferError(Interrupted, response, "%s of '%s' was interrupted", request.verb(), request.uri)
                     : httpStatus != 0
-                    ? FileTransferError(err, response, "unable to %s '%s': HTTP error %d ('%s')%s",
-                        request.verb(), request.uri, httpStatus,
-                        code == CURLE_OK ? "" : fmt(" (curl error: %s)", statusMsg, curl_easy_strerror(code)))
-                    : FileTransferError(err, response, "unable to %s '%s': %s (%d)",
-                        request.verb(), request.uri, curl_easy_strerror(code), code);
+                    ? FileTransferError(err,
+                        response,
+                        fmt("unable to %s '%s': HTTP error %d ('%s')",
+                            request.verb(), request.uri, httpStatus, statusMsg)
+                        + (code == CURLE_OK ? "" : fmt(" (curl error: %s)", curl_easy_strerror(code)))
+                        )
+                    : FileTransferError(err,
+                        response,
+                        fmt("unable to %s '%s': %s (%d)",
+                            request.verb(), request.uri, curl_easy_strerror(code), code));
 
                 /* If this is a transient error, then maybe retry the
                    download after a while. If we're writing to a
@@ -880,8 +885,11 @@ FileTransferError::FileTransferError(FileTransfer::Error error, std::shared_ptr<
     : Error(args...), error(error), response(response)
 {
     const auto hf = hintfmt(args...);
-    if (response) {
-        err.hint = hintfmt("%1%\n\nresponse body:\n\n%2%", normaltxt(hf.str()), *response);
+    // FIXME: Due to https://github.com/NixOS/nix/issues/3841 we don't know how
+    // to print different messages for different verbosity levels. For now
+    // we add some heuristics for detecting when we want to show the response.
+    if (response && (response->size() < 1024 || response->find("<html>") != string::npos)) {
+            err.hint = hintfmt("%1%\n\nresponse body:\n\n%2%", normaltxt(hf.str()), *response);
     } else {
         err.hint = hf;
     }
