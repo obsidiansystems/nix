@@ -103,11 +103,11 @@ public:
     void addToStore(const ValidPathInfo & info, Source & narSource,
         RepairFlag repair, CheckSigsFlag checkSigs) override;
 
-    bool isValidPathUncached(const StorePath & storePath) override;
+    bool isValidPathUncached(StorePathOrDesc storePathOrDesc) override;
 
-    void narFromPath(const StorePath & storePath, Sink & sink) override;
+    void narFromPath(StorePathOrDesc storePathOrDesc, Sink & sink) override;
 
-    void queryPathInfoUncached(const StorePath & storePath,
+    void queryPathInfoUncached(StorePathOrDesc storePathOrCa,
         Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override;
 
     StorePath addToStore(const string & name, const Path & srcPath,
@@ -127,7 +127,7 @@ public:
         BuildMode buildMode) override
     { unsupported("buildDerivation"); }
 
-    void ensurePath(const StorePath & path) override
+    void ensurePath(StorePathOrDesc desc) override
     { unsupported("ensurePath"); }
 
     std::optional<StorePath> queryPathFromHashPart(const std::string & hashPart) override

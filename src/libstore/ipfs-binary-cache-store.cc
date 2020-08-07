@@ -348,12 +348,9 @@ void IPFSBinaryCacheStore::writeNarInfo(ref<NarInfo> narInfo)
     auto narMap = getIpfsDag(getIpfsPath())["nar"];
 
     json["references"] = nlohmann::json::object();
-    json["hasSelfReference"] = false;
+    json["hasSelfReference"] = narInfo->hasSelfReference;
     for (auto & ref : narInfo->references) {
-        if (ref == narInfo->path)
-            json["hasSelfReference"] = true;
-        else
-            json["references"].emplace(ref.to_string(), narMap[(std::string) ref.to_string()]);
+        json["references"].emplace(ref.to_string(), narMap[(std::string) ref.to_string()]);
     }
 
     json["ca"] = narInfo->ca;
@@ -466,17 +463,19 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
     stats.narInfoWrite++;
 }
 
-bool IPFSBinaryCacheStore::isValidPathUncached(const StorePath & storePath)
+bool IPFSBinaryCacheStore::isValidPathUncached(StorePathOrDesc storePathOrDesc)
 {
+    auto storePath = this->bakeCaIfNeeded(storePathOrDesc);
+
     auto json = getIpfsDag(getIpfsPath());
     if (!json.contains("nar"))
         return false;
     return json["nar"].contains(storePath.to_string());
 }
 
-void IPFSBinaryCacheStore::narFromPath(const StorePath & storePath, Sink & sink)
+void IPFSBinaryCacheStore::narFromPath(StorePathOrDesc storePathOrDesc, Sink & sink)
 {
-    auto info = queryPathInfo(storePath).cast<const NarInfo>();
+    auto info = queryPathInfo(storePathOrDesc).cast<const NarInfo>();
 
     uint64_t narSize = 0;
 
@@ -500,10 +499,11 @@ void IPFSBinaryCacheStore::narFromPath(const StorePath & storePath, Sink & sink)
     stats.narReadBytes += narSize;
 }
 
-void IPFSBinaryCacheStore::queryPathInfoUncached(const StorePath & storePath,
+void IPFSBinaryCacheStore::queryPathInfoUncached(StorePathOrDesc storePathOrCa,
     Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept
 {
     // TODO: properly use callbacks
+    auto storePath = bakeCaIfNeeded(storePathOrCa);
 
     auto callbackPtr = std::make_shared<decltype(callback)>(std::move(callback));
 
@@ -529,7 +529,7 @@ void IPFSBinaryCacheStore::queryPathInfoUncached(const StorePath & storePath,
         narInfo.references.insert(StorePath(ref.key()));
 
     if (json["hasSelfReference"])
-        narInfo.references.insert(storePath);
+        narInfo.hasSelfReference = json["hasSelfReference"];
 
     if (json.find("ca") != json.end())
         json["ca"].get_to(narInfo.ca);
@@ -585,7 +585,19 @@ StorePath IPFSBinaryCacheStore::addToStore(const string & name, const Path & src
         h = hashString(hashAlgo, s);
     }
 
-    ValidPathInfo info(makeFixedOutputPath(method, h, name));
+    ValidPathInfo info {
+        *this,
+        StorePathDescriptor {
+            .name = name,
+            .info = FixedOutputInfo {
+                {
+                    .method = method,
+                    .hash = h,
+                },
+                {},
+            },
+        },
+    };
 
     auto source = StringSource { *sink.s };
     addToStore(info, source, repair, CheckSigs);
