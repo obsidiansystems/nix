@@ -57,7 +57,7 @@ void WorkerProto<ContentAddress>::write(const Store & store, Sink & out, const C
 
 std::optional<StorePath> WorkerProto<std::optional<StorePath>>::read(const Store & store, Source & from)
 {
-	auto s = readString(from);
+    auto s = readString(from);
     return s == "" ? std::optional<StorePath> {} : store.parseStorePath(s);
 }
 
