@@ -33,6 +33,7 @@ nix_tests = \
   post-hook.sh \
   function-trace.sh \
   recursive.sh \
+  ipfs.sh \
   flakes.sh
   # parallel.sh
 

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <nlohmann/json.hpp>
 #include <variant>
+
 #include "hash.hh"
 #include "path.hh"
 
@@ -56,7 +58,8 @@ ContentAddress parseContentAddress(std::string_view rawCa);
 
 std::optional<ContentAddress> parseContentAddressOpt(std::string_view rawCaOpt);
 
-Hash getContentAddressHash(const ContentAddress & ca);
+void to_json(nlohmann::json& j, const ContentAddress & c);
+void from_json(const nlohmann::json& j, ContentAddress & c);
 
 /*
  * References set
@@ -151,5 +154,11 @@ struct StorePathDescriptor {
 std::string renderStorePathDescriptor(StorePathDescriptor ca);
 
 StorePathDescriptor parseStorePathDescriptor(std::string_view rawCa);
+
+// Needed until https://github.com/nlohmann/json/pull/211
+
+void to_json(nlohmann::json& j, const std::optional<ContentAddress> & c);
+void from_json(const nlohmann::json& j, std::optional<ContentAddress> & c);
+Hash getContentAddressHash(const ContentAddress & ca);
 
 }

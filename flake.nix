@@ -91,7 +91,8 @@
             (aws-sdk-cpp.override {
               apis = ["s3" "transfer"];
               customMemoryManagement = false;
-            });
+            })
+          ++ lib.optional (stdenv.isLinux || stdenv.isDarwin) ipfs;
 
         propagatedDeps =
           [ (boehmgc.override { enableLargeConfig = true; })
@@ -172,6 +173,9 @@
                 pkgconfig
                 pkgs.perl
                 boost
+                (if lib.versionAtLeast lib.version "20.03pre"
+                 then nlohmann_json
+                 else nlohmann_json.override { multipleHeaders = true; })
               ]
               ++ lib.optional (stdenv.isLinux || stdenv.isDarwin) libsodium;
 

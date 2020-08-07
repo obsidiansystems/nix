@@ -30,6 +30,7 @@ void StoreCommand::run()
 {
     auto store = getStore();
     run(store);
+    store->sync();
 }
 
 StorePathsCommand::StorePathsCommand(bool recursive)

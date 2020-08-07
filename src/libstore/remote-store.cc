@@ -829,6 +829,15 @@ void RemoteStore::queryMissing(const std::vector<StorePathWithOutputs> & targets
 }
 
 
+void RemoteStore::sync()
+{
+    auto conn(getConnection());
+    conn->to << wopSync;
+    conn.processStderr();
+    readInt(conn->from);
+}
+
+
 void RemoteStore::connect()
 {
     auto conn(getConnection());

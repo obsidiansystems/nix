@@ -1115,6 +1115,9 @@ static int _main(int argc, char * * argv)
 
         op(opFlags, opArgs);
 
+        if (store)
+            store->sync();
+
         logger->stop();
 
         return 0;
