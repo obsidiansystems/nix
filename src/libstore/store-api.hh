@@ -147,10 +147,13 @@ struct BuildResult
 
 /* Useful for many store functions which can take advantage of content
    addresses or work with regular store paths */
+typedef std::variant<StorePath, StorePathDescriptor> OwnedStorePathOrDesc;
 typedef std::variant<
     std::reference_wrapper<const StorePath>,
     std::reference_wrapper<const StorePathDescriptor>
 > StorePathOrDesc;
+
+StorePathOrDesc borrowStorePathOrDesc(const OwnedStorePathOrDesc &);
 
 class Store : public std::enable_shared_from_this<Store>, public Config
 {
@@ -250,10 +253,12 @@ public:
     StorePathWithOutputs followLinksToStorePathWithOutputs(std::string_view path) const;
 
     /* Constructs a unique store path name. */
-    StorePath makeStorePath(const string & type,
+    StorePath makeStorePath(std::string_view type,
+        std::string_view hash, std::string_view name) const;
+    StorePath makeStorePath(std::string_view type,
         const Hash & hash, std::string_view name) const;
 
-    StorePath makeOutputPath(const string & id,
+    StorePath makeOutputPath(std::string_view id,
         const Hash & hash, std::string_view name) const;
 
     StorePath makeFixedOutputPath(std::string_view name, const FixedOutputInfo & info) const;

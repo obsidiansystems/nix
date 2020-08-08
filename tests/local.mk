@@ -35,6 +35,7 @@ nix_tests = \
   recursive.sh \
   ipfs.sh \
   flakes.sh \
+  content-addressed.sh \
   ensure-ca.sh
   # parallel.sh
 
