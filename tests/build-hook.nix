@@ -31,7 +31,8 @@ let
     name = "build-remote-input-3";
     buildCommand = ''
       read x < ${input2}
-      echo $x BAZ > $out
+      mkdir $out
+      echo $x BAZ > $out/a
     '';
     requiredSystemFeatures = ["baz"];
   };
@@ -44,7 +45,7 @@ in
     buildCommand =
       ''
         read x < ${input1}
-        read y < ${input3}
+        read y < ${input3}/a
         echo "$x $y" > $out
       '';
   }
