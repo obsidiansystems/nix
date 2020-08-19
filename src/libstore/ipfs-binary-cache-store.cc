@@ -442,7 +442,7 @@ void IPFSBinaryCacheStore::getIpfsBlock(const std::string & ipfsPath,
 void IPFSBinaryCacheStore::writeNarInfo(ref<NarInfo> narInfo)
 {
     auto json = nlohmann::json::object();
-    json["narHash"] = narInfo->narHash->to_string(Base32, true);
+    json["narHash"] = narInfo->narHash.to_string(Base32, true);
     json["narSize"] = narInfo->narSize;
 
     auto narMap = getIpfsDag(getIpfsPath())["nar"];
@@ -733,7 +733,7 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
     narInfo->narSize = nar->size();
     narInfo->narHash = hashString(htSHA256, *nar);
 
-    if (info.narHash && info.narHash != narInfo->narHash)
+    if (info.narHash != narInfo->narHash)
         throw Error("refusing to copy corrupted path '%1%' to binary cache", printStorePath(info.path));
 
     /* Compress the NAR. */
@@ -862,7 +862,11 @@ void IPFSBinaryCacheStore::queryPathInfoUncached(StorePathOrDesc storePathOrCa,
                 };
                 from_json(json, ca);
             }
-            NarInfo narInfo { *this, StorePathDescriptor { ca } };
+            NarInfo narInfo {
+                *this,
+                std::move(ca),
+                Hash::dummy, // FIXME
+            };
             assert(narInfo.path == storePath);
             narInfo.url = url;
             (*callbackPtr)((std::shared_ptr<ValidPathInfo>)
@@ -884,8 +888,10 @@ void IPFSBinaryCacheStore::queryPathInfoUncached(StorePathOrDesc storePathOrCa,
     auto narObjectHash = (std::string) json["nar"][(std::string) storePath.to_string()]["/"];
     json = getIpfsDag("/ipfs/" + narObjectHash);
 
-    NarInfo narInfo { storePath };
-    narInfo.narHash = Hash::parseAnyPrefixed((std::string) json["narHash"]);
+    NarInfo narInfo {
+        std::move(storePath),
+        Hash::parseAnyPrefixed(json.at("narHash").get<std::string_view>()),
+    };
     narInfo.narSize = json["narSize"];
 
     for (auto & ref : json["references"].items())
@@ -966,6 +972,7 @@ StorePath IPFSBinaryCacheStore::addToStore(const string & name, const Path & src
                 {},
             },
         },
+        Hash::dummy, // FIXME
     };
 
     auto source = StringSource { *sink.s };
@@ -977,8 +984,21 @@ StorePath IPFSBinaryCacheStore::addToStore(const string & name, const Path & src
 StorePath IPFSBinaryCacheStore::addTextToStore(const string & name, const string & s,
     const StorePathSet & references, RepairFlag repair)
 {
-    ValidPathInfo info(computeStorePathForText(name, s, references));
-    info.references = references;
+    StringSink sink;
+    dumpString(s, sink);
+    auto narHash = hashString(htSHA256, *sink.s);
+
+    ValidPathInfo info {
+        *this,
+        {
+            .name = name,
+            TextInfo {
+                { .hash = hashString(htSHA256, s) },
+                references,
+            },
+        },
+        std::move(narHash)
+    };
 
     if (repair || !isValidPath(info.path)) {
         StringSink sink;

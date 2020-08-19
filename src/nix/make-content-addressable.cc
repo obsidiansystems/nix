@@ -113,7 +113,7 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
                 };
             }
 
-            ValidPathInfo info { *store, StorePathDescriptor { ca } };
+            ValidPathInfo info { *store, StorePathDescriptor { ca }, narHash };
             info.narHash = narHash;
             info.narSize = sink.s->size();
 
