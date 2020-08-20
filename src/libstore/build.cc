@@ -3763,7 +3763,7 @@ void DerivationGoal::registerOutputs()
     if (hook) {
         bool allValid = true;
         for (auto & i : drv->outputsAndOptPaths(worker.store)) {
-            if (!i.second.second || !worker.store.isValidPath(StorePathOrDesc { *i.second.second }))
+            if (!i.second.second || !worker.store.isValidPath(*i.second.second))
                 allValid = false;
         }
         if (allValid) return;
