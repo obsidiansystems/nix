@@ -9,7 +9,7 @@ std::string FixedOutputHash::printMethodAlgo() const {
 }
 
 
-std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
+std::string makeFileIngestionPrefix(FileIngestionMethod m) {
     switch (m) {
     case FileIngestionMethod::Flat:
         return "";
@@ -18,6 +18,17 @@ std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
     }
     abort();
 }
+
+std::string makeContentAddressingPrefix(ContentAddressingMethod m) {
+    return std::visit(overloaded {
+        [](IsText _) -> std::string { return "text:"; },
+        [](FileIngestionMethod m2) {
+             /* Not prefixed for back compat with things that couldn't produce text before. */
+            return makeFileIngestionPrefix(m2);
+        },
+    }, m);
+}
+
 
 std::string makeFixedOutputCA(FileIngestionMethod method, const Hash & hash)
 {

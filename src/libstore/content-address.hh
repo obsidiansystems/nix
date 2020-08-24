@@ -10,10 +10,32 @@ namespace nix {
  * Mini content address
  */
 
+/* Counterpart of FileIngestionMethod that is a struct because there is only
+   one method. */
+struct IsText : std::monostate { };
+
 enum struct FileIngestionMethod : uint8_t {
     Flat,
     Recursive,
 };
+
+/* Compute the prefix to the hash algorithm which indicates how the files were
+   ingested. */
+std::string makeFileIngestionPrefix(FileIngestionMethod m);
+
+
+/* Just the type of a content address. Combine with the hash itself, and we
+   have a `ContentAddress` as defined below. Combine that, in turn, with info
+   on references, and we have `ContentAddressWithReferences`, as defined
+   further below. */
+typedef std::variant<
+    IsText,
+    FileIngestionMethod
+> ContentAddressingMethod;
+
+/* Compute the prefix to the hash algorithm which indicates how the files were
+   ingested. */
+std::string makeContentAddressingPrefix(ContentAddressingMethod m);
 
 
 struct TextHash {
@@ -26,6 +48,7 @@ struct FixedOutputHash {
     Hash hash;
     std::string printMethodAlgo() const;
 };
+
 
 /*
   We've accumulated several types of content-addressed paths over the years;
@@ -43,10 +66,6 @@ typedef std::variant<
     FixedOutputHash // for path computed by makeFixedOutputPath
 > ContentAddress;
 
-/* Compute the prefix to the hash algorithm which indicates how the files were
-   ingested. */
-std::string makeFileIngestionPrefix(const FileIngestionMethod m);
-
 std::string renderContentAddress(ContentAddress ca);
 
 std::string renderContentAddress(std::optional<ContentAddress> ca);
@@ -56,6 +75,7 @@ ContentAddress parseContentAddress(std::string_view rawCa);
 std::optional<ContentAddress> parseContentAddressOpt(std::string_view rawCaOpt);
 
 Hash getContentAddressHash(const ContentAddress & ca);
+
 
 /*
  * References set

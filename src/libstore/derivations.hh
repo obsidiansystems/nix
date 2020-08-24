@@ -37,7 +37,7 @@ struct DerivationOutputCAFixed
 struct DerivationOutputCAFloating
 {
     /* information used for expected hash computation */
-    FileIngestionMethod method;
+    ContentAddressingMethod method;
     HashType hashType;
 };
 

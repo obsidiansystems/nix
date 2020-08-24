@@ -4005,26 +4005,35 @@ void DerivationGoal::registerOutputs()
 
         auto newInfoFromCA = [&](const DerivationOutputCAFloating outputHash) -> ValidPathInfo {
             auto & st = outputStats.at(outputName);
-            if (outputHash.method == FileIngestionMethod::Flat) {
+            if (outputHash.method == ContentAddressingMethod { FileIngestionMethod::Flat } ||
+                outputHash.method == ContentAddressingMethod { IsText {} })
+            {
                 /* The output path should be a regular file without execute permission. */
                 if (!S_ISREG(st.st_mode) || (st.st_mode & S_IXUSR) != 0)
                     throw BuildError(
                         "output path '%1%' should be a non-executable regular file "
-                        "since recursive hashing is not enabled (outputHashMode=flat)",
+                        "since recursive hashing is not enabled (one of outputHashMode={flat,text} is true)",
                         actualPath);
             }
             rewriteOutput();
             /* FIXME optimize and deduplicate with addToStore */
             std::string oldHashPart { scratchPath.hashPart() };
             HashModuloSink caSink { outputHash.hashType, oldHashPart };
-            switch (outputHash.method) {
-            case FileIngestionMethod::Recursive:
-                dumpPath(actualPath, caSink);
-                break;
-            case FileIngestionMethod::Flat:
-                readFile(actualPath, caSink);
-                break;
-            }
+            std::visit(overloaded {
+                [&](IsText _) {
+                    dumpPath(actualPath, caSink);
+                },
+                [&](FileIngestionMethod m2) {
+                    switch (m2) {
+                    case FileIngestionMethod::Recursive:
+                        dumpPath(actualPath, caSink);
+                        break;
+                    case FileIngestionMethod::Flat:
+                        readFile(actualPath, caSink);
+                        break;
+                    }
+                },
+            }, outputHash.method);
             auto got = caSink.finish().first;
             HashModuloSink narSink { htSHA256, oldHashPart };
             dumpPath(actualPath, narSink);
@@ -4033,13 +4042,26 @@ void DerivationGoal::registerOutputs()
                 worker.store,
                 {
                     .name = outputPathName(drv->name, outputName),
-                    .info = FixedOutputInfo {
-                        {
-                            .method = outputHash.method,
-                            .hash = got,
+                    .info = std::visit(overloaded {
+                        [&](IsText _) -> ContentAddressWithReferences {
+                            auto refs = rewriteRefs();
+                            if (refs.hasSelfReference)
+                                throw BuildError("output path '%s' cannot have a self reference, because text hashing doesn't support that");
+                            return TextInfo {
+                                { .hash = got },
+                                std::move(refs.references),
+                            };
                         },
-                        rewriteRefs(),
-                    },
+                        [&](FileIngestionMethod m2) -> ContentAddressWithReferences {
+                            return FixedOutputInfo {
+                                {
+                                    .method = m2,
+                                    .hash = got,
+                                },
+                                rewriteRefs(),
+                            };
+                        },
+                    }, outputHash.method),
                 },
                 narHashAndSize.first,
             };

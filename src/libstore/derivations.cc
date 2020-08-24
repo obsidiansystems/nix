@@ -2,6 +2,7 @@
 #include "store-api.hh"
 #include "globals.hh"
 #include "util.hh"
+#include "split.hh"
 #include "worker-protocol.hh"
 #include "fs-accessor.hh"
 
@@ -153,18 +154,20 @@ static DerivationOutput parseDerivationOutput(const Store & store,
     std::string_view pathS, std::string_view hashAlgo, std::string_view hash)
 {
     if (hashAlgo != "") {
-        auto method = FileIngestionMethod::Flat;
-        if (string(hashAlgo, 0, 2) == "r:") {
+        ContentAddressingMethod method = FileIngestionMethod::Flat;
+        if (splitPrefix(hashAlgo, "r:"))
             method = FileIngestionMethod::Recursive;
-            hashAlgo = hashAlgo.substr(2);
-        }
+        else if (splitPrefix(hashAlgo, "text:"))
+            method = IsText {};
         const auto hashType = parseHashType(hashAlgo);
         if (hash != "") {
             validatePath(pathS);
+            auto pmethod = std::get_if<FileIngestionMethod>(&method);
+            assert(pmethod);
             return DerivationOutput {
                 .output = DerivationOutputCAFixed {
                     .hash = FixedOutputHash {
-                        .method = std::move(method),
+                        .method = *pmethod,
                         .hash = Hash::parseNonSRIUnprefixed(hash, hashType),
                     },
                 },
@@ -350,7 +353,7 @@ string Derivation::unparse(const Store & store, bool maskOutputs,
             },
             [&](DerivationOutputCAFloating dof) {
                 s += ','; printUnquotedString(s, "");
-                s += ','; printUnquotedString(s, makeFileIngestionPrefix(dof.method) + printHashType(dof.hashType));
+                s += ','; printUnquotedString(s, makeContentAddressingPrefix(dof.method) + printHashType(dof.hashType));
                 s += ','; printUnquotedString(s, "");
             },
         }, i.second.output);
@@ -645,7 +648,7 @@ void writeDerivation(Sink & out, const Store & store, const BasicDerivation & dr
             },
             [&](DerivationOutputCAFloating dof) {
                 out << ""
-                    << (makeFileIngestionPrefix(dof.method) + printHashType(dof.hashType))
+                    << (makeContentAddressingPrefix(dof.method) + printHashType(dof.hashType))
                     << "";
             },
         }, i.second.output);
