@@ -4,6 +4,7 @@
 #include "types.hh"
 #include "hash.hh"
 #include "content-address.hh"
+#include "sync.hh"
 
 #include <map>
 #include <variant>
@@ -100,7 +101,7 @@ struct BasicDerivation
     StringPairs env;
     std::string name;
 
-    BasicDerivation() { }
+    BasicDerivation() = default;
     virtual ~BasicDerivation() { };
 
     bool isBuiltin() const;
@@ -127,7 +128,15 @@ struct Derivation : BasicDerivation
     std::string unparse(const Store & store, bool maskOutputs,
         std::map<std::string, StringSet> * actualInputs = nullptr) const;
 
-    Derivation() { }
+    /* Return the underlying basic derivation but with
+
+       1. input drv outputs moved to input sources.
+
+       2. placeholders replaced with realized input store paths. */
+    BasicDerivation resolve(Store & store);
+
+    Derivation() = default;
+    Derivation(BasicDerivation && bd) : BasicDerivation(std::move(bd)) { }
 };
 
 
@@ -186,6 +195,16 @@ typedef std::map<StorePath, DrvHashModulo> DrvHashes;
 
 extern DrvHashes drvHashes; // FIXME: global, not thread-safe
 
+/* Memoisation of `readDerivation(..).resove()`. */
+typedef std::map<
+    StorePath,
+    std::optional<StorePath>
+> DrvPathResolutions;
+
+// FIXME: global, though at least thread-safe.
+// FIXME: arguably overlaps with hashDerivationModulo memo table.
+extern Sync<DrvPathResolutions> drvPathResolutions;
+
 bool wantOutput(const string & output, const std::set<string> & wanted);
 
 struct Source;
@@ -196,6 +215,6 @@ void writeDerivation(Sink & out, const Store & store, const BasicDerivation & dr
 
 std::string hashPlaceholder(const std::string & outputName);
 
-StorePath downstreamPlaceholder(const Store & store, const StorePath & drvPath, std::string_view outputName);
+std::string downstreamPlaceholder(const Store & store, const StorePath & drvPath, std::string_view outputName);
 
 }
