@@ -216,6 +216,17 @@ StorePathDescriptor parseStorePathDescriptor(std::string_view rawCa)
     };
 }
 
+ContentAddressingMethod getContentAddressMethod(const ContentAddressWithReferences & ca)
+{
+    return std::visit(overloaded {
+        [](TextInfo th) -> ContentAddressingMethod {
+            return IsText {};
+        },
+        [](FixedOutputInfo fsh) -> ContentAddressingMethod {
+            return fsh.method;
+        },
+    }, ca);
+}
 
 Hash getContentAddressHash(const ContentAddress & ca)
 {
@@ -227,6 +238,23 @@ Hash getContentAddressHash(const ContentAddress & ca)
             return fsh.hash;
         },
     }, ca);
+}
+
+Hash getContentAddressHash(const ContentAddressWithReferences & ca)
+{
+    return std::visit(overloaded {
+        [](TextInfo th) {
+            return th.hash;
+        },
+        [](FixedOutputInfo fsh) {
+            return fsh.hash;
+        },
+    }, ca);
+}
+
+std::string printMethodAlgo(const ContentAddressWithReferences & ca) {
+    return makeContentAddressingPrefix(getContentAddressMethod(ca))
+        + printHashType(getContentAddressHash(ca).type);
 }
 
 }

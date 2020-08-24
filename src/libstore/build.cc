@@ -4089,13 +4089,14 @@ void DerivationGoal::registerOutputs()
                 return newInfo0;
             },
             [&](DerivationOutputCAFixed dof) {
+                auto wanted = getContentAddressHash(dof.ca);
+
                 auto newInfo0 = newInfoFromCA(DerivationOutputCAFloating {
-                    .method = dof.hash.method,
-                    .hashType = dof.hash.hash.type,
+                    .method = getContentAddressMethod(dof.ca),
+                    .hashType = wanted.type,
                 });
 
                 /* Check wanted hash */
-                Hash & wanted = dof.hash.hash;
                 assert(newInfo0.ca);
                 auto got = getContentAddressHash(*newInfo0.ca);
                 if (wanted != got) {
@@ -4108,6 +4109,11 @@ void DerivationGoal::registerOutputs()
                             wanted.to_string(SRI, true),
                             got.to_string(SRI, true)));
                 }
+                if (static_cast<const PathReferences<StorePath> &>(newInfo0) != PathReferences<StorePath> {})
+                    delayedException = std::make_exception_ptr(
+                        BuildError("illegal path references in fixed-output derivation '%s'",
+                            worker.store.printStorePath(drvPath)));
+
                 return newInfo0;
             },
             [&](DerivationOutputCAFloating dof) {

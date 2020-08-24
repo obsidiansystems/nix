@@ -93,6 +93,12 @@ struct PathReferences
             && hasSelfReference == other.hasSelfReference;
     }
 
+    bool operator != (const PathReferences<Ref> & other) const
+    {
+        return references != other.references
+            || hasSelfReference != other.hasSelfReference;
+    }
+
     /* Functions to view references + hasSelfReference as one set, mainly for
        compatibility's sake. */
     StorePathSet referencesPossiblyToSelf(const Ref & self) const;
@@ -149,6 +155,11 @@ typedef std::variant<
     TextInfo,
     FixedOutputInfo
 > ContentAddressWithReferences;
+
+ContentAddressingMethod getContentAddressMethod(const ContentAddressWithReferences & ca);
+Hash getContentAddressHash(const ContentAddressWithReferences & ca);
+
+std::string printMethodAlgo(const ContentAddressWithReferences &);
 
 struct StorePathDescriptor {
     std::string name;
