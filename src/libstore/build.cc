@@ -985,6 +985,8 @@ private:
     void tryLocalBuild();
     void buildDone();
 
+    void resolvedFinished();
+
     /* Is the build hook willing to perform the build? */
     HookReply tryBuildHook();
 
@@ -1042,8 +1044,8 @@ private:
     /* Wrappers around the corresponding Store methods that first consult the
        derivation.  This is currently needed because when there is no drv file
        there also is no DB entry. */
-    std::map<std::string, std::optional<StorePath>> queryDerivationOutputMap();
-    OutputPathMap queryDerivationOutputMapAssumeTotal();
+    std::map<std::string, std::optional<StorePath>> queryPartialDerivationOutputMap();
+    OutputPathMap queryDerivationOutputMap();
 
     /* Return the set of (in)valid paths. */
     void checkPathValidity();
@@ -1367,7 +1369,7 @@ void DerivationGoal::repairClosure()
        that produced those outputs. */
 
     /* Get the output closure. */
-    auto outputs = queryDerivationOutputMapAssumeTotal();
+    auto outputs = queryDerivationOutputMap();
     StorePathSet outputClosure;
     for (auto & i : outputs) {
         if (!wantOutput(i.first, wantedOutputs)) continue;
@@ -1386,7 +1388,7 @@ void DerivationGoal::repairClosure()
     std::map<StorePath, StorePath> outputsToDrv;
     for (auto & i : inputClosure)
         if (i.isDerivation()) {
-            auto depOutputs = worker.store.queryDerivationOutputMap(i);
+            auto depOutputs = worker.store.queryPartialDerivationOutputMap(i);
             for (auto & j : depOutputs)
                 if (j.second)
                     outputsToDrv.insert_or_assign(*j.second, i);
@@ -1451,13 +1453,44 @@ void DerivationGoal::inputsRealised()
     /* Determine the full set of input paths. */
 
     /* First, the input derivations. */
-    if (useDerivation)
-        for (auto & [depDrvPath, wantedDepOutputs] : dynamic_cast<Derivation *>(drv.get())->inputDrvs) {
+    if (useDerivation) {
+        auto & fullDrv = *dynamic_cast<Derivation *>(drv.get());
+
+        if (!fullDrv.inputDrvs.empty() && fullDrv.type() == DerivationType::CAFloating) {
+            /* We are be able to resolve this derivation based on the
+               now-known results of dependencies. If so, we become a stub goal
+               aliasing that resolved derivation goal */
+            Derivation drvResolved { fullDrv.resolve(worker.store) };
+
+            auto pathResolved = writeDerivation(worker.store, drvResolved);
+            /* Add to memotable to speed up downstream goal's queries with the
+               original derivation. */
+            drvPathResolutions.lock()->insert_or_assign(drvPath, pathResolved);
+
+            auto msg = fmt("Resolved derivation: '%s' -> '%s'",
+                worker.store.printStorePath(drvPath),
+                worker.store.printStorePath(pathResolved));
+            act = std::make_unique<Activity>(*logger, lvlInfo, actBuildWaiting, msg,
+                Logger::Fields {
+                       worker.store.printStorePath(drvPath),
+                       worker.store.printStorePath(pathResolved),
+                   });
+
+            auto resolvedGoal = worker.makeDerivationGoal(
+                pathResolved, wantedOutputs,
+                buildMode == bmRepair ? bmRepair : bmNormal);
+            addWaitee(resolvedGoal);
+
+            state = &DerivationGoal::resolvedFinished;
+            return;
+        }
+
+        for (auto & [depDrvPath, wantedDepOutputs] : fullDrv.inputDrvs) {
             /* Add the relevant output closures of the input derivation
                `i' as input paths.  Only add the closures of output paths
                that are specified as inputs. */
             assert(worker.store.isValidPath(drvPath));
-            auto outputs = worker.store.queryDerivationOutputMap(depDrvPath);
+            auto outputs = worker.store.queryPartialDerivationOutputMap(depDrvPath);
             for (auto & j : wantedDepOutputs) {
                 if (outputs.count(j) > 0) {
                     auto optRealizedInput = outputs.at(j);
@@ -1472,6 +1505,7 @@ void DerivationGoal::inputsRealised()
                         worker.store.printStorePath(drvPath), j, worker.store.printStorePath(drvPath));
             }
         }
+    }
 
     /* Second, the input sources. */
     worker.store.computeFSClosure(drv->inputSrcs, inputPaths);
@@ -1893,6 +1927,9 @@ void DerivationGoal::buildDone()
     done(BuildResult::Built);
 }
 
+void DerivationGoal::resolvedFinished() {
+    done(BuildResult::Built);
+}
 
 HookReply DerivationGoal::tryBuildHook()
 {
@@ -2912,11 +2949,11 @@ struct RestrictedStore : public LocalFSStore
     void queryReferrers(const StorePath & path, StorePathSet & referrers) override
     { }
 
-    std::map<std::string, std::optional<StorePath>> queryDerivationOutputMap(const StorePath & path) override
+    std::map<std::string, std::optional<StorePath>> queryPartialDerivationOutputMap(const StorePath & path) override
     {
         if (!goal.isAllowed(path))
             throw InvalidPath("cannot query output map for unknown path '%s' in recursive Nix", printStorePath(path));
-        return next->queryDerivationOutputMap(path);
+        return next->queryPartialDerivationOutputMap(path);
     }
 
     std::optional<StorePath> queryPathFromHashPart(const std::string & hashPart) override
@@ -2981,7 +3018,7 @@ struct RestrictedStore : public LocalFSStore
 
         for (auto & path : paths) {
             if (!path.path.isDerivation()) continue;
-            auto outputs = next->queryDerivationOutputMapAssumeTotal(path.path);
+            auto outputs = next->queryDerivationOutputMap(path.path);
             for (auto & output : outputs)
                 if (wantOutput(output.first, path.outputs))
                     newPaths.insert(output.second);
@@ -3764,7 +3801,7 @@ void DerivationGoal::registerOutputs()
     if (hook) {
         bool allValid = true;
         for (auto & i : drv->outputsAndOptPaths(worker.store)) {
-            if (!i.second.second || !worker.store.isValidPath(StorePathOrDesc { *i.second.second }))
+            if (!i.second.second || !worker.store.isValidPath(*i.second.second))
                 allValid = false;
         }
         if (allValid) return;
@@ -3852,7 +3889,7 @@ void DerivationGoal::registerOutputs()
            something like that. */
         canonicalisePathMetaData(actualPath, buildUser ? buildUser->getUID() : -1, inodesSeen);
 
-        debug("scanning for references for output %1 in temp location '%1%'", outputName, actualPath);
+        debug("scanning for references for output '%s' in temp location '%s'", outputName, actualPath);
 
         /* Pass blank Sink as we are not ready to hash data at this stage. */
         NullSink blank;
@@ -4254,10 +4291,14 @@ void DerivationGoal::registerOutputs()
     {
         ValidPathInfos infos2;
         for (auto & [outputName, newInfo] : infos) {
-            /* FIXME: we will want to track this mapping in the DB whether or
-               not we have a drv file. */
             if (useDerivation)
                 worker.store.linkDeriverToPath(drvPath, outputName, newInfo.path);
+            else {
+                /* Once a floating CA derivations reaches this point, it must
+                   already be resolved, drvPath the basic derivation path, and
+                   a file existsing at that path for sake of the DB's foreign key. */
+                assert(drv->type() != DerivationType::CAFloating);
+            }
             infos2.push_back(newInfo);
         }
         worker.store.registerValidPaths(infos2);
@@ -4554,7 +4595,7 @@ void DerivationGoal::flushLine()
 }
 
 
-std::map<std::string, std::optional<StorePath>> DerivationGoal::queryDerivationOutputMap()
+std::map<std::string, std::optional<StorePath>> DerivationGoal::queryPartialDerivationOutputMap()
 {
     if (drv->type() != DerivationType::CAFloating) {
         std::map<std::string, std::optional<StorePath>> res;
@@ -4562,11 +4603,11 @@ std::map<std::string, std::optional<StorePath>> DerivationGoal::queryDerivationO
             res.insert_or_assign(name, output.pathOpt(worker.store, drv->name, name));
         return res;
     } else {
-        return worker.store.queryDerivationOutputMap(drvPath);
+        return worker.store.queryPartialDerivationOutputMap(drvPath);
     }
 }
 
-OutputPathMap DerivationGoal::queryDerivationOutputMapAssumeTotal()
+OutputPathMap DerivationGoal::queryDerivationOutputMap()
 {
     if (drv->type() != DerivationType::CAFloating) {
         OutputPathMap res;
@@ -4574,7 +4615,7 @@ OutputPathMap DerivationGoal::queryDerivationOutputMapAssumeTotal()
             res.insert_or_assign(name, *output.second);
         return res;
     } else {
-        return worker.store.queryDerivationOutputMapAssumeTotal(drvPath);
+        return worker.store.queryDerivationOutputMap(drvPath);
     }
 }
 
@@ -4582,7 +4623,7 @@ OutputPathMap DerivationGoal::queryDerivationOutputMapAssumeTotal()
 void DerivationGoal::checkPathValidity()
 {
     bool checkHash = buildMode == bmRepair;
-    for (auto & i : queryDerivationOutputMap()) {
+    for (auto & i : queryPartialDerivationOutputMap()) {
         InitialOutputStatus status {
             .wanted = wantOutput(i.first, wantedOutputs),
         };

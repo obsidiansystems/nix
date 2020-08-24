@@ -64,7 +64,7 @@ void EvalState::realiseContext(const PathSet & context)
        paths. */
     if (allowedPaths) {
         for (auto & [drvPath, outputs] : drvs) {
-            auto outputPaths = store->queryDerivationOutputMapAssumeTotal(drvPath);
+            auto outputPaths = store->queryDerivationOutputMap(drvPath);
             for (auto & outputName : outputs) {
                 if (outputPaths.count(outputName) == 0)
                     throw Error("derivation '%s' does not have an output named '%s'",
@@ -82,13 +82,13 @@ static void mkOutputString(EvalState & state, Value & v,
     auto optOutputPath = o.second.pathOpt(*state.store, drv.name, o.first);
     mkString(
         *state.allocAttr(v, state.symbols.create(o.first)),
-        state.store->printStorePath(optOutputPath
-            ? *optOutputPath
+        optOutputPath
+            ? state.store->printStorePath(*optOutputPath)
             /* Downstream we would substitute this for an actual path once
                we build the floating CA derivation */
             /* FIXME: we need to depend on the basic derivation, not
                derivation */
-            : downstreamPlaceholder(*state.store, drvPath, o.first)),
+            : downstreamPlaceholder(*state.store, drvPath, o.first),
         {"!" + o.first + "!" + state.store->printStorePath(drvPath)});
 }
 
@@ -864,7 +864,7 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
     }
 
     /* Write the resulting term into the Nix store directory. */
-    auto drvPath = writeDerivation(state.store, drv, state.repair);
+    auto drvPath = writeDerivation(*state.store, drv, state.repair);
     auto drvPathS = state.store->printStorePath(drvPath);
 
     printMsg(lvlChatty, "instantiated '%1%' -> '%2%'", drvName, drvPathS);
