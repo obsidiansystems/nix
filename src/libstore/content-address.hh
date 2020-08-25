@@ -192,6 +192,9 @@ typedef std::variant<
     IPFSHash
 > ContentAddressWithReferences;
 
+ContentAddressWithReferences contentAddressFromMethodHashAndRefs(
+    ContentAddressingMethod method, Hash && hash, PathReferences<StorePath> && refs);
+
 ContentAddressingMethod getContentAddressMethod(const ContentAddressWithReferences & ca);
 Hash getContentAddressHash(const ContentAddressWithReferences & ca);
 

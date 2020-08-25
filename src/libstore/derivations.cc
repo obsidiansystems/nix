@@ -166,23 +166,9 @@ static DerivationOutput parseDerivationOutput(const Store & store,
             auto hash = Hash::parseNonSRIUnprefixed(hashS, hashType);
             return DerivationOutput {
                 .output = DerivationOutputCAFixed {
-                    .ca = std::visit(overloaded {
-                        [&](IsText _) -> ContentAddressWithReferences {
-                            return TextInfo {
-                                { .hash = hash },
-                                {}, // FIXME non-trivial fixed refs set
-                            };
-                        },
-                        [&](FileIngestionMethod m2) -> ContentAddressWithReferences {
-                            return FixedOutputInfo {
-                                {
-                                    .method = m2,
-                                    .hash = hash,
-                                },
-                                {}, // FIXME non-trivial fixed refs set
-                            };
-                        },
-                    }, method),
+                    // FIXME non-trivial fixed refs set
+                    .ca = contentAddressFromMethodHashAndRefs(
+                        method, std::move(hash), {}),
                 },
             };
         } else {

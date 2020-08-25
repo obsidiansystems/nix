@@ -378,6 +378,30 @@ void from_json(const nlohmann::json& j, std::optional<ContentAddress> & c) {
     }
 }
 
+ContentAddressWithReferences contentAddressFromMethodHashAndRefs(
+    ContentAddressingMethod method, Hash && hash, PathReferences<StorePath> && refs)
+{
+    return std::visit(overloaded {
+        [&](IsText _) -> ContentAddressWithReferences {
+            if (refs.hasSelfReference)
+                throw UsageError("Cannot have a self reference with text hashing scheme");
+            return TextInfo {
+                { .hash = std::move(hash) },
+                std::move(refs.references),
+            };
+        },
+        [&](FileIngestionMethod m2) -> ContentAddressWithReferences {
+            return FixedOutputInfo {
+                {
+                    .method = m2,
+                    .hash = std::move(hash),
+                },
+                std::move(refs),
+            };
+        },
+    }, method);
+}
+
 ContentAddressingMethod getContentAddressMethod(const ContentAddressWithReferences & ca)
 {
     return std::visit(overloaded {

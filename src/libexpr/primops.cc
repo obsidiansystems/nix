@@ -800,24 +800,11 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
         std::optional<HashType> ht = parseHashTypeOpt(outputHashAlgo);
         Hash h = newHashAllowEmpty(*outputHash, ht);
 
-        // FIXME: deduplicate this ContentAddressing + hash + refs logic.
-        auto ca = std::visit(overloaded {
-            [&](IsText _) -> ContentAddressWithReferences {
-                return TextInfo {
-                    { .hash = std::move(h) },
-                    {}, // FIXME non-trivial fixed refs set
-                };
-            },
-            [&](FileIngestionMethod m2) -> ContentAddressWithReferences {
-                return FixedOutputInfo {
-                    {
-                        .method = m2,
-                        .hash = std::move(h),
-                    },
-                    {}, // FIXME non-trivial fixed refs set
-                };
-            },
-        }, ingestionMethod);
+        // FIXME non-trivial fixed refs set
+        auto ca = contentAddressFromMethodHashAndRefs(
+            ingestionMethod,
+            std::move(h),
+            {});
 
         DerivationOutputCAFixed dof { .ca = ca };
 
