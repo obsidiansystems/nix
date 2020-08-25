@@ -4042,26 +4042,10 @@ void DerivationGoal::registerOutputs()
                 worker.store,
                 {
                     .name = outputPathName(drv->name, outputName),
-                    .info = std::visit(overloaded {
-                        [&](IsText _) -> ContentAddressWithReferences {
-                            auto refs = rewriteRefs();
-                            if (refs.hasSelfReference)
-                                throw BuildError("output path '%s' cannot have a self reference, because text hashing doesn't support that");
-                            return TextInfo {
-                                { .hash = got },
-                                std::move(refs.references),
-                            };
-                        },
-                        [&](FileIngestionMethod m2) -> ContentAddressWithReferences {
-                            return FixedOutputInfo {
-                                {
-                                    .method = m2,
-                                    .hash = got,
-                                },
-                                rewriteRefs(),
-                            };
-                        },
-                    }, outputHash.method),
+                    .info = contentAddressFromMethodHashAndRefs(
+                        outputHash.method,
+                        std::move(got),
+                        rewriteRefs()),
                 },
                 narHashAndSize.first,
             };
