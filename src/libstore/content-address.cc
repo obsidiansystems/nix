@@ -11,7 +11,7 @@ std::string FixedOutputHash::printMethodAlgo() const {
 }
 
 
-std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
+std::string makeFileIngestionPrefix(FileIngestionMethod m) {
     switch (m) {
     case FileIngestionMethod::Flat:
         return "";
@@ -22,6 +22,17 @@ std::string makeFileIngestionPrefix(const FileIngestionMethod m) {
     }
     abort();
 }
+
+std::string makeContentAddressingPrefix(ContentAddressingMethod m) {
+    return std::visit(overloaded {
+        [](IsText _) -> std::string { return "text:"; },
+        [](FileIngestionMethod m2) {
+             /* Not prefixed for back compat with things that couldn't produce text before. */
+            return makeFileIngestionPrefix(m2);
+        },
+    }, m);
+}
+
 
 std::string makeFixedOutputCA(FileIngestionMethod method, const Hash & hash)
 {
@@ -229,7 +240,6 @@ StorePathDescriptor parseStorePathDescriptor(std::string_view rawCa)
     };
 }
 
-
 void to_json(nlohmann::json& j, const ContentAddress & ca) {
     j = std::visit(overloaded {
         [](TextHash th) {
@@ -368,6 +378,24 @@ void from_json(const nlohmann::json& j, std::optional<ContentAddress> & c) {
     }
 }
 
+ContentAddressingMethod getContentAddressMethod(const ContentAddressWithReferences & ca)
+{
+    return std::visit(overloaded {
+        [](TextInfo th) -> ContentAddressingMethod {
+            return IsText {};
+        },
+        [](FixedOutputInfo fsh) -> ContentAddressingMethod {
+            return fsh.method;
+        },
+        [](IPFSInfo ih) -> ContentAddressingMethod {
+            throw UnimplementedError("will fix in a moment");
+        },
+        [](IPFSHash ih) -> ContentAddressingMethod {
+            throw UnimplementedError("will fix in a moment");
+        },
+    }, ca);
+}
+
 Hash getContentAddressHash(const ContentAddress & ca)
 {
     return std::visit(overloaded {
@@ -377,10 +405,33 @@ Hash getContentAddressHash(const ContentAddress & ca)
         [](FixedOutputHash fsh) {
             return fsh.hash;
         },
-        [](IPFSHash fsh) {
-            return fsh.hash;
+        [](IPFSHash ih) {
+            return ih.hash;
         },
     }, ca);
+}
+
+Hash getContentAddressHash(const ContentAddressWithReferences & ca)
+{
+    return std::visit(overloaded {
+        [](TextInfo th) {
+            return th.hash;
+        },
+        [](FixedOutputInfo fsh) {
+            return fsh.hash;
+        },
+        [](IPFSInfo ih) {
+            return ih.hash;
+        },
+        [](IPFSHash ih) -> Hash {
+            throw UnimplementedError("will fix in a moment");
+        },
+    }, ca);
+}
+
+std::string printMethodAlgo(const ContentAddressWithReferences & ca) {
+    return makeContentAddressingPrefix(getContentAddressMethod(ca))
+        + printHashType(getContentAddressHash(ca).type);
 }
 
 }

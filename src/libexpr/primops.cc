@@ -605,7 +605,7 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
     bool contentAddressed = false;
     std::optional<std::string> outputHash;
     std::string outputHashAlgo;
-    auto ingestionMethod = FileIngestionMethod::Flat;
+    ContentAddressingMethod ingestionMethod = FileIngestionMethod::Flat;
 
     StringSet outputs;
     outputs.insert("out");
@@ -618,6 +618,7 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
         auto handleHashMode = [&](const std::string & s) {
             if (s == "recursive") ingestionMethod = FileIngestionMethod::Recursive;
             else if (s == "flat") ingestionMethod = FileIngestionMethod::Flat;
+            else if (s == "text") ingestionMethod = IsText {};
             else
                 throw EvalError({
                     .hint = hintfmt("invalid value '%s' for 'outputHashMode' attribute", s),
@@ -799,22 +800,29 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
         std::optional<HashType> ht = parseHashTypeOpt(outputHashAlgo);
         Hash h = newHashAllowEmpty(*outputHash, ht);
 
-        auto outPath = state.store->makeFixedOutputPath(drvName, FixedOutputInfo {
-            {
-                .method = ingestionMethod,
-                .hash = h,
+        // FIXME: deduplicate this ContentAddressing + hash + refs logic.
+        auto ca = std::visit(overloaded {
+            [&](IsText _) -> ContentAddressWithReferences {
+                return TextInfo {
+                    { .hash = std::move(h) },
+                    {}, // FIXME non-trivial fixed refs set
+                };
             },
-            {},
-        });
-        drv.env["out"] = state.store->printStorePath(outPath);
-        drv.outputs.insert_or_assign("out", DerivationOutput {
-                .output = DerivationOutputCAFixed {
-                    .hash = FixedOutputHash {
-                        .method = ingestionMethod,
+            [&](FileIngestionMethod m2) -> ContentAddressWithReferences {
+                return FixedOutputInfo {
+                    {
+                        .method = m2,
                         .hash = std::move(h),
                     },
-                },
-        });
+                    {}, // FIXME non-trivial fixed refs set
+                };
+            },
+        }, ingestionMethod);
+
+        DerivationOutputCAFixed dof { .ca = ca };
+
+        drv.env["out"] = state.store->printStorePath(dof.path(*state.store, drvName, "out"));
+        drv.outputs.insert_or_assign("out", DerivationOutput { .output = dof });
     }
 
     else if (contentAddressed) {
