@@ -149,7 +149,7 @@ StorePath writeDerivation(Store & store,
     const Derivation & drv, RepairFlag repair = NoRepair);
 
 /* Read a derivation from a file. */
-Derivation readDerivation(const Store & store, const Path & drvPath, std::string_view name);
+Derivation readDerivation(Store & store, const Path & drvPath, std::string_view name);
 
 // FIXME: remove
 bool isDerivation(const string & fileName);
@@ -210,7 +210,7 @@ bool wantOutput(const string & output, const std::set<string> & wanted);
 struct Source;
 struct Sink;
 
-Source & readDerivation(Source & in, const Store & store, BasicDerivation & drv, std::string_view name);
+Source & readDerivation(Source & in, Store & store, BasicDerivation & drv, std::string_view name);
 void writeDerivation(Sink & out, const Store & store, const BasicDerivation & drv);
 
 std::string hashPlaceholder(const std::string & outputName);

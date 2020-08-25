@@ -151,7 +151,7 @@ static StringSet parseStrings(std::istream & str, bool arePaths)
 }
 
 
-static DerivationOutput parseDerivationOutput(const Store & store,
+static DerivationOutput parseDerivationOutput(Store & store,
     std::string_view pathS, std::string_view hashAlgo, std::string_view hashS)
 {
     if (hashAlgo != "") {
@@ -168,6 +168,7 @@ static DerivationOutput parseDerivationOutput(const Store & store,
                 .output = DerivationOutputCAFixed {
                     // FIXME non-trivial fixed refs set
                     .ca = contentAddressFromMethodHashAndRefs(
+                        store,
                         method, std::move(hash), {}),
                 },
             };
@@ -191,7 +192,7 @@ static DerivationOutput parseDerivationOutput(const Store & store,
     }
 }
 
-static DerivationOutput parseDerivationOutput(const Store & store, std::istringstream & str)
+static DerivationOutput parseDerivationOutput(Store & store, std::istringstream & str)
 {
     expect(str, ","); const auto pathS = parseString(str);
     expect(str, ","); const auto hashAlgo = parseString(str);
@@ -202,7 +203,7 @@ static DerivationOutput parseDerivationOutput(const Store & store, std::istrings
 }
 
 
-static Derivation parseDerivation(const Store & store, std::string && s, std::string_view name)
+static Derivation parseDerivation(Store & store, std::string && s, std::string_view name)
 {
     Derivation drv;
     drv.name = name;
@@ -250,7 +251,7 @@ static Derivation parseDerivation(const Store & store, std::string && s, std::st
 }
 
 
-Derivation readDerivation(const Store & store, const Path & drvPath, std::string_view name)
+Derivation readDerivation(Store & store, const Path & drvPath, std::string_view name)
 {
     try {
         return parseDerivation(store, readFile(drvPath), name);
@@ -565,7 +566,7 @@ bool wantOutput(const string & output, const std::set<string> & wanted)
 }
 
 
-static DerivationOutput readDerivationOutput(Source & in, const Store & store)
+static DerivationOutput readDerivationOutput(Source & in, Store & store)
 {
     const auto pathS = readString(in);
     const auto hashAlgo = readString(in);
@@ -602,7 +603,7 @@ std::string_view BasicDerivation::nameFromPath(const StorePath & drvPath) {
 }
 
 
-Source & readDerivation(Source & in, const Store & store, BasicDerivation & drv, std::string_view name)
+Source & readDerivation(Source & in, Store & store, BasicDerivation & drv, std::string_view name)
 {
     drv.name = name;
 

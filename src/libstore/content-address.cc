@@ -4,6 +4,7 @@
 #include "content-address.hh"
 #include "split.hh"
 
+
 namespace nix {
 
 std::string FixedOutputHash::printMethodAlgo() const {
@@ -30,6 +31,7 @@ std::string makeContentAddressingPrefix(ContentAddressingMethod m) {
              /* Not prefixed for back compat with things that couldn't produce text before. */
             return makeFileIngestionPrefix(m2);
         },
+        [](IsIPFS _) -> std::string { return "ipfs:"; },
     }, m);
 }
 
@@ -378,7 +380,18 @@ void from_json(const nlohmann::json& j, std::optional<ContentAddress> & c) {
     }
 }
 
+
+}
+
+// FIXME this file should not know about the store class in detail, but it is
+// currently needed just for `contentAddressFromMethodHashAndRefs`.
+#include "store-api.hh"
+
+namespace nix {
+
+
 ContentAddressWithReferences contentAddressFromMethodHashAndRefs(
+    Store & store,
     ContentAddressingMethod method, Hash && hash, PathReferences<StorePath> && refs)
 {
     return std::visit(overloaded {
@@ -399,6 +412,27 @@ ContentAddressWithReferences contentAddressFromMethodHashAndRefs(
                 std::move(refs),
             };
         },
+        [&](IsIPFS _) -> ContentAddressWithReferences {
+            std::set<IPFSRef> ipfsRefs;
+            auto err = UsageError("IPFS paths must only reference IPFS paths");
+            for (auto & ref : refs.references) {
+                auto & caOpt = store.queryPathInfo(ref)->ca;
+                if (!caOpt) throw err;
+                auto pref = std::get_if<IPFSHash>(&*store.queryPathInfo(ref)->ca);
+                if (!pref) throw err;
+                ipfsRefs.insert(IPFSRef {
+                    .name = std::string(ref.name()),
+                    .hash = *pref,
+                });
+            }
+            return IPFSInfo {
+                .hash = std::move(hash),
+                PathReferences<IPFSRef> {
+                    .references = std::move(ipfsRefs),
+                    .hasSelfReference = refs.hasSelfReference,
+                },
+            };
+        },
     }, method);
 }
 
@@ -412,10 +446,10 @@ ContentAddressingMethod getContentAddressMethod(const ContentAddressWithReferenc
             return fsh.method;
         },
         [](IPFSInfo ih) -> ContentAddressingMethod {
-            throw UnimplementedError("will fix in a moment");
+            return IsIPFS {};
         },
         [](IPFSHash ih) -> ContentAddressingMethod {
-            throw UnimplementedError("will fix in a moment");
+            return IsIPFS {};
         },
     }, ca);
 }
@@ -444,11 +478,11 @@ Hash getContentAddressHash(const ContentAddressWithReferences & ca)
         [](FixedOutputInfo fsh) {
             return fsh.hash;
         },
-        [](IPFSInfo ih) {
-            return ih.hash;
+        [](IPFSInfo ih) -> Hash {
+            throw Error("ipfs info not handled");
         },
         [](IPFSHash ih) -> Hash {
-            throw UnimplementedError("will fix in a moment");
+            return ih.hash;
         },
     }, ca);
 }

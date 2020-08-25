@@ -23,7 +23,7 @@ enum struct FileIngestionMethod : uint8_t {
     Git,
 };
 
-struct IsIPFSHash : std::monostate { };
+struct IsIPFS : std::monostate { };
 
 /* Compute the prefix to the hash algorithm which indicates how the files were
    ingested. */
@@ -36,8 +36,8 @@ std::string makeFileIngestionPrefix(FileIngestionMethod m);
    further below. */
 typedef std::variant<
     IsText,
-    FileIngestionMethod
-    //IsIPFSHash
+    FileIngestionMethod,
+    IsIPFS
 > ContentAddressingMethod;
 
 /* Compute the prefix to the hash algorithm which indicates how the files were
@@ -193,7 +193,7 @@ typedef std::variant<
 > ContentAddressWithReferences;
 
 ContentAddressWithReferences contentAddressFromMethodHashAndRefs(
-    ContentAddressingMethod method, Hash && hash, PathReferences<StorePath> && refs);
+    Store & store, ContentAddressingMethod method, Hash && hash, PathReferences<StorePath> && refs);
 
 ContentAddressingMethod getContentAddressMethod(const ContentAddressWithReferences & ca);
 Hash getContentAddressHash(const ContentAddressWithReferences & ca);

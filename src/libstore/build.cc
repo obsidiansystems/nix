@@ -4047,7 +4047,12 @@ void DerivationGoal::registerOutputs()
                             (Path) tmpDir + "/tmp");
                         break;
                     }
-					}
+                    }
+                },
+                [&](IsIPFS _) {
+                    got = dumpGitHashWithCustomHash(
+                        [&]{ return std::make_unique<HashModuloSink>(outputHash.hashType, oldHashPart); },
+                        (Path) tmpDir + "/tmp");
                 },
             }, outputHash.method);
             HashModuloSink narSink { htSHA256, oldHashPart };
@@ -4058,9 +4063,8 @@ void DerivationGoal::registerOutputs()
                 {
                     .name = outputPathName(drv->name, outputName),
                     .info = contentAddressFromMethodHashAndRefs(
-                        outputHash.method,
-                        std::move(got),
-                        rewriteRefs()),
+                        worker.store,
+                        outputHash.method, std::move(got), rewriteRefs()),
                 },
                 narHashAndSize.first,
             };

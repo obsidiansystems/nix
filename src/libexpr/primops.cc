@@ -802,9 +802,8 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
 
         // FIXME non-trivial fixed refs set
         auto ca = contentAddressFromMethodHashAndRefs(
-            ingestionMethod,
-            std::move(h),
-            {});
+            *state.store,
+            ingestionMethod, std::move(h), {});
 
         DerivationOutputCAFixed dof { .ca = ca };
 
