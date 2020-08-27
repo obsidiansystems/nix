@@ -160,6 +160,8 @@ static DerivationOutput parseDerivationOutput(Store & store,
             method = FileIngestionMethod::Recursive;
         else if (splitPrefix(hashAlgo, "text:"))
             method = IsText {};
+        else if (splitPrefix(hashAlgo, "ipfs:"))
+            method = IsIPFS {};
         const auto hashType = parseHashType(hashAlgo);
         if (hashS != "") {
             validatePath(pathS);

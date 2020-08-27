@@ -619,6 +619,7 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
             if (s == "recursive") ingestionMethod = FileIngestionMethod::Recursive;
             else if (s == "flat") ingestionMethod = FileIngestionMethod::Flat;
             else if (s == "text") ingestionMethod = IsText {};
+            else if (s == "ipfs") ingestionMethod = IsIPFS {};
             else
                 throw EvalError({
                     .hint = hintfmt("invalid value '%s' for 'outputHashMode' attribute", s),
