@@ -750,8 +750,11 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
             state.store->computeFSClosure(state.store->parseStorePath(std::string_view(path).substr(1)), refs);
             for (auto & j : refs) {
                 drv.inputSrcs.insert(j);
-                if (j.isDerivation())
-                    drv.inputDrvs[j] = state.store->readDerivation(j).outputNames();
+                if (j.isDerivation()) {
+                    Derivation jDrv = state.store->readDerivation(j);
+                    if(jDrv.type() != DerivationType::CAFloating)
+                        drv.inputDrvs[j] = jDrv.outputNames();
+                }
             }
         }
 
@@ -780,9 +783,9 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
         });
 
     /* Check whether the derivation name is valid. */
-    if (isDerivation(drvName))
+    if (isDerivation(drvName) && ingestionMethod != ContentAddressingMethod { IsText { } })
         throw EvalError({
-            .hint = hintfmt("derivation names are not allowed to end in '%s'", drvExtension),
+            .hint = hintfmt("derivation names are allowed to end in '%s' only if they produce a single derivation file", drvExtension),
             .errPos = posDrvName
         });
 

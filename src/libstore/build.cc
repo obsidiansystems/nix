@@ -4021,7 +4021,7 @@ void DerivationGoal::registerOutputs()
             HashModuloSink caSink { outputHash.hashType, oldHashPart };
             std::visit(overloaded {
                 [&](IsText _) {
-                    dumpPath(actualPath, caSink);
+                    readFile(actualPath, caSink);
                 },
                 [&](FileIngestionMethod m2) {
                     switch (m2) {
