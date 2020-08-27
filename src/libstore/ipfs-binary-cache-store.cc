@@ -442,8 +442,12 @@ void IPFSBinaryCacheStore::getIpfsBlock(const std::string & ipfsPath,
 void IPFSBinaryCacheStore::writeNarInfo(ref<NarInfo> narInfo)
 {
     auto json = nlohmann::json::object();
-    json["narHash"] = narInfo->narHash.to_string(Base32, true);
-    json["narSize"] = narInfo->narSize;
+
+    if (std::optional optNarHashSize = *narInfo->viewHashResultConst()) {
+        auto & [narHash, narSize] = *optNarHashSize;
+        json["narHash"] = narHash.to_string(Base32, true);
+        json["narSize"] = narSize;
+    }
 
     auto narMap = getIpfsDag(getIpfsPath())["nar"];
 
@@ -453,7 +457,8 @@ void IPFSBinaryCacheStore::writeNarInfo(ref<NarInfo> narInfo)
         json["references"].emplace(ref.to_string(), narMap[(std::string) ref.to_string()]);
     }
 
-    json["ca"] = narInfo->ca;
+    if (auto optCA = narInfo->optCA())
+        json["ca"] = *optCA;
 
     if (narInfo->deriver)
         json["deriver"] = printStorePath(*narInfo->deriver);
@@ -642,8 +647,8 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
 
     // Note this doesn’t require a IPFS store, it just goes in the
     // global namespace.
-    if (info.ca && std::holds_alternative<FixedOutputHash>(*info.ca)) {
-        auto ca_ = std::get<FixedOutputHash>(*info.ca);
+    if (info.optCA() && std::holds_alternative<FixedOutputHash>(*info.optCA())) {
+        auto ca_ = std::get<FixedOutputHash>(*info.optCA());
         if (ca_.method == FileIngestionMethod::Git) {
             auto nar = make_ref<std::string>(narSource.drain());
 
@@ -657,9 +662,8 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
             auto hash = Hash::parseAny(std::string(key, 9), htSHA1);
             assert(hash == ca_.hash);
 
-            auto narInfo = make_ref<NarInfo>(info);;
-            narInfo->narSize = nar->size();
-            narInfo->narHash = hashString(htSHA256, *nar);
+            auto narInfo = make_ref<NarInfo>(info);
+            narInfo->viewHashResult() = { hashString(htSHA256, *nar), nar->size() };
             narInfo->url = "ipfs://" + key;
 
             {
@@ -672,7 +676,7 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
 
             return;
         }
-    } else if (info.ca && std::holds_alternative<IPFSHash>(*info.ca)) {
+    } else if (info.optCA() && std::holds_alternative<IPFSHash>(*info.optCA())) {
         auto nar = make_ref<std::string>(narSource.drain());
 
         AutoDelete tmpDir(createTempDir(), true);
@@ -687,7 +691,7 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
         for (auto & ref : info.references)
             caWithRefs.references.references.insert(IPFSRef {
                     .name = std::string(ref.name()),
-                    .hash = std::get<IPFSHash>(*queryPathInfo(ref)->ca)
+                    .hash = std::get<IPFSHash>(*queryPathInfo(ref)->optCA())
                 });
 
         auto fullCa = *info.fullStorePathDescriptorOpt();
@@ -702,11 +706,10 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
 
         auto cid_ = ipfsCidFormatBase16(std::string(putIpfsDag(realCa, "sha2-256"), 6));
         assert(cid_ == cid);
-        assert(cid_ == "f01711220" + std::get<IPFSHash>(*info.ca).hash.to_string(Base16, false));
+        assert(cid_ == "f01711220" + std::get<IPFSHash>(*info.optCA()).hash.to_string(Base16, false));
 
         auto narInfo = make_ref<NarInfo>(info);;
-        narInfo->narSize = nar->size();
-        narInfo->narHash = hashString(htSHA256, *nar);
+        narInfo->viewHashResult() = { hashString(htSHA256, *nar), nar->size() };
         narInfo->url = "ipfs://" + key;
 
         {
@@ -730,10 +733,12 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
 
     auto narInfo = make_ref<NarInfo>(info);
 
-    narInfo->narSize = nar->size();
-    narInfo->narHash = hashString(htSHA256, *nar);
+    auto narSize = nar->size();
+    auto narHash = hashString(htSHA256, *nar);
 
-    if (info.narHash != narInfo->narHash)
+    narInfo->viewHashResult() = { narHash, narSize };
+
+    if (info.optNarHash() && *info.optNarHash() != narHash)
         throw Error("refusing to copy corrupted path '%1%' to binary cache", printStorePath(info.path));
 
     /* Compress the NAR. */
@@ -746,7 +751,7 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
 
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now2 - now1).count();
     printMsg(lvlTalkative, "copying path '%1%' (%2% bytes, compressed %3$.1f%% in %4% ms) to binary cache",
-        printStorePath(narInfo->path), narInfo->narSize,
+        printStorePath(narInfo->path), narSize,
         ((1.0 - (double) narCompressed->size() / nar->size()) * 100.0),
         duration);
 
@@ -865,7 +870,6 @@ void IPFSBinaryCacheStore::queryPathInfoUncached(StorePathOrDesc storePathOrCa,
             NarInfo narInfo {
                 *this,
                 std::move(ca),
-                Hash::dummy, // FIXME
             };
             assert(narInfo.path == storePath);
             narInfo.url = url;
@@ -890,9 +894,11 @@ void IPFSBinaryCacheStore::queryPathInfoUncached(StorePathOrDesc storePathOrCa,
 
     NarInfo narInfo {
         std::move(storePath),
-        Hash::parseAnyPrefixed(json.at("narHash").get<std::string_view>()),
+        This<HashResult> { HashResult {
+            Hash::parseAnyPrefixed(json.at("narHash").get<std::string_view>()),
+            (uint64_t) json["narSize"],
+        } },
     };
-    narInfo.narSize = json["narSize"];
 
     for (auto & ref : json["references"].items())
         narInfo.references.insert(StorePath(ref.key()));
@@ -900,8 +906,11 @@ void IPFSBinaryCacheStore::queryPathInfoUncached(StorePathOrDesc storePathOrCa,
     if (json["hasSelfReference"])
         narInfo.hasSelfReference = json["hasSelfReference"];
 
-    if (json.find("ca") != json.end())
-        json["ca"].get_to(narInfo.ca);
+    if (json.find("ca") != json.end()) {
+        ContentAddress temp = TextHash { .hash = Hash::dummy };
+        json["ca"].get_to(temp);
+        narInfo.viewCA() = temp;
+    }
 
     if (json.find("deriver") != json.end())
         narInfo.deriver = parseStorePath((std::string) json["deriver"]);
@@ -972,7 +981,6 @@ StorePath IPFSBinaryCacheStore::addToStore(const string & name, const Path & src
                 {},
             },
         },
-        Hash::dummy, // FIXME
     };
 
     auto source = StringSource { *sink.s };
@@ -997,7 +1005,7 @@ StorePath IPFSBinaryCacheStore::addTextToStore(const string & name, const string
                 references,
             },
         },
-        std::move(narHash)
+        std::pair { std::move(narHash), sink.s->size() },
     };
 
     if (repair || !isValidPath(info.path)) {

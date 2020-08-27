@@ -4066,11 +4066,10 @@ void DerivationGoal::registerOutputs()
                         worker.store,
                         outputHash.method, std::move(got), rewriteRefs()),
                 },
-                narHashAndSize.first,
+                narHashAndSize,
             };
-            newInfo0.narSize = narHashAndSize.second;
 
-            assert(newInfo0.ca);
+            assert(newInfo0.optCA());
             return newInfo0;
         };
 
@@ -4086,8 +4085,7 @@ void DerivationGoal::registerOutputs()
                         std::string { requiredFinalPath.hashPart() });
                 rewriteOutput();
                 auto narHashAndSize = hashPath(htSHA256, actualPath);
-                ValidPathInfo newInfo0 { requiredFinalPath, narHashAndSize.first };
-                newInfo0.narSize = narHashAndSize.second;
+                ValidPathInfo newInfo0 { requiredFinalPath, This<HashResult> { narHashAndSize } };
                 static_cast<PathReferences<StorePath> &>(newInfo0) = rewriteRefs();
                 return newInfo0;
             },
@@ -4100,8 +4098,8 @@ void DerivationGoal::registerOutputs()
                 });
 
                 /* Check wanted hash */
-                assert(newInfo0.ca);
-                auto got = getContentAddressHash(*newInfo0.ca);
+                assert(newInfo0.optCA());
+                auto got = getContentAddressHash(*newInfo0.optCA());
                 if (wanted != got) {
                     /* Throw an error after registering the path as
                        valid. */
@@ -4137,7 +4135,7 @@ void DerivationGoal::registerOutputs()
         if (!optFixedPath ||
             worker.store.printStorePath(*optFixedPath) != finalDestPath)
         {
-            assert(newInfo.ca);
+            assert(newInfo.optCA());
             dynamicOutputLock.lockPaths({worker.store.toRealPath(finalDestPath)});
         }
 
@@ -4153,7 +4151,7 @@ void DerivationGoal::registerOutputs()
             } else if (worker.store.isValidPath(newInfo.path)) {
                 /* Path already exists because CA path produced by something
                    else. No moving needed. */
-                assert(newInfo.ca);
+                assert(newInfo.optCA());
             } else {
                 /* Temporarily add write perm so we can move, will be fixed
                    later. */
@@ -4182,7 +4180,7 @@ void DerivationGoal::registerOutputs()
         if (buildMode == bmCheck) {
             if (!worker.store.isValidPath(newInfo.path)) continue;
             ValidPathInfo oldInfo(*worker.store.queryPathInfo(newInfo.path));
-            if (newInfo.narHash != oldInfo.narHash) {
+            if (newInfo.optNarHash() != oldInfo.optNarHash()) {
                 worker.checkMismatch = true;
                 if (settings.runDiffHook || settings.keepFailed) {
                     Path dst = worker.store.toRealPath(finalDestPath + checkSuffix);
@@ -4234,7 +4232,7 @@ void DerivationGoal::registerOutputs()
         /* If it's a CA path, register it right away. This is necessary if it
            isn't statically known so that we can safely unlock the path before
            the next iteration */
-        if (newInfo.ca)
+        if (newInfo.optCA().has_value())
             worker.store.registerValidPaths({newInfo});
 
         infos.emplace(outputName, std::move(newInfo));
@@ -4362,16 +4360,20 @@ void DerivationGoal::checkOutputs(const std::map<Path, ValidPathInfo> & outputs)
                 pathsLeft.pop();
                 if (!pathsDone.insert(path).second) continue;
 
+                auto accumPath = [&](const ValidPathInfo & info) {
+                    std::optional optNarSize = info.optNarSize();
+                    assert(optNarSize); // Always require NAR size for path in local store;
+                    closureSize += *optNarSize;
+                    for (auto & ref : info.referencesPossiblyToSelf())
+                        pathsLeft.push(ref);
+                };
+
                 auto i = outputsByPath.find(worker.store.printStorePath(path));
                 if (i != outputsByPath.end()) {
-                    closureSize += i->second.narSize;
-                    for (auto & ref : i->second.referencesPossiblyToSelf())
-                        pathsLeft.push(ref);
+                    accumPath(i->second);
                 } else {
                     auto info = worker.store.queryPathInfo(path);
-                    closureSize += info->narSize;
-                    for (auto & ref : info->referencesPossiblyToSelf())
-                        pathsLeft.push(ref);
+                    accumPath(*info);
                 }
             }
 
@@ -4380,9 +4382,12 @@ void DerivationGoal::checkOutputs(const std::map<Path, ValidPathInfo> & outputs)
 
         auto applyChecks = [&](const Checks & checks)
         {
-            if (checks.maxSize && info.narSize > *checks.maxSize)
+            std::optional optNarSize = info.optNarSize();
+            assert(optNarSize); // Always require NAR size for path in local store;
+            auto narSize = *optNarSize;
+            if (checks.maxSize && narSize > *checks.maxSize)
                 throw BuildError("path '%s' is too large at %d bytes; limit is %d bytes",
-                    worker.store.printStorePath(info.path), info.narSize, *checks.maxSize);
+                    worker.store.printStorePath(info.path), narSize, *checks.maxSize);
 
             if (checks.maxClosureSize) {
                 uint64_t closureSize = getClosure(info.path).second;
@@ -4908,7 +4913,11 @@ void SubstitutionGoal::tryNext()
     /* Update the total expected download size. */
     auto narInfo = std::dynamic_pointer_cast<const NarInfo>(info);
 
-    maintainExpectedNar = std::make_unique<MaintainCount<uint64_t>>(worker.expectedNarSize, info->narSize);
+    auto narSizeOpt = info->optNarSize();
+    maintainExpectedNar =
+        narSizeOpt
+        ? std::make_unique<MaintainCount<uint64_t>>(worker.expectedNarSize, *narSizeOpt)
+        : nullptr;
 
     maintainExpectedDownload =
         narInfo && narInfo->fileSize
@@ -5488,9 +5497,10 @@ bool Worker::pathContentsGood(const StorePath & path)
     if (!pathExists(store.printStorePath(path)))
         res = false;
     else {
-        HashResult current = hashPath(info->narHash.type, store.printStorePath(path));
+        Hash narHash = (*info->viewHashResultConst())->first;
+        HashResult current = hashPath(narHash.type, store.printStorePath(path));
         Hash nullHash(htSHA256);
-        res = info->narHash == nullHash || info->narHash == current.first;
+        res = narHash == nullHash || narHash == current.first;
     }
     pathContentsGoodCache.insert_or_assign(path, res);
     if (!res)

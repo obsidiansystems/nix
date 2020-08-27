@@ -102,7 +102,7 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
                 for (auto & ref : refs.references)
                     ipfsRefs.insert(IPFSRef {
                             .name = std::string(ref.name()),
-                            .hash = std::get<IPFSHash>(*store->queryPathInfo(ref)->ca)
+                            .hash = std::get<IPFSHash>(*store->queryPathInfo(ref)->optCA())
                         });
                 ca.info = IPFSInfo {
                     .hash = gitHash,
@@ -113,9 +113,11 @@ struct CmdMakeContentAddressable : StorePathsCommand, MixJSON
                 };
             }
 
-            ValidPathInfo info { *store, StorePathDescriptor { ca }, narHash };
-            info.narHash = narHash;
-            info.narSize = sink.s->size();
+            ValidPathInfo info {
+                *store,
+                StorePathDescriptor { ca },
+                std::pair { narHash, sink.s->size(), },
+            };
 
             if (!json)
                 printInfo("rewrote '%s' to '%s'", pathS, store->printStorePath(info.path));

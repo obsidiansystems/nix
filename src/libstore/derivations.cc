@@ -203,7 +203,7 @@ static DerivationOutput parseDerivationOutput(Store & store, std::istringstream 
 }
 
 
-static Derivation parseDerivation(Store & store, std::string && s, std::string_view name)
+Derivation parseDerivation(Store & store, std::string && s, std::string_view name)
 {
     Derivation drv;
     drv.name = name;
@@ -248,34 +248,6 @@ static Derivation parseDerivation(Store & store, std::string && s, std::string_v
 
     expect(str, ")");
     return drv;
-}
-
-
-Derivation readDerivation(Store & store, const Path & drvPath, std::string_view name)
-{
-    try {
-        return parseDerivation(store, readFile(drvPath), name);
-    } catch (FormatError & e) {
-        throw Error("error parsing derivation '%1%': %2%", drvPath, e.msg());
-    }
-}
-
-
-Derivation Store::derivationFromPath(const StorePath & drvPath)
-{
-    ensurePath(drvPath);
-    return readDerivation(drvPath);
-}
-
-
-Derivation Store::readDerivation(const StorePath & drvPath)
-{
-    auto accessor = getFSAccessor();
-    try {
-        return parseDerivation(*this, accessor->readFile(printStorePath(drvPath)), Derivation::nameFromPath(drvPath));
-    } catch (FormatError & e) {
-        throw Error("error parsing derivation '%s': %s", printStorePath(drvPath), e.msg());
-    }
 }
 
 

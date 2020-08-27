@@ -383,11 +383,14 @@ static void opQuery(Strings opFlags, Strings opArgs)
             for (auto & i : opArgs) {
                 for (auto & j : maybeUseOutputs(store->followLinksToStorePath(i), useOutput, forceRealise)) {
                     auto info = store->queryPathInfo(j);
+                    auto narHashResultOpt = *info->viewHashResultConst();
+                    assert(narHashResultOpt);
+                    auto & [narHash, narSize] = *narHashResultOpt;
                     if (query == qHash) {
-                        assert(info->narHash.type == htSHA256);
-                        cout << fmt("%s\n", info->narHash.to_string(Base32, true));
+                        assert(narHash.type == htSHA256);
+                        cout << fmt("%s\n", narHash.to_string(Base32, true));
                     } else if (query == qSize)
-                        cout << fmt("%d\n", info->narSize);
+                        cout << fmt("%d\n", narSize);
                 }
             }
             break;
@@ -518,8 +521,7 @@ static void registerValidity(bool reregister, bool hashGiven, bool canonicalise)
                 canonicalisePathMetaData(store->printStorePath(info->path), -1);
             if (!hashGiven) {
                 HashResult hash = hashPath(htSHA256, store->printStorePath(info->path));
-                info->narHash = hash.first;
-                info->narSize = hash.second;
+                info->cas = This<HashResult> { hash };
             }
             infos.push_back(std::move(*info));
         }
@@ -738,16 +740,19 @@ static void opVerifyPath(Strings opFlags, Strings opArgs)
         auto path = store->followLinksToStorePath(i);
         printMsg(lvlTalkative, "checking path '%s'...", store->printStorePath(path));
         auto info = store->queryPathInfo(path);
-        HashSink sink(info->narHash.type);
+        auto narHashResult = *info->viewHashResultConst();
+        assert(narHashResult);
+        auto narHash = narHashResult->first;
+        HashSink sink(narHash.type);
         store->narFromPath(path, sink);
         auto current = sink.finish();
-        if (current.first != info->narHash) {
+        if (current.first != narHash) {
             logError({
                 .name = "Hash mismatch",
                 .hint = hintfmt(
                     "path '%s' was modified! expected hash '%s', got '%s'",
                     store->printStorePath(path),
-                    info->narHash.to_string(Base32, true),
+                    narHash.to_string(Base32, true),
                     current.first.to_string(Base32, true))
             });
             status = 1;
@@ -873,13 +878,18 @@ static void opServe(Strings opFlags, Strings opArgs)
                         out << store->printStorePath(info->path)
                             << (info->deriver ? store->printStorePath(*info->deriver) : "");
                         WorkerProto<StorePathSet>::write(*store, out, info->referencesPossiblyToSelf());
+                        auto narHashResult = *info->viewHashResultConst();
+                        auto narSize = narHashResult ? narHashResult->second : 0;
                         // !!! Maybe we want compression?
-                        out << info->narSize // downloadSize
-                            << info->narSize;
-                        if (GET_PROTOCOL_MINOR(clientVersion) >= 4)
-                            out << info->narHash.to_string(Base32, true)
-                                << renderContentAddress(info->ca)
+                        out << narSize // downloadSize
+                            << narSize;
+                        if (GET_PROTOCOL_MINOR(clientVersion) >= 4) {
+                            auto narHashResult = *info->viewHashResultConst();
+                            auto optCA = *info->viewCAConst();
+                            out << (narHashResult ? narHashResult->first.to_string(Base32, true) : "")
+                                << renderContentAddress(optCA)
                                 << info->sigs;
+                        }
                     } catch (InvalidPath &) {
                     }
                 }
@@ -962,21 +972,31 @@ static void opServe(Strings opFlags, Strings opArgs)
 
                 auto path = readString(in);
                 auto deriver = readString(in);
+                auto narHash = Hash::parseAny(readString(in), htSHA256);
+                auto references = WorkerProto<StorePathSet>::read(*store, in);
+                time_t registrationTime;
+                uint64_t narSize;
+                in >> registrationTime >> narSize;
+
+                if (narSize == 0)
+                    throw Error("narInfo is too old and missing the narSize field");
+
                 ValidPathInfo info {
                     store->parseStorePath(path),
-                    Hash::parseAny(readString(in), htSHA256),
+                    This<HashResult> { std::pair { std::move(narHash), narSize } },
                 };
                 if (deriver != "")
                     info.deriver = store->parseStorePath(deriver);
-                info.setReferencesPossiblyToSelf(WorkerProto<StorePathSet>::read(*store, in));
-                in >> info.registrationTime >> info.narSize >> info.ultimate;
+                info.setReferencesPossiblyToSelf(std::move(references));
+                info.registrationTime = registrationTime;
+                in >> info.ultimate;
                 info.sigs = readStrings<StringSet>(in);
-                info.ca = parseContentAddressOpt(readString(in));
+                info.viewCA().add(parseContentAddressOpt(readString(in)));
 
-                if (info.narSize == 0)
+                if (narSize == 0)
                     throw Error("narInfo is too old and missing the narSize field");
 
-                SizedSource sizedSource(in, info.narSize);
+                SizedSource sizedSource(in, narSize);
 
                 store->addToStore(info, sizedSource, NoRepair, NoCheckSigs);
 

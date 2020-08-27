@@ -3,6 +3,7 @@
 #include "store-api.hh"
 #include "archive.hh"
 #include "git.hh"
+#include "these.hh"
 
 using namespace nix;
 
@@ -91,9 +92,8 @@ struct CmdAddToStore : MixDryRun, StoreCommand
                     {},
                 },
             },
-            narHash,
+            std::pair { narHash, sink.s->size() },
         };
-        info.narSize = sink.s->size();
 
         if (!dryRun) {
             auto source = StringSource { *sink.s };
