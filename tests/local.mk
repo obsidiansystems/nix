@@ -33,7 +33,8 @@ nix_tests = \
   function-trace.sh \
   recursive.sh \
   flakes.sh \
-  content-addressed.sh
+  content-addressed.sh \
+  text-hashed-output.sh
   # parallel.sh
   # build-remote-content-addressed-fixed.sh \
 
