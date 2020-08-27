@@ -48,7 +48,7 @@ void Store::exportPath(const StorePath & path, Sink & sink)
     teeSink
         << exportMagic
         << printStorePath(path);
-    writeStorePaths(*this, teeSink, info->references);
+    WorkerProto<StorePathSet>::write(*this, teeSink, info->referencesPossiblyToSelf());
     teeSink
         << (info->deriver ? printStorePath(*info->deriver) : "")
         << 0;
@@ -76,7 +76,7 @@ StorePaths Store::importPaths(Source & source, CheckSigsFlag checkSigs)
 
         //Activity act(*logger, lvlInfo, format("importing path '%s'") % info.path);
 
-        auto references = readStorePaths<StorePathSet>(*this, source);
+        auto references = WorkerProto<StorePathSet>::read(*this, source);
         auto deriver = readString(source);
         auto narHash = hashString(htSHA256, *saved.s);
 
@@ -86,7 +86,7 @@ StorePaths Store::importPaths(Source & source, CheckSigsFlag checkSigs)
         };
         if (deriver != "")
             info.deriver = parseStorePath(deriver);
-        info.references = references;
+        info.setReferencesPossiblyToSelf(std::move(references));
 
         // Ignore optional legacy signature.
         if (readInt(source) == 1)

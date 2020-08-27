@@ -194,10 +194,10 @@ static void opAddFixed(Strings opFlags, Strings opArgs)
 /* Hack to support caching in `nix-prefetch-url'. */
 static void opPrintFixedPath(Strings opFlags, Strings opArgs)
 {
-    auto recursive = FileIngestionMethod::Flat;
+    auto method = FileIngestionMethod::Flat;
 
     for (auto i : opFlags)
-        if (i == "--recursive") recursive = FileIngestionMethod::Recursive;
+        if (i == "--recursive") method = FileIngestionMethod::Recursive;
         else throw UsageError("unknown flag '%1%'", i);
 
     if (opArgs.size() != 3)
@@ -208,7 +208,13 @@ static void opPrintFixedPath(Strings opFlags, Strings opArgs)
     string hash = *i++;
     string name = *i++;
 
-    cout << fmt("%s\n", store->printStorePath(store->makeFixedOutputPath(recursive, Hash::parseAny(hash, hashAlgo), name)));
+    cout << fmt("%s\n", store->printStorePath(store->makeFixedOutputPath(name, FixedOutputInfo {
+        {
+            .method = method,
+            .hash = Hash::parseAny(hash, hashAlgo),
+        },
+        {},
+    })));
 }
 
 
@@ -245,7 +251,7 @@ static void printTree(const StorePath & path,
        closure(B).  That is, if derivation A is an (possibly indirect)
        input of B, then A is printed first.  This has the effect of
        flattening the tree, preventing deeply nested structures.  */
-    auto sorted = store->topoSortPaths(info->references);
+    auto sorted = store->topoSortPaths(info->referencesPossiblyToSelf());
     reverse(sorted.begin(), sorted.end());
 
     for (const auto &[n, i] : enumerate(sorted)) {
@@ -328,7 +334,7 @@ static void opQuery(Strings opFlags, Strings opArgs)
                 for (auto & j : ps) {
                     if (query == qRequisites) store->computeFSClosure(j, paths, false, includeOutputs);
                     else if (query == qReferences) {
-                        for (auto & p : store->queryPathInfo(j)->references)
+                        for (auto & p : store->queryPathInfo(j)->referencesPossiblyToSelf())
                             paths.insert(p);
                     }
                     else if (query == qReferrers) {
@@ -349,7 +355,8 @@ static void opQuery(Strings opFlags, Strings opArgs)
 
         case qDeriver:
             for (auto & i : opArgs) {
-                auto info = store->queryPathInfo(store->followLinksToStorePath(i));
+                auto path = store->followLinksToStorePath(i);
+                auto info = store->queryPathInfo(path);
                 cout << fmt("%s\n", info->deriver ? store->printStorePath(*info->deriver) : "unknown-deriver");
             }
             break;
@@ -823,7 +830,7 @@ static void opServe(Strings opFlags, Strings opArgs)
             case cmdQueryValidPaths: {
                 bool lock = readInt(in);
                 bool substitute = readInt(in);
-                auto paths = readStorePaths<StorePathSet>(*store, in);
+                auto paths = WorkerProto<StorePathSet>::read(*store, in);
                 if (lock && writeAllowed)
                     for (auto & path : paths)
                         store->addTempRoot(path);
@@ -853,19 +860,19 @@ static void opServe(Strings opFlags, Strings opArgs)
                         }
                 }
 
-                writeStorePaths(*store, out, store->queryValidPaths(paths));
+                WorkerProto<StorePathSet>::write(*store, out, store->queryValidPaths(paths));
                 break;
             }
 
             case cmdQueryPathInfos: {
-                auto paths = readStorePaths<StorePathSet>(*store, in);
+                auto paths = WorkerProto<StorePathSet>::read(*store, in);
                 // !!! Maybe we want a queryPathInfos?
                 for (auto & i : paths) {
                     try {
                         auto info = store->queryPathInfo(i);
                         out << store->printStorePath(info->path)
                             << (info->deriver ? store->printStorePath(*info->deriver) : "");
-                        writeStorePaths(*store, out, info->references);
+                        WorkerProto<StorePathSet>::write(*store, out, info->referencesPossiblyToSelf());
                         auto narHashResult = *info->viewHashResultConst();
                         auto narSize = narHashResult ? narHashResult->second : 0;
                         // !!! Maybe we want compression?
@@ -885,9 +892,11 @@ static void opServe(Strings opFlags, Strings opArgs)
                 break;
             }
 
-            case cmdDumpStorePath:
-                store->narFromPath(store->parseStorePath(readString(in)), out);
+            case cmdDumpStorePath: {
+                auto path = store->parseStorePath(readString(in));
+                store->narFromPath(path, out);
                 break;
+            }
 
             case cmdImportPaths: {
                 if (!writeAllowed) throw Error("importing paths is not allowed");
@@ -898,7 +907,7 @@ static void opServe(Strings opFlags, Strings opArgs)
 
             case cmdExportPaths: {
                 readInt(in); // obsolete
-                store->exportPaths(readStorePaths<StorePathSet>(*store, in), out);
+                store->exportPaths(WorkerProto<StorePathSet>::read(*store, in), out);
                 break;
             }
 
@@ -947,9 +956,9 @@ static void opServe(Strings opFlags, Strings opArgs)
             case cmdQueryClosure: {
                 bool includeOutputs = readInt(in);
                 StorePathSet closure;
-                store->computeFSClosure(readStorePaths<StorePathSet>(*store, in),
+                store->computeFSClosure(WorkerProto<StorePathSet>::read(*store, in),
                     closure, false, includeOutputs);
-                writeStorePaths(*store, out, closure);
+                WorkerProto<StorePathSet>::write(*store, out, closure);
                 break;
             }
 
@@ -959,7 +968,7 @@ static void opServe(Strings opFlags, Strings opArgs)
                 auto path = readString(in);
                 auto deriver = readString(in);
                 auto narHash = Hash::parseAny(readString(in), htSHA256);
-                auto references = readStorePaths<StorePathSet>(*store, in);
+                auto references = WorkerProto<StorePathSet>::read(*store, in);
                 time_t registrationTime;
                 uint64_t narSize;
                 in >> registrationTime >> narSize;
@@ -973,7 +982,7 @@ static void opServe(Strings opFlags, Strings opArgs)
                 };
                 if (deriver != "")
                     info.deriver = store->parseStorePath(deriver);
-                info.references = std::move(references);
+                info.setReferencesPossiblyToSelf(std::move(references));
                 info.registrationTime = registrationTime;
                 in >> info.ultimate;
                 info.sigs = readStrings<StringSet>(in);

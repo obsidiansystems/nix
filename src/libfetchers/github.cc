@@ -153,7 +153,10 @@ struct GitArchiveInputScheme : InputScheme
         if (auto res = getCache()->lookup(store, immutableAttrs)) {
             input.attrs.insert_or_assign("lastModified", getIntAttr(res->first, "lastModified"));
             return {
-                Tree(store->toRealPath(res->second), std::move(res->second)),
+                Tree {
+                    store->toRealPath(store->makeFixedOutputPathFromCA(res->second)),
+                    std::move(res->second),
+                },
                 input
             };
         }
@@ -188,9 +191,8 @@ struct GitHubInputScheme : GitArchiveInputScheme
         auto url = fmt("https://api.%s/repos/%s/%s/commits/%s", // FIXME: check
             host_url, getStrAttr(input.attrs, "owner"), getStrAttr(input.attrs, "repo"), *input.getRef());
         auto json = nlohmann::json::parse(
-            readFile(
-                store->toRealPath(
-                    downloadFile(store, url, "source", false).storePath)));
+            readFile(store->toRealPath(store->makeFixedOutputPathFromCA(
+                downloadFile(store, url, "source", false).storePath))));
         auto rev = Hash::parseAny(std::string { json["sha"] }, htSHA1);
         debug("HEAD revision for '%s' is %s", url, rev.gitRev());
         return rev;
@@ -231,10 +233,9 @@ struct GitLabInputScheme : GitArchiveInputScheme
         auto host_url = maybeGetStrAttr(input.attrs, "url").value_or("gitlab.com");
         auto url = fmt("https://%s/api/v4/projects/%s%%2F%s/repository/commits?ref_name=%s",
             host_url, getStrAttr(input.attrs, "owner"), getStrAttr(input.attrs, "repo"), *input.getRef());
-        auto json = nlohmann::json::parse(
-            readFile(
-                store->toRealPath(
-                    downloadFile(store, url, "source", false).storePath)));
+        auto json = nlohmann::json::parse(readFile(
+            store->toRealPath(store->makeFixedOutputPathFromCA(
+                downloadFile(store, url, "source", false).storePath))));
         auto rev = Hash::parseAny(std::string(json[0]["id"]), htSHA1);
         debug("HEAD revision for '%s' is %s", url, rev.gitRev());
         return rev;

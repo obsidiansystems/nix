@@ -57,7 +57,7 @@ DownloadFileResult downloadFile(
         {"url", res.effectiveUri},
     });
 
-    std::optional<StorePath> storePath;
+    std::optional<StorePathDescriptor> storePath;
 
     if (res.cached) {
         assert(cached);
@@ -66,17 +66,25 @@ DownloadFileResult downloadFile(
     } else {
         StringSink sink;
         dumpString(*res.data, sink);
-        auto hash = hashString(htSHA256, *res.data);
-        ValidPathInfo info {
-            store->makeFixedOutputPath(FileIngestionMethod::Flat, hash, name),
-            std::pair<HashResult, ContentAddress> {
-                { hashString(htSHA256, *sink.s), sink.s->size() },
-                FixedOutputHash { .method = FileIngestionMethod::Flat, .hash = hash },
+        auto flatHash = hashString(htSHA256, *res.data);
+        auto narHash = hashString(htSHA256, *sink.s);
+        storePath = {
+            .name = name,
+            .info = FixedOutputInfo {
+                {
+                    .method = FileIngestionMethod::Flat,
+                    .hash = flatHash,
+                },
+                {},
             },
+        };
+        ValidPathInfo info {
+            *store,
+            StorePathDescriptor { *storePath },
+            HashResult { narHash, sink.s->size() },
         };
         auto source = StringSource { *sink.s };
         store->addToStore(info, source, NoRepair, NoCheckSigs);
-        storePath = std::move(info.path);
     }
 
     getCache()->add(
@@ -121,13 +129,16 @@ std::pair<Tree, time_t> downloadTarball(
 
     if (cached && !cached->expired)
         return {
-            Tree(store->toRealPath(cached->storePath), std::move(cached->storePath)),
+            Tree {
+                store->toRealPath(store->makeFixedOutputPathFromCA(cached->storePath)),
+                std::move(cached->storePath),
+            },
             getIntAttr(cached->infoAttrs, "lastModified")
         };
 
     auto res = downloadFile(store, url, name, immutable);
 
-    std::optional<StorePath> unpackedStorePath;
+    std::optional<StorePathDescriptor> unpackedStorePath;
     time_t lastModified;
 
     if (cached && res.etag != "" && getStrAttr(cached->infoAttrs, "etag") == res.etag) {
@@ -136,13 +147,18 @@ std::pair<Tree, time_t> downloadTarball(
     } else {
         Path tmpDir = createTempDir();
         AutoDelete autoDelete(tmpDir, true);
-        unpackTarfile(store->toRealPath(res.storePath), tmpDir);
+        unpackTarfile(
+            store->toRealPath(store->makeFixedOutputPathFromCA(res.storePath)),
+            tmpDir);
         auto members = readDirectory(tmpDir);
         if (members.size() != 1)
             throw nix::Error("tarball '%s' contains an unexpected number of top-level files", url);
         auto topDir = tmpDir + "/" + members.begin()->name;
         lastModified = lstat(topDir).st_mtime;
-        unpackedStorePath = store->addToStore(name, topDir, FileIngestionMethod::Recursive, htSHA256, defaultPathFilter, NoRepair);
+        auto temp = store->addToStore(name, topDir, FileIngestionMethod::Recursive, htSHA256, defaultPathFilter, NoRepair);
+        // FIXME: just have Store::addToStore return a StorePathDescriptor, as
+        // it has the underlying information.
+        unpackedStorePath = store->queryPathInfo(temp)->fullStorePathDescriptorOpt().value();
     }
 
     Attrs infoAttrs({
@@ -158,7 +174,10 @@ std::pair<Tree, time_t> downloadTarball(
         immutable);
 
     return {
-        Tree(store->toRealPath(*unpackedStorePath), std::move(*unpackedStorePath)),
+        Tree {
+            store->toRealPath(store->makeFixedOutputPathFromCA(*unpackedStorePath)),
+            std::move(*unpackedStorePath)
+        },
         lastModified,
     };
 }

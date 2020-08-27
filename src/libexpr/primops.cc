@@ -101,7 +101,7 @@ static void prim_scopedImport(EvalState & state, const Pos & pos, Value * * args
     };
     if (auto optStorePath = isValidDerivationInStore()) {
         auto storePath = *optStorePath;
-        Derivation drv = readDerivation(*state.store, realPath, Derivation::nameFromPath(storePath));
+        Derivation drv = state.store->readDerivation(storePath);
         Value & w = *state.allocValue();
         state.mkAttrs(w, 3 + drv.outputs.size());
         Value * v2 = state.allocAttr(w, state.sDrvPath);
@@ -780,7 +780,13 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
         std::optional<HashType> ht = parseHashTypeOpt(outputHashAlgo);
         Hash h = newHashAllowEmpty(*outputHash, ht);
 
-        auto outPath = state.store->makeFixedOutputPath(ingestionMethod, h, drvName);
+        auto outPath = state.store->makeFixedOutputPath(drvName, FixedOutputInfo {
+            {
+                .method = ingestionMethod,
+                .hash = h,
+            },
+            {},
+        });
         drv.env["out"] = state.store->printStorePath(outPath);
         drv.outputs.insert_or_assign("out", DerivationOutput {
                 .output = DerivationOutputCAFixed {
@@ -839,7 +845,7 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
     }
 
     /* Write the resulting term into the Nix store directory. */
-    auto drvPath = writeDerivation(state.store, drv, state.repair);
+    auto drvPath = writeDerivation(*state.store, drv, state.repair);
     auto drvPathS = state.store->printStorePath(drvPath);
 
     printMsg(lvlChatty, "instantiated '%1%' -> '%2%'", drvName, drvPathS);
@@ -1179,7 +1185,13 @@ static void addPath(EvalState & state, const Pos & pos, const string & name, con
 
     std::optional<StorePath> expectedStorePath;
     if (expectedHash)
-        expectedStorePath = state.store->makeFixedOutputPath(method, *expectedHash, name);
+        expectedStorePath = state.store->makeFixedOutputPath(name, FixedOutputInfo {
+            {
+                .method = method,
+                .hash = *expectedHash,
+            },
+            {},
+        });
     Path dstPath;
     if (!expectedHash || !state.store->isValidPath(*expectedStorePath)) {
         dstPath = state.store->printStorePath(settings.readOnlyMode

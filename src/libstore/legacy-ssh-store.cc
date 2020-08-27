@@ -87,9 +87,10 @@ struct LegacySSHStore : public Store
         return uriScheme + host;
     }
 
-    void queryPathInfoUncached(const StorePath & path,
+    void queryPathInfoUncached(StorePathOrDesc pathOrDesc,
         Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override
     {
+        auto path = this->bakeCaIfNeeded(pathOrDesc);
         try {
             auto conn(connections->get());
 
@@ -112,7 +113,7 @@ struct LegacySSHStore : public Store
                 if (deriverS != "")
                     deriver = parseStorePath(deriverS);
             }
-            StorePathSet references = readStorePaths<StorePathSet>(*this, conn->from);
+            auto references = WorkerProto<StorePathSet>::read(*this, conn->from);
             readLongLong(conn->from); // download size
 
             std::optional<HashResult> optNarHashResult;
@@ -149,7 +150,7 @@ struct LegacySSHStore : public Store
 
             info->sigs = readStrings<StringSet>(conn->from);
             info->deriver = deriver;
-            info->references = references;
+            info->setReferencesPossiblyToSelf(std::move(references));
 
             auto s = readString(conn->from);
             assert(s == "");
@@ -175,7 +176,7 @@ struct LegacySSHStore : public Store
                 << printStorePath(info.path)
                 << (info.deriver ? printStorePath(*info.deriver) : "")
                 << narHash.to_string(Base16, false);
-            writeStorePaths(*this, conn->to, info.references);
+            WorkerProto<StorePathSet>::write(*this, conn->to, info.referencesPossiblyToSelf());
             conn->to
                 << info.registrationTime
                 << narSize
@@ -204,7 +205,7 @@ struct LegacySSHStore : public Store
             conn->to
                 << exportMagic
                 << printStorePath(info.path);
-            writeStorePaths(*this, conn->to, info.references);
+            WorkerProto<StorePathSet>::write(*this, conn->to, info.referencesPossiblyToSelf());
             conn->to
                 << (info.deriver ? printStorePath(*info.deriver) : "")
                 << 0
@@ -217,8 +218,9 @@ struct LegacySSHStore : public Store
             throw Error("failed to add path '%s' to remote host '%s'", printStorePath(info.path), host);
     }
 
-    void narFromPath(const StorePath & path, Sink & sink) override
+    void narFromPath(StorePathOrDesc pathOrDesc, Sink & sink) override
     {
+        auto path = this->bakeCaIfNeeded(pathOrDesc);
         auto conn(connections->get());
 
         conn->to << cmdDumpStorePath << printStorePath(path);
@@ -303,7 +305,7 @@ public:
         }
     }
 
-    void ensurePath(const StorePath & path) override
+    void ensurePath(StorePathOrDesc desc) override
     { unsupported("ensurePath"); }
 
     void computeFSClosure(const StorePathSet & paths,
@@ -320,10 +322,10 @@ public:
         conn->to
             << cmdQueryClosure
             << includeOutputs;
-        writeStorePaths(*this, conn->to, paths);
+        WorkerProto<StorePathSet>::write(*this, conn->to, paths);
         conn->to.flush();
 
-        for (auto & i : readStorePaths<StorePathSet>(*this, conn->from))
+        for (auto & i : WorkerProto<StorePathSet>::read(*this, conn->from))
             out.insert(i);
     }
 
@@ -336,10 +338,10 @@ public:
             << cmdQueryValidPaths
             << false // lock
             << maybeSubstitute;
-        writeStorePaths(*this, conn->to, paths);
+        WorkerProto<StorePathSet>::write(*this, conn->to, paths);
         conn->to.flush();
 
-        return readStorePaths<StorePathSet>(*this, conn->from);
+        return WorkerProto<StorePathSet>::read(*this, conn->from);
     }
 
     void connect() override

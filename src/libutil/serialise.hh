@@ -23,7 +23,8 @@ struct Sink
 };
 
 
-/* A buffered abstract sink. */
+/* A buffered abstract sink. Warning: a BufferedSink should not be
+   used from multiple threads concurrently. */
 struct BufferedSink : virtual Sink
 {
     size_t bufSize, bufPos;
@@ -54,6 +55,7 @@ struct Source
        It blocks until all the requested data is available, or throws
        an error if it is not going to be available.   */
     void operator () (unsigned char * data, size_t len);
+    void operator () (std::basic_string_view<unsigned char> & data);
 
     /* Store up to ‘len’ in the buffer pointed to by ‘data’, and
        return the number of bytes stored.  It blocks until at least
@@ -66,7 +68,8 @@ struct Source
 };
 
 
-/* A buffered abstract source. */
+/* A buffered abstract source. Warning: a BufferedSource should not be
+   used from multiple threads concurrently. */
 struct BufferedSource : Source
 {
     size_t bufSize, bufPosIn, bufPosOut;
@@ -193,6 +196,7 @@ struct TeeSource : Source
         return n;
     }
 };
+
 
 /* A reader that consumes the original Source until 'size'. */
 struct SizedSource : Source

@@ -574,7 +574,7 @@ void LocalStore::checkDerivationOutputs(const StorePath & drvPath, const Derivat
                 envHasRightPath(doia.path, i.first);
             },
             [&](DerivationOutputCAFixed dof) {
-                StorePath path = makeFixedOutputPath(dof.hash.method, dof.hash.hash, drvName);
+                StorePath path = makeFixedOutputPath(drvName, { dof.hash, {} });
                 envHasRightPath(path, i.first);
             },
             [&](DerivationOutputCAFloating _) {
@@ -642,9 +642,10 @@ uint64_t LocalStore::addValidPath(State & state,
 }
 
 
-void LocalStore::queryPathInfoUncached(const StorePath & path,
+void LocalStore::queryPathInfoUncached(StorePathOrDesc pathOrDesc,
     Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept
 {
+    auto path = bakeCaIfNeeded(pathOrDesc);
     try {
         callback(retrySQLite<std::shared_ptr<ValidPathInfo>>([&]() {
             auto state(_state.lock());
@@ -690,8 +691,10 @@ void LocalStore::queryPathInfoUncached(const StorePath & path,
             /* Get the references. */
             auto useQueryReferences(state->stmtQueryReferences.use()(info->id));
 
-            while (useQueryReferences.next())
-                info->references.insert(parseStorePath(useQueryReferences.getStr(0)));
+            while (useQueryReferences.next()) {
+                info->insertReferencePossiblyToSelf(
+                    parseStorePath(useQueryReferences.getStr(0)));
+            }
 
             return info;
         }));
@@ -734,8 +737,9 @@ bool LocalStore::isValidPath_(State & state, const StorePath & path)
 }
 
 
-bool LocalStore::isValidPathUncached(const StorePath & path)
+bool LocalStore::isValidPathUncached(StorePathOrDesc pathOrDesc)
 {
+    auto path = bakeCaIfNeeded(pathOrDesc);
     return retrySQLite<bool>([&]() {
         auto state(_state.lock());
         return isValidPath_(*state, path);
@@ -798,17 +802,21 @@ StorePathSet LocalStore::queryValidDerivers(const StorePath & path)
 }
 
 
-OutputPathMap LocalStore::queryDerivationOutputMap(const StorePath & path)
+std::map<std::string, std::optional<StorePath>> LocalStore::queryPartialDerivationOutputMap(const StorePath & path)
 {
-    return retrySQLite<OutputPathMap>([&]() {
+    std::map<std::string, std::optional<StorePath>> outputs;
+    BasicDerivation drv = readDerivation(path);
+    for (auto & [outName, _] : drv.outputs) {
+        outputs.insert_or_assign(outName, std::nullopt);
+    }
+    return retrySQLite<std::map<std::string, std::optional<StorePath>>>([&]() {
         auto state(_state.lock());
 
         auto useQueryDerivationOutputs(state->stmtQueryDerivationOutputs.use()
             (queryValidPathId(*state, path)));
 
-        OutputPathMap outputs;
         while (useQueryDerivationOutputs.next())
-            outputs.emplace(
+            outputs.insert_or_assign(
                 useQueryDerivationOutputs.getStr(0),
                 parseStorePath(useQueryDerivationOutputs.getStr(1))
             );
@@ -870,45 +878,53 @@ StorePathSet LocalStore::querySubstitutablePaths(const StorePathSet & paths)
 }
 
 
-void LocalStore::querySubstitutablePathInfos(const StorePathCAMap & paths, SubstitutablePathInfos & infos)
+void LocalStore::querySubstitutablePathInfos(const StorePathSet & paths, const std::set<StorePathDescriptor> & caPaths, SubstitutablePathInfos & infos)
 {
     if (!settings.useSubstitutes) return;
+
+    auto query = [&](auto & sub, const StorePath & localPath, const StorePath & subPath) {
+        debug("checking substituter '%s' for path '%s'", sub->getUri(), sub->printStorePath(subPath));
+        try {
+            auto info = sub->queryPathInfo(subPath);
+
+            if (sub->storeDir != storeDir && !(info->isContentAddressed(*sub) && info->references.empty()))
+                return;
+
+            auto narInfo = std::dynamic_pointer_cast<const NarInfo>(
+                std::shared_ptr<const ValidPathInfo>(info));
+            assert(info->optNarSize());
+            infos.insert_or_assign(localPath, SubstitutablePathInfo {
+                { *info },
+                info->deriver,
+                narInfo ? narInfo->fileSize : 0,
+                *info->optNarSize(),
+            });
+        } catch (InvalidPath &) {
+        } catch (SubstituterDisabled &) {
+        } catch (Error & e) {
+            if (settings.tryFallback)
+                logError(e.info());
+            else
+                throw;
+        }
+    };
+
     for (auto & sub : getDefaultSubstituters()) {
         for (auto & path : paths) {
-            auto subPath(path.first);
-
-            // recompute store path so that we can use a different store root
-            if (path.second) {
-                subPath = makeFixedOutputPathFromCA(path.first.name(), *path.second);
-                if (sub->storeDir == storeDir)
-                    assert(subPath == path.first);
-                if (subPath != path.first)
-                    debug("replaced path '%s' with '%s' for substituter '%s'", printStorePath(path.first), sub->printStorePath(subPath), sub->getUri());
-            } else if (sub->storeDir != storeDir) continue;
-
-            debug("checking substituter '%s' for path '%s'", sub->getUri(), sub->printStorePath(subPath));
-            try {
-                auto info = sub->queryPathInfo(subPath);
-
-                if (sub->storeDir != storeDir && !(info->isContentAddressed(*sub) && info->references.empty()))
-                    continue;
-
-                auto narInfo = std::dynamic_pointer_cast<const NarInfo>(
-                    std::shared_ptr<const ValidPathInfo>(info));
-                assert(info->optNarSize());
-                infos.insert_or_assign(path.first, SubstitutablePathInfo{
-                    info->deriver,
-                    info->references,
-                    narInfo ? narInfo->fileSize : 0,
-                    *info->optNarSize()});
-            } catch (InvalidPath &) {
-            } catch (SubstituterDisabled &) {
-            } catch (Error & e) {
-                if (settings.tryFallback)
-                    logError(e.info());
-                else
-                    throw;
-            }
+            if (sub->storeDir != storeDir) continue;
+            query(sub, path, path);
+        }
+        for (auto & ca : caPaths) {
+            // TODO Deal with references: either disallow, or require the
+            // store path lengths be the same and rewrite strings.
+            auto localPath = makeFixedOutputPathFromCA(ca);
+            auto subPath = sub->makeFixedOutputPathFromCA(ca);
+            if (sub->storeDir == storeDir)
+                assert(localPath == subPath);
+            if (localPath != subPath)
+                // TODO print CA too
+                debug("replaced path '%s' with '%s' for substituter '%s'", printStorePath(localPath), sub->printStorePath(subPath), sub->getUri());
+            query(sub, localPath, subPath);
         }
     }
 }
@@ -948,7 +964,7 @@ void LocalStore::registerValidPaths(const ValidPathInfos & infos)
 
         for (auto & i : infos) {
             auto referrer = queryValidPathId(*state, i.path);
-            for (auto & j : i.references)
+            for (auto & j : i.referencesPossiblyToSelf())
                 state->stmtAddReference.use()(referrer)(queryValidPathId(*state, j)).exec();
         }
 
@@ -1025,14 +1041,14 @@ void LocalStore::addToStore(const ValidPathInfo & info_, Source & source,
             deletePath(realPath);
 
             // text hashing has long been allowed to have non-self-references because it is used for drv files.
-            bool refersToSelf = info.references.count(info.path) > 0;
-            if (info.optCA().has_value() && !info.references.empty() && !(std::holds_alternative<TextHash>(*info.optCA()) && !refersToSelf))
+            auto optCA = info.optCA();
+            if (optCA.has_value() && !info.references.empty() && !(std::holds_alternative<TextHash>(*optCA) && info.hasSelfReference))
                 settings.requireExperimentalFeature("ca-references");
 
             /* While restoring the path from the NAR, compute the hash
                of the NAR. */
             std::unique_ptr<AbstractHashSink> hashSink;
-            if (!info.optCA().has_value() || !info.references.count(info.path))
+            if (!info.optCA().has_value() || !info.hasSelfReference)
                 hashSink = std::make_unique<HashSink>(htSHA256);
             else
                 hashSink = std::make_unique<HashModuloSink>(htSHA256, std::string(info.path.hashPart()));
@@ -1132,11 +1148,22 @@ StorePath LocalStore::addToStoreFromDump(Source & source0, const string & name,
 
     auto [hash, size] = hashSink->finish();
 
-    auto dstPath = makeFixedOutputPath(method, hash, name);
+    auto desc = StorePathDescriptor {
+        name,
+        FixedOutputInfo {
+            {
+                .method = method,
+                .hash = hash,
+            },
+            {},
+        },
+    };
+
+    auto dstPath = makeFixedOutputPathFromCA(desc);
 
     addTempRoot(dstPath);
 
-    if (repair || !isValidPath(dstPath)) {
+    if (repair || !isValidPath(desc)) {
 
         /* The first check above is an optimisation to prevent
            unnecessary lock acquisition. */
@@ -1145,14 +1172,14 @@ StorePath LocalStore::addToStoreFromDump(Source & source0, const string & name,
 
         PathLocks outputLock({realPath});
 
-        if (repair || !isValidPath(dstPath)) {
+        if (repair || !isValidPath(desc)) {
 
             deletePath(realPath);
 
             autoGC();
 
             if (inMemory) {
-                 StringSource dumpSource { dump };
+                StringSource dumpSource { dump };
                 /* Restore from the NAR in memory. */
                 if (method == FileIngestionMethod::Recursive)
                     restorePath(realPath, dumpSource);
@@ -1177,13 +1204,7 @@ StorePath LocalStore::addToStoreFromDump(Source & source0, const string & name,
 
             optimisePath(realPath);
 
-            ValidPathInfo info {
-                dstPath,
-                std::pair<HashResult, ContentAddress> {
-                    narHash,
-                    FixedOutputHash { .method = method, .hash = hash },
-                },
-            };
+            ValidPathInfo info { *this, std::move(desc), narHash };
             registerValidPath(info);
         }
 
@@ -1198,7 +1219,10 @@ StorePath LocalStore::addTextToStore(const string & name, const string & s,
     const StorePathSet & references, RepairFlag repair)
 {
     auto hash = hashString(htSHA256, s);
-    auto dstPath = makeTextPath(name, hash, references);
+    auto dstPath = makeTextPath(name, TextInfo {
+        { .hash = hash },
+        references,
+    });
 
     addTempRoot(dstPath);
 
@@ -1340,7 +1364,7 @@ bool LocalStore::verifyStore(bool checkContents, RepairFlag repair)
                 printMsg(lvlTalkative, "checking contents of '%s'", printStorePath(i));
 
                 std::unique_ptr<AbstractHashSink> hashSink;
-                if (!info->optCA() || !info->references.count(info->path))
+                if (!info->optCA() || !info->hasSelfReference)
                     hashSink = std::make_unique<HashSink>(htSHA256);
                 else
                     hashSink = std::make_unique<HashModuloSink>(htSHA256, std::string(info->path.hashPart()));

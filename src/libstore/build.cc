@@ -297,7 +297,7 @@ public:
     GoalPtr makeDerivationGoal(const StorePath & drvPath, const StringSet & wantedOutputs, BuildMode buildMode = bmNormal);
     std::shared_ptr<DerivationGoal> makeBasicDerivationGoal(const StorePath & drvPath,
         const BasicDerivation & drv, BuildMode buildMode = bmNormal);
-    GoalPtr makeSubstitutionGoal(const StorePath & storePath, RepairFlag repair = NoRepair, std::optional<ContentAddress> ca = std::nullopt);
+    GoalPtr makeSubstitutionGoal(StorePathOrDesc storePath, RepairFlag repair = NoRepair);
 
     /* Remove a dead goal. */
     void removeGoal(GoalPtr goal);
@@ -1205,8 +1205,11 @@ void DerivationGoal::haveDerivation()
        through substitutes.  If that doesn't work, we'll build
        them. */
     if (settings.useSubstitutes && parsedDrv->substitutesAllowed())
-        for (auto & i : invalidOutputs)
-            addWaitee(worker.makeSubstitutionGoal(i, buildMode == bmRepair ? Repair : NoRepair, getDerivationCA(*drv)));
+        for (auto & i : invalidOutputs) {
+            auto optCA = getDerivationCA(*drv);
+            auto p = optCA ? StorePathOrDesc { *optCA } : i;
+            addWaitee(worker.makeSubstitutionGoal(p, buildMode == bmRepair ? Repair : NoRepair));
+        }
 
     if (waitees.empty()) /* to prevent hang (no wake-up event) */
         outputsSubstituted();
@@ -1467,7 +1470,7 @@ void DerivationGoal::tryToBuild()
     /* If any of the outputs already exist but are not valid, delete
        them. */
     for (auto & i : drv->outputsAndPaths(worker.store)) {
-        if (worker.store.isValidPath(i.second.second)) continue;
+        if (worker.store.isValidPath(StorePathOrDesc { i.second.second })) continue;
         debug("removing invalid path '%s'", worker.store.printStorePath(i.second.second));
         deletePath(worker.store.Store::toRealPath(i.second.second));
     }
@@ -1864,11 +1867,11 @@ HookReply DerivationGoal::tryBuildHook()
 
     /* Tell the hook all the inputs that have to be copied to the
        remote system. */
-    writeStorePaths(worker.store, hook->sink, inputPaths);
+    WorkerProto<StorePathSet>::write(worker.store, hook->sink, inputPaths);
 
     /* Tell the hooks the missing outputs that have to be copied back
        from the remote system. */
-    writeStorePaths(worker.store, hook->sink, missingPaths);
+    WorkerProto<StorePathSet>::write(worker.store, hook->sink, missingPaths);
 
     hook->sink = FdSink();
     hook->toHook.writeSide = -1;
@@ -2734,10 +2737,10 @@ struct RestrictedStore : public LocalFSStore
         return paths;
     }
 
-    void queryPathInfoUncached(const StorePath & path,
+    void queryPathInfoUncached(StorePathOrDesc path,
         Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept override
     {
-        if (goal.isAllowed(path)) {
+        if (goal.isAllowed(bakeCaIfNeeded(path))) {
             try {
                 /* Censor impure information. */
                 auto info = std::make_shared<ValidPathInfo>(*next->queryPathInfo(path));
@@ -2756,8 +2759,12 @@ struct RestrictedStore : public LocalFSStore
     void queryReferrers(const StorePath & path, StorePathSet & referrers) override
     { }
 
-    OutputPathMap queryDerivationOutputMap(const StorePath & path) override
-    { throw Error("queryDerivationOutputMap"); }
+    std::map<std::string, std::optional<StorePath>> queryPartialDerivationOutputMap(const StorePath & path) override
+    {
+        if (!goal.isAllowed(path))
+            throw InvalidPath("cannot query output map for unknown path '%s' in recursive Nix", printStorePath(path));
+        return next->queryPartialDerivationOutputMap(path);
+    }
 
     std::optional<StorePath> queryPathFromHashPart(const std::string & hashPart) override
     { throw Error("queryPathFromHashPart"); }
@@ -2790,15 +2797,17 @@ struct RestrictedStore : public LocalFSStore
         return path;
     }
 
-    void narFromPath(const StorePath & path, Sink & sink) override
+    void narFromPath(StorePathOrDesc pathOrDesc, Sink & sink) override
     {
+        auto path = bakeCaIfNeeded(pathOrDesc);
         if (!goal.isAllowed(path))
             throw InvalidPath("cannot dump unknown path '%s' in recursive Nix", printStorePath(path));
-        LocalFSStore::narFromPath(path, sink);
+        LocalFSStore::narFromPath(pathOrDesc, sink);
     }
 
-    void ensurePath(const StorePath & path) override
+    void ensurePath(StorePathOrDesc pathOrDesc) override
     {
+        auto path = bakeCaIfNeeded(pathOrDesc);
         if (!goal.isAllowed(path))
             throw InvalidPath("cannot substitute unknown path '%s' in recursive Nix", printStorePath(path));
         /* Nothing to be done; 'path' must already be valid. */
@@ -3618,7 +3627,7 @@ void DerivationGoal::registerOutputs()
     if (hook) {
         bool allValid = true;
         for (auto & i : drv->outputsAndPaths(worker.store))
-            if (!worker.store.isValidPath(i.second.second)) allValid = false;
+            if (!worker.store.isValidPath(StorePathOrDesc { i.second.second })) allValid = false;
         if (allValid) return;
     }
 
@@ -3720,7 +3729,7 @@ void DerivationGoal::registerOutputs()
         /* Check that fixed-output derivations produced the right
            outputs (i.e., the content hash should match the specified
            hash). */
-        std::optional<ContentAddress> ca;
+        std::optional<StorePathDescriptor> ca;
 
         if (! std::holds_alternative<DerivationOutputInputAddressed>(i.second.first.output)) {
             DerivationOutputCAFloating outputHash;
@@ -3754,7 +3763,15 @@ void DerivationGoal::registerOutputs()
                 ? hashPath(outputHash.hashType, actualPath).first
                 : hashFile(outputHash.hashType, actualPath);
 
-            auto dest = worker.store.makeFixedOutputPath(outputHash.method, h2, i.second.second.name());
+            auto dest = worker.store.makeFixedOutputPath(
+                i.second.second.name(),
+                FixedOutputInfo {
+                    {
+                        .method = outputHash.method,
+                        .hash = h2,
+                    },
+                    {}, // TODO references
+                });
 
             // true if either floating CA, or incorrect fixed hash.
             bool needsMove = true;
@@ -3796,9 +3813,15 @@ void DerivationGoal::registerOutputs()
             else
                 assert(worker.store.parseStorePath(path) == dest);
 
-            ca = FixedOutputHash {
-                .method = outputHash.method,
-                .hash = h2,
+            ca = StorePathDescriptor {
+                .name = std::string { i.second.second.name() },
+                .info = FixedOutputInfo {
+                    {
+                        .method = outputHash.method,
+                        .hash = h2,
+                    },
+                    {},
+                },
             };
         }
 
@@ -3817,9 +3840,10 @@ void DerivationGoal::registerOutputs()
         auto references = worker.store.parseStorePathSet(pathSetAndHash.first);
         HashResult hash = pathSetAndHash.second;
 
+        auto outputStorePath = i.second.second;
         if (buildMode == bmCheck) {
-            if (!worker.store.isValidPath(worker.store.parseStorePath(path))) continue;
-            ValidPathInfo info(*worker.store.queryPathInfo(worker.store.parseStorePath(path)));
+            if (!worker.store.isValidPath(outputStorePath)) continue;
+            ValidPathInfo info(*worker.store.queryPathInfo(outputStorePath));
             assert(info.optNarHash()); // Always calculate nar hash for new builds.
             if (hash.first != *info.optNarHash()) {
                 worker.checkMismatch = true;
@@ -3863,17 +3887,15 @@ void DerivationGoal::registerOutputs()
 
         if (curRound == nrRounds) {
             worker.store.optimisePath(actualPath); // FIXME: combine with scanForReferences()
-            worker.markContentsGood(worker.store.parseStorePath(path));
+            worker.markContentsGood(outputStorePath);
         }
 
-        ValidPathInfo info {
-            worker.store.parseStorePath(path),
-            This<HashResult> { hash },
-        };
-        info.references = std::move(references);
+        auto info = ca
+            ? ValidPathInfo { worker.store, StorePathDescriptor { *ca }, hash }
+            : ValidPathInfo { outputStorePath, This<HashResult> { hash } };
+        info.setReferencesPossiblyToSelf(std::move(references));
         info.deriver = drvPath;
         info.ultimate = true;
-        info.viewCA().add(ca);
         worker.store.signPathInfo(info);
 
         if (!info.references.empty()) {
@@ -4000,7 +4022,7 @@ void DerivationGoal::checkOutputs(const std::map<Path, ValidPathInfo> & outputs)
                     std::optional optNarSize = info.optNarSize();
                     assert(optNarSize); // Always require NAR size for path in local store;
                     closureSize += *optNarSize;
-                    for (auto & ref : info.references)
+                    for (auto & ref : info.referencesPossiblyToSelf())
                         pathsLeft.push(ref);
                 };
 
@@ -4040,7 +4062,7 @@ void DerivationGoal::checkOutputs(const std::map<Path, ValidPathInfo> & outputs)
 
                 auto used = recursive
                     ? getClosure(info.path).first
-                    : info.references;
+                    : info.referencesPossiblyToSelf();
 
                 if (recursive && checks.ignoreSelfRefs)
                     used.erase(info.path);
@@ -4308,11 +4330,8 @@ class SubstitutionGoal : public Goal
 
 private:
     /* The store path that should be realised through a substitute. */
+    // TODO std::variant<StorePath, StorePathDescriptor> storePath;
     StorePath storePath;
-
-    /* The path the substituter refers to the path as. This will be
-     * different when the stores have different names. */
-    std::optional<StorePath> subPath;
 
     /* The remaining substituters. */
     std::list<ref<Store>> subs;
@@ -4348,10 +4367,11 @@ private:
     GoalState state;
 
     /* Content address for recomputing store path */
-    std::optional<ContentAddress> ca;
+    // TODO delete once `storePath` is variant.
+    std::optional<StorePathDescriptor> ca;
 
 public:
-    SubstitutionGoal(const StorePath & storePath, Worker & worker, RepairFlag repair = NoRepair, std::optional<ContentAddress> ca = std::nullopt);
+    SubstitutionGoal(const StorePath & storePath, Worker & worker, RepairFlag repair = NoRepair, std::optional<StorePathDescriptor> ca = std::nullopt);
     ~SubstitutionGoal();
 
     void timedOut(Error && ex) override { abort(); };
@@ -4381,7 +4401,7 @@ public:
 };
 
 
-SubstitutionGoal::SubstitutionGoal(const StorePath & storePath, Worker & worker, RepairFlag repair, std::optional<ContentAddress> ca)
+SubstitutionGoal::SubstitutionGoal(const StorePath & storePath, Worker & worker, RepairFlag repair, std::optional<StorePathDescriptor> ca)
     : Goal(worker)
     , storePath(storePath)
     , repair(repair)
@@ -4461,7 +4481,7 @@ void SubstitutionGoal::tryNext()
     subs.pop_front();
 
     if (ca) {
-        subPath = sub->makeFixedOutputPathFromCA(storePath.name(), *ca);
+        auto subPath = sub->makeFixedOutputPathFromCA(*ca);
         if (sub->storeDir == worker.store.storeDir)
             assert(subPath == storePath);
     } else if (sub->storeDir != worker.store.storeDir) {
@@ -4471,7 +4491,8 @@ void SubstitutionGoal::tryNext()
 
     try {
         // FIXME: make async
-        info = sub->queryPathInfo(subPath ? *subPath : storePath);
+        auto p = ca ? StorePathOrDesc { std::cref(*ca) } : std::cref(storePath);
+        info = sub->queryPathInfo(p);
     } catch (InvalidPath &) {
         tryNext();
         return;
@@ -4491,7 +4512,7 @@ void SubstitutionGoal::tryNext()
     }
 
     if (info->path != storePath) {
-        if (info->isContentAddressed(*sub) && info->references.empty()) {
+        if (info->isContentAddressed(*sub) && info->references.empty() && !info->hasSelfReference) {
             auto info2 = std::make_shared<ValidPathInfo>(*info);
             info2->path = storePath;
             info = info2;
@@ -4538,8 +4559,7 @@ void SubstitutionGoal::tryNext()
     /* To maintain the closure invariant, we first have to realise the
        paths referenced by this one. */
     for (auto & i : info->references)
-        if (i != storePath) /* ignore self-references */
-            addWaitee(worker.makeSubstitutionGoal(i));
+        addWaitee(worker.makeSubstitutionGoal(i));
 
     if (waitees.empty()) /* to prevent hang (no wake-up event) */
         referencesValid();
@@ -4559,8 +4579,7 @@ void SubstitutionGoal::referencesValid()
     }
 
     for (auto & i : info->references)
-        if (i != storePath) /* ignore self-references */
-            assert(worker.store.isValidPath(i));
+        assert(worker.store.isValidPath(i));
 
     state = &SubstitutionGoal::tryToRun;
     worker.wakeUp(shared_from_this());
@@ -4595,8 +4614,10 @@ void SubstitutionGoal::tryToRun()
             Activity act(*logger, actSubstitute, Logger::Fields{worker.store.printStorePath(storePath), sub->getUri()});
             PushActivity pact(act.id);
 
+            auto p = ca ? StorePathOrDesc { std::cref(*ca) } : std::cref(storePath);
+
             copyStorePath(ref<Store>(sub), ref<Store>(worker.store.shared_from_this()),
-                subPath ? *subPath : storePath, repair, sub->isTrusted ? NoCheckSigs : CheckSigs);
+                p, repair, sub->isTrusted ? NoCheckSigs : CheckSigs);
 
             promise.set_value();
         } catch (...) {
@@ -4729,12 +4750,18 @@ std::shared_ptr<DerivationGoal> Worker::makeBasicDerivationGoal(const StorePath 
 }
 
 
-GoalPtr Worker::makeSubstitutionGoal(const StorePath & path, RepairFlag repair, std::optional<ContentAddress> ca)
+GoalPtr Worker::makeSubstitutionGoal(StorePathOrDesc path, RepairFlag repair)
 {
-    GoalPtr goal = substitutionGoals[path].lock(); // FIXME
+    auto p = store.bakeCaIfNeeded(path);
+    GoalPtr goal = substitutionGoals[p].lock(); // FIXME
     if (!goal) {
-        goal = std::make_shared<SubstitutionGoal>(path, *this, repair, ca);
-        substitutionGoals.insert_or_assign(path, goal);
+        auto optCA = std::get_if<1>(&path);
+        goal = std::make_shared<SubstitutionGoal>(
+            p,
+            *this,
+            repair,
+            optCA ? std::optional { *optCA } : std::nullopt);
+        substitutionGoals.insert_or_assign(p, goal);
         wakeUp(goal);
     }
     return goal;
@@ -4994,7 +5021,7 @@ void Worker::waitForInput()
         std::vector<unsigned char> buffer(4096);
         for (auto & k : fds2) {
             if (pollStatus.at(fdToPollStatus.at(k)).revents) {
-                ssize_t rd = read(k, buffer.data(), buffer.size());
+                ssize_t rd = ::read(k, buffer.data(), buffer.size());
                 // FIXME: is there a cleaner way to handle pt close
                 // than EIO? Is this even standard?
                 if (rd == 0 || (rd == -1 && errno == EIO)) {
@@ -5182,15 +5209,15 @@ BuildResult LocalStore::buildDerivation(const StorePath & drvPath, const BasicDe
 }
 
 
-void LocalStore::ensurePath(const StorePath & path)
+void LocalStore::ensurePath(StorePathOrDesc path)
 {
     /* If the path is already valid, we're done. */
     if (isValidPath(path)) return;
 
-    primeCache(*this, {{path}});
+    // primeCache(*this, {{path}});
 
     Worker worker(*this);
-    GoalPtr goal = worker.makeSubstitutionGoal(path);
+    GoalPtr goal = worker.makeSubstitutionGoal(path, NoRepair);
     Goals goals = {goal};
 
     worker.run(goals);
@@ -5199,8 +5226,10 @@ void LocalStore::ensurePath(const StorePath & path)
         if (goal->ex) {
             goal->ex->status = worker.exitStatus();
             throw *goal->ex;
-        } else
-            throw Error(worker.exitStatus(), "path '%s' does not exist and cannot be created", printStorePath(path));
+        } else {
+            auto p = this->bakeCaIfNeeded(path);
+            throw Error(worker.exitStatus(), "path '%s' does not exist and cannot be created", printStorePath(p));
+        }
     }
 }
 

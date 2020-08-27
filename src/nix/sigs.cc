@@ -64,7 +64,8 @@ struct CmdCopySigs : StorePathsCommand
                     /* Don't import signatures that don't match this
                        binary. */
                     if (info->cas != info2->cas ||
-                        info->references != info2->references)
+                        info->references != info2->references ||
+                        info->hasSelfReference != info2->hasSelfReference)
                         continue;
 
                     for (auto & sig : info2->sigs)

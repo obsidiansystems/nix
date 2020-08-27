@@ -15,10 +15,9 @@ namespace nix {
 class Store;
 
 
-struct SubstitutablePathInfo
+struct SubstitutablePathInfo : PathReferences<StorePath>
 {
     std::optional<StorePath> deriver;
-    StorePathSet references;
     uint64_t downloadSize; /* 0 = unknown or inapplicable */
     uint64_t narSize; /* 0 = unknown */
 };
@@ -27,13 +26,12 @@ typedef std::map<StorePath, SubstitutablePathInfo> SubstitutablePathInfos;
 
 typedef These<HashResult, ContentAddress> ContentAddresses;
 
-struct ValidPathInfo
+struct ValidPathInfo : PathReferences<StorePath>
 {
     StorePath path;
     std::optional<StorePath> deriver;
     // TODO document this
     ContentAddresses cas;
-    StorePathSet references;
     time_t registrationTime = 0;
     uint64_t id; // internal use only
 
@@ -65,6 +63,7 @@ struct ValidPathInfo
         return
             path == i.path
             && cas == i.cas
+            && hasSelfReference == i.hasSelfReference
             && references == i.references;
     }
 
@@ -108,6 +107,8 @@ struct ValidPathInfo
 
     void sign(const Store & store, const SecretKey & secretKey);
 
+    std::optional<StorePathDescriptor> fullStorePathDescriptorOpt() const;
+
     /* Return true iff the path is verifiably content-addressed. */
     bool isContentAddressed(const Store & store) const;
 
@@ -135,6 +136,10 @@ struct ValidPathInfo
         : path(std::move(path)), cas(cas) { };
     ValidPathInfo(const StorePath & path, ContentAddresses cas)
         : path(path), cas(cas) { };
+
+    ValidPathInfo(const Store & store,
+        StorePathDescriptor && ca,
+        std::optional<HashResult> narHashAndSize = std::nullopt);
 
     virtual ~ValidPathInfo() { }
 };

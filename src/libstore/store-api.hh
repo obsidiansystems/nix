@@ -144,6 +144,12 @@ struct BuildResult
     }
 };
 
+/* Useful for many store functions which can take advantage of content
+   addresses or work with regular store paths */
+typedef std::variant<
+    std::reference_wrapper<const StorePath>,
+    std::reference_wrapper<const StorePathDescriptor>
+> StorePathOrDesc;
 
 class Store : public std::enable_shared_from_this<Store>, public Config
 {
@@ -253,17 +259,13 @@ public:
     StorePath makeOutputPath(const string & id,
         const Hash & hash, std::string_view name) const;
 
-    StorePath makeFixedOutputPath(FileIngestionMethod method,
-        const Hash & hash, std::string_view name,
-        const StorePathSet & references = {},
-        bool hasSelfReference = false) const;
+    StorePath makeFixedOutputPath(std::string_view name, const FixedOutputInfo & info) const;
 
-    StorePath makeTextPath(std::string_view name, const Hash & hash,
-        const StorePathSet & references = {}) const;
+    StorePath makeTextPath(std::string_view name, const TextInfo & info) const;
 
-    StorePath makeFixedOutputPathFromCA(std::string_view name, ContentAddress ca,
-        const StorePathSet & references = {},
-        bool hasSelfReference = false) const;
+    StorePath makeFixedOutputPathFromCA(const StorePathDescriptor & info) const;
+
+    StorePath bakeCaIfNeeded(StorePathOrDesc path) const;
 
     /* This is the preparatory part of addToStore(); it computes the
        store path to which srcPath is to be copied.  Returns the store
@@ -290,11 +292,11 @@ public:
         const StorePathSet & references) const;
 
     /* Check whether a path is valid. */
-    bool isValidPath(const StorePath & path);
+    bool isValidPath(StorePathOrDesc desc);
 
 protected:
 
-    virtual bool isValidPathUncached(const StorePath & path);
+    virtual bool isValidPathUncached(StorePathOrDesc desc);
 
 public:
 
@@ -316,15 +318,15 @@ public:
 
     /* Query information about a valid path. It is permitted to omit
        the name part of the store path. */
-    ref<const ValidPathInfo> queryPathInfo(const StorePath & path);
+    ref<const ValidPathInfo> queryPathInfo(StorePathOrDesc path);
 
     /* Asynchronous version of queryPathInfo(). */
-    void queryPathInfo(const StorePath & path,
+    void queryPathInfo(StorePathOrDesc path,
         Callback<ref<const ValidPathInfo>> callback) noexcept;
 
 protected:
 
-    virtual void queryPathInfoUncached(const StorePath & path,
+    virtual void queryPathInfoUncached(StorePathOrDesc path,
         Callback<std::shared_ptr<const ValidPathInfo>> callback) noexcept = 0;
 
 public:
@@ -343,9 +345,15 @@ public:
     /* Query the outputs of the derivation denoted by `path'. */
     virtual StorePathSet queryDerivationOutputs(const StorePath & path);
 
-    /* Query the mapping outputName=>outputPath for the given derivation */
-    virtual OutputPathMap queryDerivationOutputMap(const StorePath & path)
-    { unsupported("queryDerivationOutputMap"); }
+    /* Query the mapping outputName => outputPath for the given derivation. All
+       outputs are mentioned so ones mising the mapping are mapped to
+       `std::nullopt`.  */
+    virtual std::map<std::string, std::optional<StorePath>> queryPartialDerivationOutputMap(const StorePath & path)
+    { unsupported("queryPartialDerivationOutputMap"); }
+
+    /* Query the mapping outputName=>outputPath for the given derivation.
+       Assume every output has a mapping and throw an exception otherwise. */
+    OutputPathMap queryDerivationOutputMap(const StorePath & path);
 
     /* Query the full store path given the hash part of a valid store
        path, or empty if the path doesn't exist. */
@@ -358,7 +366,8 @@ public:
        sizes) of a map of paths to their optional ca values. If a path
        does not have substitute info, it's omitted from the resulting
        ‘infos’ map. */
-    virtual void querySubstitutablePathInfos(const StorePathCAMap & paths,
+    virtual void querySubstitutablePathInfos(const StorePathSet & paths,
+        const std::set<StorePathDescriptor> & caPaths,
         SubstitutablePathInfos & infos) { return; };
 
     /* Import a path into the store. */
@@ -397,7 +406,7 @@ public:
         const StorePathSet & references, RepairFlag repair = NoRepair) = 0;
 
     /* Write a NAR dump of a store path. */
-    virtual void narFromPath(const StorePath & path, Sink & sink) = 0;
+    virtual void narFromPath(StorePathOrDesc desc, Sink & sink) = 0;
 
     /* For each path, if it's a derivation, build it.  Building a
        derivation means ensuring that the output paths are valid.  If
@@ -420,7 +429,7 @@ public:
     /* Ensure that a path is valid.  If it is not currently valid, it
        may be made valid by running a substitute (if defined for the
        path). */
-    virtual void ensurePath(const StorePath & path) = 0;
+    virtual void ensurePath(StorePathOrDesc desc) = 0;
 
     /* Add a store path as a temporary root of the garbage collector.
        The root disappears as soon as we exit. */
@@ -639,7 +648,8 @@ public:
 
     LocalFSStore(const Params & params);
 
-    void narFromPath(const StorePath & path, Sink & sink) override;
+    void narFromPath(StorePathOrDesc path, Sink & sink) override;
+
     ref<FSAccessor> getFSAccessor() override;
 
     /* Register a permanent GC root. */
@@ -660,7 +670,8 @@ public:
 
 /* Copy a path from one store to another. */
 void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
-    const StorePath & storePath, RepairFlag repair = NoRepair, CheckSigsFlag checkSigs = CheckSigs);
+    StorePathOrDesc storePath,
+    RepairFlag repair = NoRepair, CheckSigsFlag checkSigs = CheckSigs);
 
 
 /* Copy store paths from one store to another. The paths may be copied
@@ -769,6 +780,6 @@ std::optional<ValidPathInfo> decodeValidPathInfo(
 /* Split URI into protocol+hierarchy part and its parameter set. */
 std::pair<std::string, Store::Params> splitUriAndParams(const std::string & uri);
 
-std::optional<ContentAddress> getDerivationCA(const BasicDerivation & drv);
+std::optional<StorePathDescriptor> getDerivationCA(const BasicDerivation & drv);
 
 }
