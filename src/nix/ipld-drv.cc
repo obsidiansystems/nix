@@ -28,6 +28,17 @@ void to_json(nlohmann::json& j, const IPLDDerivation & drv) {
     };
 }
 
+void from_json(nlohmann::json& j, IPLDDerivation & drv) {
+    j.at("name").get_to(drv.name);
+    j.at("platform").get_to(drv.platform);
+    j.at("builder").get_to(drv.builder);
+    j.at("args").get_to(drv.args);
+    j.at("env").get_to(drv.env);
+    j.at("outputs").get_to(drv.outputs);
+    // j.at("inputSrcs").get_to(drv.inputSrcs);
+    // j.at("inputDrvs").get_to(drv.inputDrvs);
+}
+
 struct CmdIpldDrvExport : StorePathCommand
 {
     std::string description() override
@@ -117,14 +128,65 @@ struct CmdIpldDrvImport : StoreCommand
 
     Category category() override { return catUtility; }
 
-    void run(ref<Store> store_) override
+    void run(ref<Store> store) override
     {
         auto ipfsStore = std::make_shared<IPFSBinaryCacheStore>( Store::Params { }, "ipfs://" );
+        nlohmann::json jsonValue = ipfsStore->getIpfsDag(cidStr);
 
+        // std::function<IPFSRef(const StorePath &)> convertDerivation = [&](const StorePath & drvPath) -> IPFSRef {
+        //     Derivation drv = localStore->readDerivation(drvPath);
+
+        //     IPLDDerivation ipldDrv;
+
+        //     static_cast<TinyDerivation &>(ipldDrv) = drv;
+
+        //     for (auto & [name, derivationOutput] : drv.outputs) {
+        //         auto drvOutputCAFloating = std::get_if<DerivationOutputCAFloating>(&derivationOutput.output);
+
+        //         if (!drvOutputCAFloating)
+        //             throw UsageError("In order to upload a derivation as IPLD the outputs should be content addressed and floating");
+        //         if (!std::get_if<IsIPFS>(&drvOutputCAFloating->method))
+        //             throw UsageError("In order to upload a derivation as IPLD the outputs should be content addressed as IPFS and floating");
+        //         if (drvOutputCAFloating->hashType != htSHA256)
+        //             throw UsageError("In order to upload a derivation as IPLD the outputs should have a SHA256 hash");
+
+        //         ipldDrv.outputs.insert(name);
+        //     }
+
+        //     auto err  = UsageError("In order to upload a derivation as IPLD the paths it references must be content addressed");
+        //     auto err2 = UsageError("In order to upload a derivation as IPLD the paths it references must be content addressed as IPFS");
+        //     for (auto & inputSource : drv.inputSrcs) {
+
+        //         auto caOpt = localStore->queryPathInfo(inputSource)->optCA();
+        //         if (!caOpt) throw err;
+
+        //         auto pref = std::get_if<IPFSHash>(&*caOpt);
+        //         if (!pref) throw err2;
+
+        //         copyPaths(localStore, ref { ipfsStore }, { drvPath });
+
+        //         ipldDrv.inputSrcs.insert(IPFSRef {
+        //             .name = std::string(inputSource.name()),
+        //             .hash = *pref,
+        //         });
+        //     }
+
+        //     for (auto & [inputDrvPath, outputs] : drv.inputDrvs) {
+        //         ipldDrv.inputDrvs.insert_or_assign(
+        //             convertDerivation(inputDrvPath),
+        //             outputs
+        //         );
+        //     }
+
+        //     nlohmann::json serializeDrv = ipldDrv;
+        //     string ipfsHash = ipfsStore->putIpfsDag(serializeDrv, "sha2-256");
+        //     return {
+        //         .name = drv.name,
+        //         .hash = IPFSHash::from_string(ipfsHash),
+        //     };
+        // };
         // Recursively read and convert IPLDDerivation to Derivations
 
-        /// - Where does the derivation initially come from? I think it's cidStr
-        ///
         /// - When we say "Recursively read", what are the actual tools with
         /// - which I can read chunks of this? Is this like parsing? In that
         /// case, _what's the format_? Maybe the one in show-derivation? nar-info?
@@ -134,8 +196,7 @@ struct CmdIpldDrvImport : StoreCommand
 
         }
 
-        //  - read and deserialized CID into IPLDDerivation
-        /// But what's a CID, is this a cad? Or is it there an identifier?
+        //  - read and deserialize CID into IPLDDerivation
         //
         //     - Copy narinfo import code for deserialization
         //
