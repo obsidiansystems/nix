@@ -288,9 +288,11 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
     case wopQueryPathHash: {
         auto path = store->parseStorePath(readString(from));
         logger->startWork();
-        auto hash = store->queryPathInfo(path)->narHash;
+        auto narHashResult = *store->queryPathInfo(path)->viewHashResultConst();
+        assert(narHashResult);
+        auto narHash = narHashResult->first;
         logger->stopWork();
-        to << hash.to_string(Base16, false);
+        to << narHash.to_string(Base16, false);
         break;
     }
 
@@ -681,14 +683,18 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         if (info) {
             if (GET_PROTOCOL_MINOR(clientVersion) >= 17)
                 to << 1;
+            auto narHashResult = *info->viewHashResultConst();
+            assert(narHashResult);
+            auto narHash = narHashResult->first;
+            auto narSize = narHashResult->second;
             to << (info->deriver ? store->printStorePath(*info->deriver) : "")
-               << info->narHash.to_string(Base16, false);
+               << narHash.to_string(Base16, false);
             WorkerProto<StorePathSet>::write(*store, to, info->referencesPossiblyToSelf());
-            to << info->registrationTime << info->narSize;
+            to << info->registrationTime << narSize;
             if (GET_PROTOCOL_MINOR(clientVersion) >= 16) {
                 to << info->ultimate
                    << info->sigs
-                   << renderContentAddress(info->ca);
+                   << renderContentAddress(*info->viewCAConst());
             }
         } else {
             assert(GET_PROTOCOL_MINOR(clientVersion) >= 17);
@@ -741,13 +747,19 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         auto path = store->parseStorePath(readString(from));
         auto deriver = readString(from);
         auto narHash = Hash::parseAny(readString(from), htSHA256);
-        ValidPathInfo info { path, narHash };
+        ValidPathInfo info { path, This<HashResult> { { narHash, 0 } } };
         if (deriver != "")
             info.deriver = store->parseStorePath(deriver);
         info.setReferencesPossiblyToSelf(WorkerProto<StorePathSet>::read(*store, from));
-        from >> info.registrationTime >> info.narSize >> info.ultimate;
+        from >> info.registrationTime;
+        {
+            auto tempNarSize = readInt(from);
+            auto tempHashResult = **info.viewHashResult();
+            info.viewHashResult() = { tempHashResult.first, tempNarSize };
+        }
+        from >> info.ultimate;
         info.sigs = readStrings<StringSet>(from);
-        info.ca = parseContentAddressOpt(readString(from));
+        info.viewCA().add(parseContentAddressOpt(readString(from)));
         from >> repair >> dontCheckSigs;
         if (!trusted && dontCheckSigs)
             dontCheckSigs = false;

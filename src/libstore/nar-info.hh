@@ -17,10 +17,12 @@ struct NarInfo : ValidPathInfo
     std::string system;
 
     NarInfo() = delete;
-    NarInfo(const Store & store, StorePathDescriptor && ca, Hash narHash)
-        : ValidPathInfo(store, std::move(ca), narHash)
+    NarInfo(const Store & store,
+        StorePathDescriptor && ca,
+        std::optional<HashResult> optNarHashAndSize = std::nullopt)
+        : ValidPathInfo(store, std::move(ca), optNarHashAndSize)
     { }
-    NarInfo(StorePath && path, Hash narHash) : ValidPathInfo(std::move(path), narHash) { }
+    NarInfo(StorePath && path, ContentAddresses cas) : ValidPathInfo(std::move(path), cas) { }
     NarInfo(const ValidPathInfo & info) : ValidPathInfo(info) { }
     NarInfo(const Store & store, const std::string & s, const std::string & whence);
 

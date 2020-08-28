@@ -106,24 +106,51 @@ struct LegacySSHStore : public Store
             if (p.empty()) return callback(nullptr);
             auto path2 = parseStorePath(p);
             assert(path == path2);
-            /* Hash will be set below. FIXME construct ValidPathInfo at end. */
-            auto info = std::make_shared<ValidPathInfo>(path, Hash::dummy);
 
-            auto deriver = readString(conn->from);
-            if (deriver != "")
-                info->deriver = parseStorePath(deriver);
-            info->setReferencesPossiblyToSelf(WorkerProto<StorePathSet>::read(*this, conn->from));
-            readLongLong(conn->from); // download size
-            info->narSize = readLongLong(conn->from);
-
+            std::optional<StorePath> deriver;
             {
-                auto s = readString(conn->from);
-                if (s == "")
-                    throw Error("NAR hash is now mandatory");
-                info->narHash = Hash::parseAnyPrefixed(s);
+                auto deriverS = readString(conn->from);
+                if (deriverS != "")
+                    deriver = parseStorePath(deriverS);
             }
-            info->ca = parseContentAddressOpt(readString(conn->from));
+            auto references = WorkerProto<StorePathSet>::read(*this, conn->from);
+            readLongLong(conn->from); // download size
+
+            std::optional<HashResult> optNarHashResult;
+            {
+                uint64_t rawNarSize = readLongLong(conn->from);
+                std::string rawNarHash = readString(conn->from);
+                if (rawNarHash == "") {
+                    assert(rawNarSize == 0);
+                    // No nar size/hash given
+                } else {
+                    auto h = Hash::parseAnyPrefixed(rawNarHash);
+                    assert(h.type == htSHA256);
+                    optNarHashResult = { h, rawNarSize };
+                }
+            }
+            auto optCA = parseContentAddressOpt(readString(conn->from));
+
+            ContentAddresses cas =
+                optNarHashResult && optCA ? ContentAddresses {
+                    std::pair<HashResult, ContentAddress> {
+                        *std::move(optNarHashResult),
+                        *std::move(optCA)
+                    }
+                }
+                : optNarHashResult ? ContentAddresses {
+                    This<HashResult> { *std::move(optNarHashResult) }
+                }
+                : optCA ? ContentAddresses {
+                    That<ContentAddress> { *std::move(optCA) }
+                }
+                : throw Error("One of NAR hash+size + content address must be given");
+
+            auto info = std::make_shared<ValidPathInfo>(path, std::move(cas));
+
             info->sigs = readStrings<StringSet>(conn->from);
+            info->deriver = deriver;
+            info->setReferencesPossiblyToSelf(std::move(references));
 
             auto s = readString(conn->from);
             assert(s == "");
@@ -140,19 +167,22 @@ struct LegacySSHStore : public Store
         auto conn(connections->get());
 
         if (GET_PROTOCOL_MINOR(conn->remoteVersion) >= 5) {
-
+            auto optNarHashSize = *info.viewHashResultConst();
+            if (!optNarHashSize)
+                throw Error("The nar size must be known up front to add data to an ssh:// store");
+            auto & [narHash, narSize] = *optNarHashSize;
             conn->to
                 << cmdAddToStoreNar
                 << printStorePath(info.path)
                 << (info.deriver ? printStorePath(*info.deriver) : "")
-                << info.narHash.to_string(Base16, false);
+                << narHash.to_string(Base16, false);
             WorkerProto<StorePathSet>::write(*this, conn->to, info.referencesPossiblyToSelf());
             conn->to
                 << info.registrationTime
-                << info.narSize
+                << narSize
                 << info.ultimate
                 << info.sigs
-                << renderContentAddress(info.ca);
+                << renderContentAddress(*info.viewCAConst());
             try {
                 copyNAR(source, conn->to);
             } catch (...) {

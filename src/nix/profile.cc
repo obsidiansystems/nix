@@ -141,10 +141,9 @@ struct ProfileManifest
                     { references },
                 },
             },
-            narHash,
+            std::pair { narHash, sink.s->size() },
         };
         info.references = std::move(references);
-        info.narSize = sink.s->size();
 
         auto source = StringSource { *sink.s };
         store->addToStore(info, source);

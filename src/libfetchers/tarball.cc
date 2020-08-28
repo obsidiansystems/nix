@@ -66,13 +66,14 @@ DownloadFileResult downloadFile(
     } else {
         StringSink sink;
         dumpString(*res.data, sink);
-        auto hash = hashString(htSHA256, *res.data);
+        auto flatHash = hashString(htSHA256, *res.data);
+        auto narHash = hashString(htSHA256, *sink.s);
         storePath = {
             .name = name,
             .info = FixedOutputInfo {
                 {
                     .method = FileIngestionMethod::Flat,
-                    .hash = hash,
+                    .hash = flatHash,
                 },
                 {},
             },
@@ -80,9 +81,8 @@ DownloadFileResult downloadFile(
         ValidPathInfo info {
             *store,
             StorePathDescriptor { *storePath },
-            hashString(htSHA256, *sink.s),
+            HashResult { narHash, sink.s->size() },
         };
-        info.narSize = sink.s->size();
         auto source = StringSource { *sink.s };
         store->addToStore(info, source, NoRepair, NoCheckSigs);
     }

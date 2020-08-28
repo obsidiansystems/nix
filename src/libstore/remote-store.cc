@@ -264,9 +264,9 @@ struct ConnectionHandle
 
     RemoteStore::Connection * operator -> () { return &*handle; }
 
-    void processStderr(Sink * sink = 0, Source * source = 0)
+    void processStderr(Sink * sink = 0, Source * source = 0, bool flush = true)
     {
-        auto ex = handle->processStderr(sink, source);
+        auto ex = handle->processStderr(sink, source, flush);
         if (ex) {
             daemonException = true;
             std::rethrow_exception(ex);
@@ -415,14 +415,19 @@ void RemoteStore::queryPathInfoUncached(StorePathOrDesc pathOrDesc,
             }
             auto deriver = readString(conn->from);
             auto narHash = Hash::parseAny(readString(conn->from), htSHA256);
-            info = std::make_shared<ValidPathInfo>(path, narHash);
+            info = std::make_shared<ValidPathInfo>(path, This<HashResult> { { narHash, 0 } });
             if (deriver != "") info->deriver = parseStorePath(deriver);
             info->setReferencesPossiblyToSelf(WorkerProto<StorePathSet>::read(*this, conn->from));
-            conn->from >> info->registrationTime >> info->narSize;
+            conn->from >> info->registrationTime;
+            {
+                auto tempNarSize = readInt(conn->from);
+                auto tempHashResult = **info->viewHashResult();
+                info->viewHashResult() = { tempHashResult.first, tempNarSize };
+            }
             if (GET_PROTOCOL_MINOR(conn->daemonVersion) >= 16) {
                 conn->from >> info->ultimate;
                 info->sigs = readStrings<StringSet>(conn->from);
-                info->ca = parseContentAddressOpt(readString(conn->from));
+                info->viewCA() = parseContentAddressOpt(readString(conn->from));
             }
         }
         callback(std::move(info));
@@ -511,16 +516,22 @@ void RemoteStore::addToStore(const ValidPathInfo & info, Source & source,
     }
 
     else {
+        std::optional optNarHashSize = *info.viewHashResultConst();
+        if (!optNarHashSize)
+            throw Error("The NAR hash and size must be known up front to add data to a remote store");
+        auto & [narHash, narSize] = *optNarHashSize;
         conn->to << wopAddToStoreNar
                  << printStorePath(info.path)
                  << (info.deriver ? printStorePath(*info.deriver) : "")
-                 << info.narHash.to_string(Base16, false);
+                 << narHash.to_string(Base16, false);
         WorkerProto<StorePathSet>::write(*this, conn->to, info.referencesPossiblyToSelf());
-        conn->to << info.registrationTime << info.narSize
-                 << info.ultimate << info.sigs << renderContentAddress(info.ca)
+        conn->to << info.registrationTime << narSize
+                 << info.ultimate << info.sigs << renderContentAddress(info.optCA())
                  << repair << !checkSigs;
 
         if (GET_PROTOCOL_MINOR(conn->daemonVersion) >= 23) {
+
+            conn->to.flush();
 
             std::exception_ptr ex;
 
@@ -561,7 +572,7 @@ void RemoteStore::addToStore(const ValidPathInfo & info, Source & source,
             std::thread stderrThread([&]()
             {
                 try {
-                    conn.processStderr();
+                    conn.processStderr(nullptr, nullptr, false);
                 } catch (...) {
                     ex = std::current_exception();
                 }
@@ -891,9 +902,10 @@ static Logger::Fields readFields(Source & from)
 }
 
 
-std::exception_ptr RemoteStore::Connection::processStderr(Sink * sink, Source * source)
+std::exception_ptr RemoteStore::Connection::processStderr(Sink * sink, Source * source, bool flush)
 {
-    to.flush();
+    if (flush)
+        to.flush();
 
     while (true) {
 

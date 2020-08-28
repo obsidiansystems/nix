@@ -416,9 +416,9 @@ ContentAddressWithReferences contentAddressFromMethodHashAndRefs(
             std::set<IPFSRef> ipfsRefs;
             auto err = UsageError("IPFS paths must only reference IPFS paths");
             for (auto & ref : refs.references) {
-                auto & caOpt = store.queryPathInfo(ref)->ca;
+                auto caOpt = store.queryPathInfo(ref)->optCA();
                 if (!caOpt) throw err;
-                auto pref = std::get_if<IPFSHash>(&*store.queryPathInfo(ref)->ca);
+                auto pref = std::get_if<IPFSHash>(&*caOpt);
                 if (!pref) throw err;
                 ipfsRefs.insert(IPFSRef {
                     .name = std::string(ref.name()),
