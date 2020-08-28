@@ -26,7 +26,8 @@ struct CmdIpldDrvImport : StorePathCommand
 
     void run(ref<Store> localStore, const StorePath & drvPath) override
     {
-        auto ipfsStore = ; // just open new trustless one
+        auto ipfsStore = std::make_shared<IPFSBinaryCacheStore>({ }, "ipfs://");
+
 
         // Recursively read and convert derivation to IPLDDerivation, and export
         //
@@ -67,11 +68,23 @@ struct CmdIpldDrvExport : StoreCommand
 
     void run(ref<Store> store_) override
     {
-        auto ipfsStore = ; // just open new trustless one
+        auto ipfsStore = std::make_shared<IPFSBinaryCacheStore>({ }, "ipfs://");
 
         // Recursively read and convert IPLDDerivation to Derivations
-        //
+
+        /// - Where does the derivation initially come from? I think it's caStr
+        ///
+        /// - When we say "Recursively read", what are the actual tools with
+        /// - which I can read chunks of this? Is this like parsing? In that
+        /// case, _what's the format_? Maybe the one in show-derivation? nar-info?
+
+        size_t pos = 0;
+        while (pos < caStr.size()) {
+
+        }
+
         //  - read and deserialized CID into IPLDDerivation
+        /// But what's a CID, is this a cad? Or is it there an identifier?
         //
         //     - Copy narinfo import code for deserialization
         //
