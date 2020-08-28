@@ -91,18 +91,27 @@ bool derivationIsFixed(DerivationType);
    derivation is controlled separately. Never true for non-CA derivations. */
 bool derivationIsImpure(DerivationType);
 
-struct BasicDerivation
+/* No references of any sort (i.e. to plain paths or other derivations). Useful
+   just to subclass for alternate ways of encoding those references. */
+struct TinyDerivation
 {
     DerivationOutputs outputs; /* keyed on symbolic IDs */
-    StorePathSet inputSrcs; /* inputs that are sources */
     string platform;
     Path builder;
     Strings args;
     StringPairs env;
     std::string name;
 
+    TinyDerivation() = default;
+    virtual ~TinyDerivation() = default;
+};
+
+struct BasicDerivation : TinyDerivation
+{
+    StorePathSet inputSrcs; /* inputs that are sources */
+
     BasicDerivation() = default;
-    virtual ~BasicDerivation() { };
+    virtual ~BasicDerivation() = default;
 
     bool isBuiltin() const;
 
