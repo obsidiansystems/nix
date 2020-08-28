@@ -4044,7 +4044,7 @@ void DerivationGoal::registerOutputs()
                     case FileIngestionMethod::Git: {
                         got = dumpGitHashWithCustomHash(
                             [&]{ return std::make_unique<HashModuloSink>(outputHash.hashType, oldHashPart); },
-                            (Path) tmpDir + "/tmp");
+                            actualPath);
                         break;
                     }
                     }
@@ -4052,7 +4052,7 @@ void DerivationGoal::registerOutputs()
                 [&](IsIPFS _) {
                     got = dumpGitHashWithCustomHash(
                         [&]{ return std::make_unique<HashModuloSink>(outputHash.hashType, oldHashPart); },
-                        (Path) tmpDir + "/tmp");
+                        actualPath);
                 },
             }, outputHash.method);
             HashModuloSink narSink { htSHA256, oldHashPart };

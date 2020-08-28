@@ -15,9 +15,10 @@ source common.sh
 drv=$(nix-instantiate --experimental-features ca-derivations ./ipfs-derivation-output.nix -A root)
 nix --experimental-features 'nix-command ca-derivations' show-derivation --derivation "$drv"
 
-gdbgui --args "nix-build --experimental-features ca-derivations ./ipfs-derivation-output.nix -A root --no-out-link"
+out1=$(nix-build --experimental-features ca-derivations ./ipfs-derivation-output.nix -A root --no-out-link)
+nix --experimental-features 'nix-command ca-derivations' path-info $out1 --json | jq -e '.[] | .ca | startswith("ipfs:")'
 
-out=$(nix-build --experimental-features ca-derivations ./ipfs-derivation-output.nix -A root --no-out-link)
-nix --experimental-features 'nix-command ca-derivations' path-info $out --derivation --json | jq
-
-test $out1 == $drv
+out2=$(nix-build --experimental-features ca-derivations ./ipfs-derivation-output.nix -A dependent --no-out-link)
+json=$(nix --experimental-features 'nix-command ca-derivations' path-info $out2 --json)
+echo $json | jq -e '.[] | .ca | startswith("ipfs:")'
+[ $(nix-store -q --references $out2) = $out1 ]

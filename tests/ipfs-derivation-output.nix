@@ -16,4 +16,18 @@ rec {
     outputHashMode = "ipfs";
     outputHashAlgo = "sha256";
   };
+
+  dependent = mkDerivation {
+    name = "ipfs-derivation-output-2";
+    buildCommand = ''
+      set -x
+      echo "Building a CA derivation"
+      mkdir -p $out
+      ln -s ${root} $out/ref
+      echo "Hello World" > $out/hello
+    '';
+    __contentAddressed = true;
+    outputHashMode = "ipfs";
+    outputHashAlgo = "sha256";
+  };
 }
