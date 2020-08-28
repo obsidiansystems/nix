@@ -52,11 +52,11 @@ struct CmdIpldDrvExport : StorePathCommand
 
 struct CmdIpldDrvImport : StoreCommand
 {
-    std::string caStr;
+    std::string cidStr;
 
     CmdIpldDrvImport()
     {
-        expectArg("cid", &caStr);
+        expectArg("cid", &cidStr);
     }
 
     std::string description() override
@@ -72,14 +72,14 @@ struct CmdIpldDrvImport : StoreCommand
 
         // Recursively read and convert IPLDDerivation to Derivations
 
-        /// - Where does the derivation initially come from? I think it's caStr
+        /// - Where does the derivation initially come from? I think it's cidStr
         ///
         /// - When we say "Recursively read", what are the actual tools with
         /// - which I can read chunks of this? Is this like parsing? In that
         /// case, _what's the format_? Maybe the one in show-derivation? nar-info?
 
         size_t pos = 0;
-        while (pos < caStr.size()) {
+        while (pos < cidStr.size()) {
 
         }
 
