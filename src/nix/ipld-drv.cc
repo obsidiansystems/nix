@@ -15,15 +15,8 @@ struct IPLDDerivation : TinyDerivation
 };
 
 
-struct CmdIpldDrvImport : StoreCommand
+struct CmdIpldDrvImport : StorePathCommand
 {
-    std::string caStr;
-
-    CmdIpldDrvImport()
-    {
-        expectArg("ca", &caStr);
-    }
-
     std::string description() override
     {
         return "Import the derivation graph identifed by the given CID";
@@ -31,19 +24,27 @@ struct CmdIpldDrvImport : StoreCommand
 
     Category category() override { return catUtility; }
 
-    void run(ref<Store> store_) override
+    void run(ref<Store> localStore, const StorePath & drvPath) override
     {
-        auto store = store_.dynamic_pointer_cast<IPFSBinaryCacheStore>();
-        if (!store)
-            throw Error("ipld-drv export require an IPFS store");
+        auto ipfsStore = ; // just open new trustless one
 
-        //auto ca = parseStorePathDescriptor(caStr);
-
-        //store->ensurePath(ca);
+        // Recursively read and convert derivation to IPLDDerivation, and export
+        //
+        //  - read drv path into Derivation
+        //
+        //  - convert Derivation to IPLDDerivation, two files are different:
+        //    - inputSrcs:
+        //       - queryPathInfo to insure that inputSrcs are ipfs: or git: (i.e. stuff we can do trustlessly), 
+        //    - inputDrvs:
+        //       - recur
+        //
+        //  - Serialize IPLDDerivation to JSON and export
+        //    - See IPFS store code as guide, especially narinfo export.
+        //    - See show-derivation code for example JSON searlization we should match
 
         //std::cout
-        //    << store->printStorePath(store->makeFixedOutputPathFromCA(ca))
-        //    << std::endl;
+        //    << final ipfs CID goes here!;
+		//    << std::endl;
     }
 };
 
@@ -54,7 +55,7 @@ struct CmdIpldDrvExport : StoreCommand
 
     CmdIpldDrvExport()
     {
-        expectArg("ca", &caStr);
+        expectArg("cid", &caStr);
     }
 
     std::string description() override
@@ -66,16 +67,23 @@ struct CmdIpldDrvExport : StoreCommand
 
     void run(ref<Store> store_) override
     {
-        auto store = store_.dynamic_pointer_cast<IPFSBinaryCacheStore>();
-        if (!store)
-            throw Error("ipld-drv export require an IPFS store");
+        auto ipfsStore = ; // just open new trustless one
 
-        //auto ca = parseStorePathDescriptor(caStr);
-
-        //store->ensurePath(ca);
+	    // Recursively read and convert IPLDDerivation to Derivations
+	    //
+	    //  - read and deserialized CID into IPLDDerivation
+	    //
+	    //     - Copy narinfo import code for deserialization
+	    //  
+	    //  - convert IPLDDerivation to Derivation
+	    //     - inputSrcs
+	    //        - add to store, c.f. how we import paths trustlessly in ipfs binary cache
+	    //     - inputDrvs
+	    //        - recur
+        //  - local store writeDerivation to disk
 
         //std::cout
-        //    << store->printStorePath(store->makeFixedOutputPathFromCA(ca))
+        //    << store->printStorePath(final DRV path goe here)
         //    << std::endl;
     }
 };
