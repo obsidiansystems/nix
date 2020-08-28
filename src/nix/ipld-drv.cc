@@ -34,7 +34,7 @@ struct CmdIpldDrvImport : StorePathCommand
         //
         //  - convert Derivation to IPLDDerivation, two files are different:
         //    - inputSrcs:
-        //       - queryPathInfo to insure that inputSrcs are ipfs: or git: (i.e. stuff we can do trustlessly), 
+        //       - queryPathInfo to insure that inputSrcs are ipfs: or git: (i.e. stuff we can do trustlessly),
         //    - inputDrvs:
         //       - recur
         //
@@ -44,7 +44,7 @@ struct CmdIpldDrvImport : StorePathCommand
 
         //std::cout
         //    << final ipfs CID goes here!;
-		//    << std::endl;
+        //    << std::endl;
     }
 };
 
@@ -69,17 +69,17 @@ struct CmdIpldDrvExport : StoreCommand
     {
         auto ipfsStore = ; // just open new trustless one
 
-	    // Recursively read and convert IPLDDerivation to Derivations
-	    //
-	    //  - read and deserialized CID into IPLDDerivation
-	    //
-	    //     - Copy narinfo import code for deserialization
-	    //  
-	    //  - convert IPLDDerivation to Derivation
-	    //     - inputSrcs
-	    //        - add to store, c.f. how we import paths trustlessly in ipfs binary cache
-	    //     - inputDrvs
-	    //        - recur
+        // Recursively read and convert IPLDDerivation to Derivations
+        //
+        //  - read and deserialized CID into IPLDDerivation
+        //
+        //     - Copy narinfo import code for deserialization
+        //
+        //  - convert IPLDDerivation to Derivation
+        //     - inputSrcs
+        //        - add to store, c.f. how we import paths trustlessly in ipfs binary cache
+        //     - inputDrvs
+        //        - recur
         //  - local store writeDerivation to disk
 
         //std::cout
