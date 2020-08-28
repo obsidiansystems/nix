@@ -56,10 +56,11 @@ public:
         return cacheUri;
     }
 
-private:
     std::string putIpfsDag(nlohmann::json data, std::optional<std::string> hash = std::nullopt);
 
     nlohmann::json getIpfsDag(std::string objectPath);
+
+private:
 
     // Given a ipns path, checks if it corresponds to a DNSLink path, and in
     // case returns the domain
