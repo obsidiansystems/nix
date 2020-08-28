@@ -4024,7 +4024,7 @@ void DerivationGoal::registerOutputs()
             std::visit(overloaded {
                 [&](IsText _) {
                     HashModuloSink caSink { outputHash.hashType, oldHashPart };
-                    dumpPath(actualPath, caSink);
+                    readFile(actualPath, caSink);
                     got = caSink.finish().first;
                 },
                 [&](FileIngestionMethod m2) {

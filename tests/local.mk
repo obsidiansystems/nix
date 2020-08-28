@@ -36,7 +36,8 @@ nix_tests = \
   ipfs.sh \
   flakes.sh \
   content-addressed.sh \
-  ensure-ca.sh
+  ensure-ca.sh \
+  text-hashed-output.sh
   # parallel.sh
   # build-remote-content-addressed-fixed.sh \
 
