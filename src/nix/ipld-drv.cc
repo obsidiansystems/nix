@@ -31,15 +31,19 @@ struct CmdIpldDrvImport : StoreCommand
 
     Category category() override { return catUtility; }
 
-    void run(ref<Store> store) override
+    void run(ref<Store> store_) override
     {
-        auto ca = parseStorePathDescriptor(caStr);
+        auto store = store_.dynamic_pointer_cast<IPFSBinaryCacheStore>();
+        if (!store)
+            throw Error("ipld-drv export require an IPFS store");
 
-        store->ensurePath(ca);
+        //auto ca = parseStorePathDescriptor(caStr);
 
-        std::cout
-            << store->printStorePath(store->makeFixedOutputPathFromCA(ca))
-            << std::endl;
+        //store->ensurePath(ca);
+
+        //std::cout
+        //    << store->printStorePath(store->makeFixedOutputPathFromCA(ca))
+        //    << std::endl;
     }
 };
 
@@ -60,15 +64,19 @@ struct CmdIpldDrvExport : StoreCommand
 
     Category category() override { return catUtility; }
 
-    void run(ref<Store> store) override
+    void run(ref<Store> store_) override
     {
-        auto ca = parseStorePathDescriptor(caStr);
+        auto store = store_.dynamic_pointer_cast<IPFSBinaryCacheStore>();
+        if (!store)
+            throw Error("ipld-drv export require an IPFS store");
 
-        store->ensurePath(ca);
+        //auto ca = parseStorePathDescriptor(caStr);
 
-        std::cout
-            << store->printStorePath(store->makeFixedOutputPathFromCA(ca))
-            << std::endl;
+        //store->ensurePath(ca);
+
+        //std::cout
+        //    << store->printStorePath(store->makeFixedOutputPathFromCA(ca))
+        //    << std::endl;
     }
 };
 
