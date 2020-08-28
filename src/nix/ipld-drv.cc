@@ -15,8 +15,50 @@ struct IPLDDerivation : TinyDerivation
 };
 
 
-struct CmdIpldDrvImport : StorePathCommand
+struct CmdIpldDrvExport : StorePathCommand
 {
+    std::string description() override
+    {
+        return "Export the derivation graph rooted by the given path";
+    }
+
+    Category category() override { return catUtility; }
+
+    void run(ref<Store> localStore, const StorePath & drvPath) override
+    {
+        auto ipfsStore = std::make_shared<IPFSBinaryCacheStore>({ }, "ipfs://");
+
+
+        // Recursively read and convert derivation to IPLDDerivation, and export
+        //
+        //  - read drv path into Derivation
+        //
+        //  - convert Derivation to IPLDDerivation, two files are different:
+        //    - inputSrcs:
+        //       - queryPathInfo to insure that inputSrcs are ipfs: or git: (i.e. stuff we can do trustlessly),
+        //    - inputDrvs:
+        //       - recur
+        //
+        //  - Serialize IPLDDerivation to JSON and export
+        //    - See IPFS store code as guide, especially narinfo export.
+        //    - See show-derivation code for example JSON searlization we should match
+
+        //std::cout
+        //    << final ipfs CID goes here!;
+        //    << std::endl;
+    }
+};
+
+
+struct CmdIpldDrvImport : StoreCommand
+{
+    std::string caStr;
+
+    CmdIpldDrvImport()
+    {
+        expectArg("cid", &caStr);
+    }
+
     std::string description() override
     {
         return "Import the derivation graph identifed by the given CID";
@@ -24,7 +66,7 @@ struct CmdIpldDrvImport : StorePathCommand
 
     Category category() override { return catUtility; }
 
-    void run(ref<Store> localStore, const StorePath & drvPath) override
+    void run(ref<Store> store_) override
     {
         auto ipfsStore = std::make_shared<IPFSBinaryCacheStore>({ }, "ipfs://");
 
@@ -60,53 +102,12 @@ struct CmdIpldDrvImport : StorePathCommand
 };
 
 
-struct CmdIpldDrvExport : StoreCommand
-{
-    std::string caStr;
-
-    CmdIpldDrvExport()
-    {
-        expectArg("cid", &caStr);
-    }
-
-    std::string description() override
-    {
-        return "Export the derivation graph rooted by the given path";
-    }
-
-    Category category() override { return catUtility; }
-
-    void run(ref<Store> store_) override
-    {
-        auto ipfsStore = std::make_shared<IPFSBinaryCacheStore>({ }, "ipfs://");
-
-        // Recursively read and convert derivation to IPLDDerivation, and export
-        //
-        //  - read drv path into Derivation
-        //
-        //  - convert Derivation to IPLDDerivation, two files are different:
-        //    - inputSrcs:
-        //       - queryPathInfo to insure that inputSrcs are ipfs: or git: (i.e. stuff we can do trustlessly),
-        //    - inputDrvs:
-        //       - recur
-        //
-        //  - Serialize IPLDDerivation to JSON and export
-        //    - See IPFS store code as guide, especially narinfo export.
-        //    - See show-derivation code for example JSON searlization we should match
-
-        //std::cout
-        //    << final ipfs CID goes here!;
-        //    << std::endl;
-    }
-};
-
-
 struct CmdIpldDrv : virtual MultiCommand, virtual Command
 {
     CmdIpldDrv()
         : MultiCommand({
-                {"import", []() { return make_ref<CmdIpldDrvImport>(); }},
                 {"export", []() { return make_ref<CmdIpldDrvExport>(); }},
+                {"import", []() { return make_ref<CmdIpldDrvImport>(); }},
             })
     {
     }
