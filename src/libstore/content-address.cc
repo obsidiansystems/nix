@@ -325,36 +325,51 @@ void from_json(const nlohmann::json& j, StorePathDescriptor & ca)
         throw Error("invalid type: %s", type);
 }
 
+void to_json(nlohmann::json& j, const IPFSRef & ipfsRef)
+{
+    j = nlohmann::json {
+       { "name", ipfsRef.name },
+       { "cid", nlohmann::json {{ "/", ipfsRef.hash.to_string() }} }
+    };
+}
+
 void to_json(nlohmann::json& j, const PathReferences<IPFSRef> & references)
 {
-    auto refs = nlohmann::json::array();
-    for (auto & i : references.references) {
-        refs.push_back(nlohmann::json {
-            { "name", i.name },
-            { "cid", nlohmann::json {{ "/", i.hash.to_string() }} }
-        });
-    }
-
     // FIXME: ipfs sort order is weird, it always puts references
     // before hasSelfReference, so we rename it to zhasSelfReferences
     // so it always comes after references
 
     j = nlohmann::json {
         { "zhasSelfReference", references.hasSelfReference },
-        { "references", refs }
+        { "references", references.references },
     };
+}
+
+void from_json(const nlohmann::json& j, IPFSRef & ipfsRef)
+{
+    auto cid = j.at("cid").at("/").get<std::string_view>();
+    ipfsRef = IPFSRef {
+        .name = std::move(j.at("name").get<std::string>()),
+        .hash = IPFSHash::from_string(cid).hash,
+    };
+}
+
+void from_json(const nlohmann::json& j, std::set<IPFSRef> & references)
+{
+    for (auto & ref : j) {
+        auto cid = ref.at("cid").at("/").get<std::string_view>();
+        references.insert(IPFSRef {
+            .name = std::move(ref.at("name").get<std::string>()),
+            .hash = IPFSHash::from_string(cid).hash,
+        });
+    }
 }
 
 void from_json(const nlohmann::json& j, PathReferences<IPFSRef> & references)
 {
     std::set<IPFSRef> refs;
-    for (auto & ref : j.at("references")) {
-        auto cid = ref.at("cid").at("/").get<std::string_view>();
-        refs.insert(IPFSRef {
-            .name = std::move(ref.at("name").get<std::string>()),
-            .hash = IPFSHash::from_string(cid).hash,
-        });
-    }
+    from_json(j.at("references"), refs);
+
     references = PathReferences<IPFSRef> {
         .references = refs,
         .hasSelfReference = j.at("zhasSelfReference").get<bool>(),
