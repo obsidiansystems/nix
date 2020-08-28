@@ -95,7 +95,6 @@ bool derivationIsImpure(DerivationType);
    just to subclass for alternate ways of encoding those references. */
 struct TinyDerivation
 {
-    DerivationOutputs outputs; /* keyed on symbolic IDs */
     string platform;
     Path builder;
     Strings args;
@@ -108,6 +107,7 @@ struct TinyDerivation
 
 struct BasicDerivation : TinyDerivation
 {
+    DerivationOutputs outputs; /* keyed on symbolic IDs */
     StorePathSet inputSrcs; /* inputs that are sources */
 
     BasicDerivation() = default;
