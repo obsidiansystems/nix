@@ -350,7 +350,7 @@ void from_json(const nlohmann::json& j, IPFSRef & ipfsRef)
     auto cid = j.at("cid").at("/").get<std::string_view>();
     ipfsRef = IPFSRef {
         .name = std::move(j.at("name").get<std::string>()),
-        .hash = IPFSHash::from_string(cid).hash,
+        .hash = IPFSHash::from_string(ipfsCidFormatBase16(cid)).hash,
     };
 }
 

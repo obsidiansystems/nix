@@ -81,7 +81,6 @@ struct CmdIpldDrvExport : StorePathCommand
                 if (!caOpt) throw err;
 
                 auto pref = std::get_if<IPFSHash>(&*caOpt);
-                warn("pref is %1%", &*caOpt);
                 if (!pref) throw err2;
 
                 copyPaths(localStore, ref { ipfsStore }, { drvPath });
