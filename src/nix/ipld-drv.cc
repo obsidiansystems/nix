@@ -2,6 +2,7 @@
 #include "store-api.hh"
 #include "content-address.hh"
 #include "ipfs.hh"
+#include "split.hh"
 #include "ipfs-binary-cache-store.hh"
 
 
@@ -80,6 +81,7 @@ struct CmdIpldDrvExport : StorePathCommand
                 if (!caOpt) throw err;
 
                 auto pref = std::get_if<IPFSHash>(&*caOpt);
+                warn("pref is %1%", &*caOpt);
                 if (!pref) throw err2;
 
                 copyPaths(localStore, ref { ipfsStore }, { drvPath });
@@ -98,10 +100,14 @@ struct CmdIpldDrvExport : StorePathCommand
             }
 
             nlohmann::json serializeDrv = ipldDrv;
-            string ipfsHash = ipfsStore->putIpfsDag(serializeDrv, "sha2-256");
+            std::string ipfsHash = ipfsStore->putIpfsDag(serializeDrv, "sha2-256");
+
+            std::string_view ipfsHash2 { ipfsHash };
+            assert(splitPrefix(ipfsHash2, "/ipfs/"));
+            std::string ipfsHash3 { ipfsStore->ipfsCidFormatBase16(ipfsHash2) }
             return {
                 .name = drv.name,
-                .hash = IPFSHash::from_string(ipfsHash),
+                .hash = IPFSHash::from_string(ipfsHash3),
             };
         };
 

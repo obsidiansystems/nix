@@ -15,6 +15,7 @@ rec {
     __contentAddressed = true;
     outputHashMode = "ipfs";
     outputHashAlgo = "sha256";
+    args = ["-c" "$buildCommand"];
   };
 
   dependent = mkDerivation {
@@ -29,5 +30,6 @@ rec {
     __contentAddressed = true;
     outputHashMode = "ipfs";
     outputHashAlgo = "sha256";
+    args = ["-c" "$buildCommand"];
   };
 }
