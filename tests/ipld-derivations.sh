@@ -3,12 +3,12 @@
 source common.sh
 
 
-drv=$(nix-instantiate --experimental-features ca-derivations ./ipfs-derivation-output.nix -A root)
+drv=$(nix-instantiate --experimental-features ca-derivations ./ipfs-derivation-output.nix -A dependent)
 nix --experimental-features 'nix-command ca-derivations' show-derivation --derivation "$drv"
 echo $drv
-nix ipld-drv export --derivation $drv
+cid=$(nix ipld-drv export --derivation $drv)
+echo cid: $cid
 
-# nix-store \
-#     --export $(nix-build --experimental-features ca-derivations ./ipfs-derivation-output.nix -A root --no-out-link)
+drv2=$(nix ipld-drv import $cid)
 
-[ 1 = 1 ]
+[ $drv = $drv2 ]
