@@ -100,14 +100,13 @@ struct CmdIpldDrvExport : StorePathCommand
             }
 
             nlohmann::json serializeDrv = ipldDrv;
-            std::string ipfsHash = ipfsStore->putIpfsDag(serializeDrv, "sha2-256");
+            std::string ipfsHashWithPrefix = ipfsStore->putIpfsDag(serializeDrv, "sha2-256");
 
-            std::string_view ipfsHash2 { ipfsHash };
-            assert(splitPrefix(ipfsHash2, "/ipfs/"));
-            // std::string ipfsHash3 { ipfsStore.ipfsCidFormatBase16(static_cast<std::string>(ipfsHash2)) };
+            std::string_view ipfsHash { ipfsHashWithPrefix };
+            assert(splitPrefix(ipfsHash, "/ipfs/"));
             return {
                 .name = drv.name,
-                .hash = IPFSHash::from_string(ipfsHash2),
+                .hash = IPFSHash::from_string(std::string { ipfsStore->ipfsCidFormatBase16(ipfsHash) }),
             };
         };
 

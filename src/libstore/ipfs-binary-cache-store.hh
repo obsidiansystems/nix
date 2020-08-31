@@ -81,6 +81,7 @@ private:
     const std::string base16Alpha = "0123456789abcdef";
 
 public:
+
     std::string ipfsCidFormatBase16(std::string_view cid);
 
     Path formatPathAsProtocol(Path path);
