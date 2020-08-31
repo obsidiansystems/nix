@@ -79,9 +79,10 @@ private:
     std::string resolveIPNSName(std::string ipnsPath);
 
     const std::string base16Alpha = "0123456789abcdef";
-    std::string ipfsCidFormatBase16(std::string cid);
 
 public:
+    std::string ipfsCidFormatBase16(std::string_view cid);
+
     Path formatPathAsProtocol(Path path);
 
     // IPNS publish can be slow, we try to do it rarely.

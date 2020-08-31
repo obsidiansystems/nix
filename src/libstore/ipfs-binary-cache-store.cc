@@ -188,9 +188,9 @@ Path IPFSBinaryCacheStore::formatPathAsProtocol(Path path) {
     else return path;
 }
 
-std::string IPFSBinaryCacheStore::ipfsCidFormatBase16(std::string cid)
+std::string IPFSBinaryCacheStore::ipfsCidFormatBase16(std::string_view cid)
 {
-    if (cid[0] == 'f') return cid;
+    if (cid[0] == 'f') return std::string { cid };
     assert(cid[0] == 'b');
     std::string newCid = "f";
     unsigned short remainder;
@@ -856,9 +856,9 @@ void IPFSBinaryCacheStore::queryPathInfoUncached(StorePathOrDesc storePathOrCa,
                 auto json = getIpfsDag("/ipfs/" + *cid);
                 url = "ipfs://" + (std::string) json.at("cid").at("/");
 
-                json.at("cid").at("/") = ipfsCidFormatBase16(json.at("cid").at("/"));
+                json.at("cid").at("/") = ipfsCidFormatBase16(json.at("cid").at("/").get<std::string_view>());
                 for (auto & ref : json.at("references").at("references"))
-                    ref.at("cid").at("/") = ipfsCidFormatBase16(ref.at("cid").at("/"));
+                    ref.at("cid").at("/") = ipfsCidFormatBase16(ref.at("cid").at("/").get<std::string_view>());
 
                 // Dummy value to set tag bit.
                 ca = StorePathDescriptor {
