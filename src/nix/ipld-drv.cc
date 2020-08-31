@@ -35,8 +35,8 @@ void from_json(nlohmann::json& j, IPLDDerivation & drv) {
     j.at("args").get_to(drv.args);
     j.at("env").get_to(drv.env);
     j.at("outputs").get_to(drv.outputs);
-    // j.at("inputSrcs").get_to(drv.inputSrcs);
-    // j.at("inputDrvs").get_to(drv.inputDrvs);
+    j.at("inputSrcs").get_to(drv.inputSrcs);
+    j.at("inputDrvs").get_to(drv.inputDrvs);
 }
 
 struct CmdIpldDrvExport : StorePathCommand

@@ -365,6 +365,18 @@ void from_json(const nlohmann::json& j, std::set<IPFSRef> & references)
     }
 }
 
+void from_json(const nlohmann::json& j, std::map<IPFSRef, StringSet> & map)
+{
+    for (auto & pair : j) {
+        IPFSRef ipfsRef { "", Hash::dummy };
+        StringSet strSet;
+        pair.at(0).get_to(ipfsRef);
+        pair.at(1).get_to(strSet);
+
+        map.insert_or_assign(ipfsRef, strSet);
+    }
+}
+
 void from_json(const nlohmann::json& j, PathReferences<IPFSRef> & references)
 {
     std::set<IPFSRef> refs;
