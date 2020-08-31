@@ -131,85 +131,48 @@ struct CmdIpldDrvImport : StoreCommand
     void run(ref<Store> store) override
     {
         auto ipfsStore = std::make_shared<IPFSBinaryCacheStore>( Store::Params { }, "ipfs://" );
-        nlohmann::json jsonValue = ipfsStore->getIpfsDag(cidStr);
 
-        // std::function<IPFSRef(const StorePath &)> convertDerivation = [&](const StorePath & drvPath) -> IPFSRef {
-        //     Derivation drv = localStore->readDerivation(drvPath);
+        std::function<StorePath (const IPFSHash &)> convertDerivation = [&](const IPFSHash & ipfsHash) -> StorePath {
 
-        //     IPLDDerivation ipldDrv;
+            nlohmann::json jsonValue = ipfsStore->getIpfsDag(ipfsHash.to_string());
 
-        //     static_cast<TinyDerivation &>(ipldDrv) = drv;
+            IPLDDerivation ipldDrv;
+            from_json(jsonValue, ipldDrv);
 
-        //     for (auto & [name, derivationOutput] : drv.outputs) {
-        //         auto drvOutputCAFloating = std::get_if<DerivationOutputCAFloating>(&derivationOutput.output);
+            Derivation drv;
 
-        //         if (!drvOutputCAFloating)
-        //             throw UsageError("In order to upload a derivation as IPLD the outputs should be content addressed and floating");
-        //         if (!std::get_if<IsIPFS>(&drvOutputCAFloating->method))
-        //             throw UsageError("In order to upload a derivation as IPLD the outputs should be content addressed as IPFS and floating");
-        //         if (drvOutputCAFloating->hashType != htSHA256)
-        //             throw UsageError("In order to upload a derivation as IPLD the outputs should have a SHA256 hash");
+            static_cast<TinyDerivation &>(drv) = ipldDrv;
 
-        //         ipldDrv.outputs.insert(name);
-        //     }
+            for (auto name : ipldDrv.outputs) {
+                drv.outputs.insert_or_assign(
+                    name,
+                    DerivationOutput { DerivationOutputCAFloating { IsIPFS { } , htSHA256 } }
+                );
+            }
 
-        //     auto err  = UsageError("In order to upload a derivation as IPLD the paths it references must be content addressed");
-        //     auto err2 = UsageError("In order to upload a derivation as IPLD the paths it references must be content addressed as IPFS");
-        //     for (auto & inputSource : drv.inputSrcs) {
+            for (IPFSRef inputSource : ipldDrv.inputSrcs) {
+                StorePath storePath = store->makeFixedOutputPathFromCA(StorePathDescriptor {
+                    inputSource.name,
+                    inputSource.hash,
+                });
+                drv.inputSrcs.insert(storePath);
+            }
 
-        //         auto caOpt = localStore->queryPathInfo(inputSource)->optCA();
-        //         if (!caOpt) throw err;
+            for (auto & [inputDrvPath, outputs] : ipldDrv.inputDrvs) {
+                drv.inputDrvs.insert_or_assign(
+                    convertDerivation(inputDrvPath.hash),
+                    outputs
+                );
+            }
 
-        //         auto pref = std::get_if<IPFSHash>(&*caOpt);
-        //         if (!pref) throw err2;
+            return writeDerivation(*store, drv);
 
-        //         copyPaths(localStore, ref { ipfsStore }, { drvPath });
+        };
 
-        //         ipldDrv.inputSrcs.insert(IPFSRef {
-        //             .name = std::string(inputSource.name()),
-        //             .hash = *pref,
-        //         });
-        //     }
-
-        //     for (auto & [inputDrvPath, outputs] : drv.inputDrvs) {
-        //         ipldDrv.inputDrvs.insert_or_assign(
-        //             convertDerivation(inputDrvPath),
-        //             outputs
-        //         );
-        //     }
-
-        //     nlohmann::json serializeDrv = ipldDrv;
-        //     string ipfsHash = ipfsStore->putIpfsDag(serializeDrv, "sha2-256");
-        //     return {
-        //         .name = drv.name,
-        //         .hash = IPFSHash::from_string(ipfsHash),
-        //     };
-        // };
-        // Recursively read and convert IPLDDerivation to Derivations
-
-        /// - When we say "Recursively read", what are the actual tools with
-        /// - which I can read chunks of this? Is this like parsing? In that
-        /// case, _what's the format_? Maybe the one in show-derivation? nar-info?
-
-        size_t pos = 0;
-        while (pos < cidStr.size()) {
-
-        }
-
-        //  - read and deserialize CID into IPLDDerivation
-        //
-        //     - Copy narinfo import code for deserialization
-        //
-        //  - convert IPLDDerivation to Derivation
-        //     - inputSrcs
-        //        - add to store, c.f. how we import paths trustlessly in ipfs binary cache
-        //     - inputDrvs
-        //        - recur
-        //  - local store writeDerivation to disk
-
-        //std::cout
-        //    << store->printStorePath(final DRV path goe here)
-        //    << std::endl;
+        auto finalStorePath = convertDerivation(IPFSHash::from_string(cidStr));
+        std::cout
+           << store->printStorePath(finalStorePath)
+           << std::endl;
     }
 };
 
