@@ -104,10 +104,10 @@ struct CmdIpldDrvExport : StorePathCommand
 
             std::string_view ipfsHash2 { ipfsHash };
             assert(splitPrefix(ipfsHash2, "/ipfs/"));
-            std::string ipfsHash3 { ipfsStore->ipfsCidFormatBase16(ipfsHash2) }
+            // std::string ipfsHash3 { ipfsStore.ipfsCidFormatBase16(static_cast<std::string>(ipfsHash2)) };
             return {
                 .name = drv.name,
-                .hash = IPFSHash::from_string(ipfsHash3),
+                .hash = IPFSHash::from_string(ipfsHash2),
             };
         };
 
