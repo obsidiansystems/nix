@@ -188,25 +188,6 @@ Path IPFSBinaryCacheStore::formatPathAsProtocol(Path path) {
     else return path;
 }
 
-std::string IPFSBinaryCacheStore::ipfsCidFormatBase16(std::string_view cid)
-{
-    if (cid[0] == 'f') return std::string { cid };
-    assert(cid[0] == 'b');
-    std::string newCid = "f";
-    unsigned short remainder;
-    for (size_t i = 1; i < cid.size(); i++) {
-        if (cid[i] >= 'a' && cid[i] <= 'z')
-            remainder = (remainder << 5) | (cid[i] - 'a');
-        else if (cid[i] >= '2' && cid[i] <= '7')
-            remainder = (remainder << 5) | (26 + cid[i] - '2');
-        else throw Error("unknown character: '%c'", cid[i]);;
-        if ((i % 4) == 0)
-            newCid += base16Alpha[(remainder >> 4) & 0xf];
-        newCid += base16Alpha[(remainder >> (i % 4)) & 0xf];
-    }
-    return newCid;
-}
-
 void IPFSBinaryCacheStore::sync()
 {
     auto state(_state.lock());

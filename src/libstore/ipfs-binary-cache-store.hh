@@ -78,11 +78,7 @@ private:
     // Resolve the IPNS name to an IPFS object
     std::string resolveIPNSName(std::string ipnsPath);
 
-    const std::string base16Alpha = "0123456789abcdef";
-
 public:
-
-    std::string ipfsCidFormatBase16(std::string_view cid);
 
     Path formatPathAsProtocol(Path path);
 
