@@ -56,10 +56,11 @@ public:
         return cacheUri;
     }
 
-private:
     std::string putIpfsDag(nlohmann::json data, std::optional<std::string> hash = std::nullopt);
 
     nlohmann::json getIpfsDag(std::string objectPath);
+
+private:
 
     // Given a ipns path, checks if it corresponds to a DNSLink path, and in
     // case returns the domain
@@ -77,10 +78,8 @@ private:
     // Resolve the IPNS name to an IPFS object
     std::string resolveIPNSName(std::string ipnsPath);
 
-    const std::string base16Alpha = "0123456789abcdef";
-    std::string ipfsCidFormatBase16(std::string cid);
-
 public:
+
     Path formatPathAsProtocol(Path path);
 
     // IPNS publish can be slow, we try to do it rarely.

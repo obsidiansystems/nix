@@ -19,4 +19,6 @@ struct IPFSHash {
     static IPFSHash from_string(std::string_view cid);
 };
 
+std::string ipfsCidFormatBase16(std::string_view cid);
+
 }

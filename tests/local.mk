@@ -38,7 +38,8 @@ nix_tests = \
   content-addressed.sh \
   ensure-ca.sh \
   text-hashed-output.sh \
-  ipfs-derivation-output.sh
+  ipfs-derivation-output.sh \
+  ipld-derivations.sh
   # parallel.sh
   # build-remote-content-addressed-fixed.sh \
 

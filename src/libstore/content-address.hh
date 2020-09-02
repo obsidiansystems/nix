@@ -233,9 +233,15 @@ std::string renderStorePathDescriptor(StorePathDescriptor ca);
 
 StorePathDescriptor parseStorePathDescriptor(std::string_view rawCa);
 
+void to_json(nlohmann::json& j, const IPFSRef & c);
+void from_json(const nlohmann::json& j, IPFSRef & c);
 
 void to_json(nlohmann::json& j, const StorePathDescriptor & c);
 void from_json(const nlohmann::json& j, StorePathDescriptor & c);
+
+/* This is needed in the from_json function for PathReferences<IPFSRef> */
+void from_json(const nlohmann::json& j, std::set<IPFSRef> & c);
+void from_json(const nlohmann::json& j, std::map<IPFSRef, StringSet> & m);
 
 void to_json(nlohmann::json& j, const PathReferences<IPFSRef> & c);
 void from_json(const nlohmann::json& j, PathReferences<IPFSRef> & c);

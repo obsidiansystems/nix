@@ -188,25 +188,6 @@ Path IPFSBinaryCacheStore::formatPathAsProtocol(Path path) {
     else return path;
 }
 
-std::string IPFSBinaryCacheStore::ipfsCidFormatBase16(std::string cid)
-{
-    if (cid[0] == 'f') return cid;
-    assert(cid[0] == 'b');
-    std::string newCid = "f";
-    unsigned short remainder;
-    for (size_t i = 1; i < cid.size(); i++) {
-        if (cid[i] >= 'a' && cid[i] <= 'z')
-            remainder = (remainder << 5) | (cid[i] - 'a');
-        else if (cid[i] >= '2' && cid[i] <= '7')
-            remainder = (remainder << 5) | (26 + cid[i] - '2');
-        else throw Error("unknown character: '%c'", cid[i]);;
-        if ((i % 4) == 0)
-            newCid += base16Alpha[(remainder >> 4) & 0xf];
-        newCid += base16Alpha[(remainder >> (i % 4)) & 0xf];
-    }
-    return newCid;
-}
-
 void IPFSBinaryCacheStore::sync()
 {
     auto state(_state.lock());
@@ -856,9 +837,9 @@ void IPFSBinaryCacheStore::queryPathInfoUncached(StorePathOrDesc storePathOrCa,
                 auto json = getIpfsDag("/ipfs/" + *cid);
                 url = "ipfs://" + (std::string) json.at("cid").at("/");
 
-                json.at("cid").at("/") = ipfsCidFormatBase16(json.at("cid").at("/"));
+                json.at("cid").at("/") = ipfsCidFormatBase16(json.at("cid").at("/").get<std::string_view>());
                 for (auto & ref : json.at("references").at("references"))
-                    ref.at("cid").at("/") = ipfsCidFormatBase16(ref.at("cid").at("/"));
+                    ref.at("cid").at("/") = ipfsCidFormatBase16(ref.at("cid").at("/").get<std::string_view>());
 
                 // Dummy value to set tag bit.
                 ca = StorePathDescriptor {
