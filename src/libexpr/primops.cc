@@ -1293,6 +1293,45 @@ static void prim_path(EvalState & state, const Pos & pos, Value * * args, Value 
 }
 
 
+static void prim_ipfsPath(EvalState & state, const Pos & pos, Value * * args, Value & v)
+{
+    state.forceAttrs(*args[0], pos);
+    string name;
+    std::optional<IPFSHash> cid;
+
+    for (auto & attr : *args[0]->attrs) {
+        const string & n(attr.name);
+        if (attr.name == state.sName)
+            name = state.forceStringNoCtx(*attr.value, *attr.pos);
+        else if (n == "cid")
+            cid = IPFSHash::from_string(state.forceStringNoCtx(*attr.value, *attr.pos));
+        else
+            throw EvalError({
+                .hint = hintfmt("unsupported argument '%1%' to 'ipfsPath'", attr.name),
+                .errPos = *attr.pos
+            });
+    }
+    if (name.empty())
+        throw EvalError({
+            .hint = hintfmt("no name was given"),
+            .errPos = pos,
+        });
+    if (!cid)
+        throw EvalError({
+            .hint = hintfmt("no CID was given"),
+            .errPos = pos,
+        });
+
+    auto dstPath0 = state.store->makeFixedOutputPathFromCA({
+            .name = name,
+            .info = *cid,
+        });
+    auto dstPath = state.store->printStorePath(dstPath0);
+
+    mkString(v, dstPath, {dstPath});
+}
+
+
 /*************************************************************
  * Sets
  *************************************************************/
@@ -2370,6 +2409,7 @@ void EvalState::createBaseEnv()
     addPrimOp("__readDir", 1, prim_readDir);
     addPrimOp("__findFile", 2, prim_findFile);
     addPrimOp("__hashFile", 2, prim_hashFile);
+    addPrimOp("__ipfsPath", 1, prim_ipfsPath);
 
     // Creating files
     addPrimOp("__toXML", 1, prim_toXML);
