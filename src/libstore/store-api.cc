@@ -1200,7 +1200,7 @@ ValidPathInfo::ValidPathInfo(
                 this->references.insert(store.makeIPFSPath(ref.name, ref.hash));
             this->viewCA() = (ContentAddress) IPFSHash { computeIPFSHash(info) };
         },
-        [](IPFSHash ih) {
+        [this](IPFSHash ih) {
             /* FIXME: Do not have enough info to set references, unlike the
                other cases. */
             this->viewCA() = (ContentAddress) ih;
