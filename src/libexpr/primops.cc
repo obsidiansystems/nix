@@ -1328,6 +1328,7 @@ static void prim_ipfsPath(EvalState & state, const Pos & pos, Value * * args, Va
         });
     auto dstPath = state.store->printStorePath(dstPath0);
 
+    state.store->ensurePath(dstPath0);
     mkString(v, dstPath, {dstPath});
 }
 
