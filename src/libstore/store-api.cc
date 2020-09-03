@@ -888,7 +888,7 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
             auto info2 = make_ref<ValidPathInfo>(*info);
             ValidPathInfo dstInfoCA { *dstStore, StorePathDescriptor { ca }, *info->viewHashResultConst() };
             if (dstStore->storeDir == srcStore->storeDir)
-                assert(info2->path == info2->path);
+                assert(info->path == info2->path);
             info2->path = std::move(dstInfoCA.path);
             info2->viewCA() = std::move(dstInfoCA.optCA());
             info = info2;
@@ -1200,8 +1200,10 @@ ValidPathInfo::ValidPathInfo(
                 this->references.insert(store.makeIPFSPath(ref.name, ref.hash));
             this->viewCA() = (ContentAddress) IPFSHash { computeIPFSHash(info) };
         },
-        [](IPFSHash foi) {
-            throw Error("cannot make a valid path from an ipfs hash without talking to the ipfs daemon");
+        [](IPFSHash ih) {
+            /* FIXME: Do not have enough info to set references, unlike the
+               other cases. */
+            this->viewCA() = (ContentAddress) ih;
         },
     }, std::move(info.info));
     viewHashResult() = optNarHashSize;
