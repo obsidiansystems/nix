@@ -94,7 +94,7 @@ MANUAL_IPFS_HASH=$(ipfs add -r $IPFS_SRC_STORE 2>/dev/null | tail -n 1 | awk '{p
 
 mkdir $IPFS_DST_HTTP_LOCAL_STORE
 
-IPFS_HTTP_LOCAL_PREFIX='http://localhost:8080/ipfs'
+IPFS_HTTP_LOCAL_PREFIX="http://localhost:$IPFS_GATEWAY_PORT/ipfs"
 
 nix-build ./fixed.nix -A good \
   --option substituters $IPFS_HTTP_LOCAL_PREFIX/$MANUAL_IPFS_HASH \

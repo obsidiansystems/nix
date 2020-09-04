@@ -98,18 +98,21 @@ startIpfs() {
         test ! -f .ipfs/api
         echo "Ipfs daemon not detected; initializing.."
         ipfs init --profile=randomports
-        #mv ~/.ipfs/config{,.old}
-        # TODO make nix able to talk to IPFS over unix domain socket, and then do this.
-        #jq '.Addresses.API = "/unix/$HOME/ipfs-api.sock" | .Addresses.Gateway = "/unix/$HOME/ipfs-gateway.sock"' \
-        #    < ~/.ipfs/config.old > ~/.ipfs/config
-        #rm ~/.ipfs/config.old
+        # TODO unix domain socket
+		IPFS_GATEWAY_PORT=$(shuf -i 2000-65000 -n 1)
+        mv ~/.ipfs/config{,.old}
+        jq ".Addresses.Gateway = \"/ip4/127.0.0.1/tcp/$IPFS_GATEWAY_PORT"\" \
+            < ~/.ipfs/config.old > ~/.ipfs/config
+        #jq ".Addresses.API = \"/unix/$HOME/ipfs-api.sock\"" \
+        #    < ~/.ipfs/config.1 > ~/.ipfs/config.2
+        rm ~/.ipfs/config.old
         ipfs daemon --offline &
         trap "ipfs shutdown" EXIT
         while [ ! -e ${HOME}/.ipfs/api ]
-         do
-            echo "Waiting for IPFS to start";
-            sleep 1
-         done
+        do
+           echo "Waiting for IPFS to start";
+           sleep 1
+        done
         stat ~/.ipfs/api
     fi
 }
