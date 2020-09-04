@@ -233,3 +233,5 @@ path5=$(nix --experimental-features 'nix-command ca-references' ensure-ca depend
 
 [ $(nix-store -q --references $path5 | wc -l) = $numRefs ]
 [ $(readlink -f $path5/self) = $path5 ]
+
+source ./ipld-derivations.sh # TEMPORARY, to avoid spining up too IPFS deamons
