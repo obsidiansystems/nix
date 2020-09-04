@@ -99,7 +99,7 @@ startIpfs() {
         echo "Ipfs daemon not detected; initializing.."
         ipfs init --profile=randomports
         # TODO unix domain socket
-		IPFS_GATEWAY_PORT=$(shuf -i 2000-65000 -n 1)
+        IPFS_GATEWAY_PORT=$(shuf -i 2000-65000 -n 1)
         mv ~/.ipfs/config{,.old}
         jq ".Addresses.Gateway = \"/ip4/127.0.0.1/tcp/$IPFS_GATEWAY_PORT"\" \
             < ~/.ipfs/config.old > ~/.ipfs/config
@@ -118,7 +118,7 @@ startIpfs() {
 }
 
 simpleFileIpfs() {
-	[ ! -f simple-file ]
+    [ ! -f simple-file ]
     echo "this made it to ipfs" > simple-file
     local body rewrite ca cid
     body=$(nix add-to-store simple-file)
