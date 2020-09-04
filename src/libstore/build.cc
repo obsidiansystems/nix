@@ -1460,7 +1460,9 @@ void DerivationGoal::inputsRealised()
             /* We are be able to resolve this derivation based on the
                now-known results of dependencies. If so, we become a stub goal
                aliasing that resolved derivation goal */
-            Derivation drvResolved { fullDrv.resolve(worker.store) };
+            std::optional attempt = fullDrv.tryResolve(worker.store);
+            assert(attempt);
+            Derivation drvResolved { *std::move(attempt) };
 
             auto pathResolved = writeDerivation(worker.store, drvResolved);
             /* Add to memotable to speed up downstream goal's queries with the
@@ -1477,8 +1479,7 @@ void DerivationGoal::inputsRealised()
                    });
 
             auto resolvedGoal = worker.makeDerivationGoal(
-                pathResolved, wantedOutputs,
-                buildMode == bmRepair ? bmRepair : bmNormal);
+                pathResolved, wantedOutputs, buildMode);
             addWaitee(resolvedGoal);
 
             state = &DerivationGoal::resolvedFinished;

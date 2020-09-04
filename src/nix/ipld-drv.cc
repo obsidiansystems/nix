@@ -181,7 +181,7 @@ struct CmdIpldDrvImport : StoreCommand
 };
 
 
-struct CmdIpldDrv : virtual MultiCommand, virtual Command
+struct CmdIpldDrv : NixMultiCommand
 {
     CmdIpldDrv()
         : MultiCommand({
