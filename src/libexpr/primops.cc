@@ -1963,13 +1963,14 @@ static void prim_ipfsPath(EvalState & state, const Pos & pos, Value * * args, Va
             .errPos = pos,
         });
 
-    auto dstPath0 = state.store->makeFixedOutputPathFromCA({
-            .name = name,
-            .info = *cid,
-        });
-    auto dstPath = state.store->printStorePath(dstPath0);
+    StorePathDescriptor dstDesc {
+        .name = name,
+        .info = *cid,
+    };
+    auto dstPath = state.store->printStorePath(
+        state.store->makeFixedOutputPathFromCA(dstDesc));
 
-    state.store->ensurePath(dstPath0);
+    state.store->ensurePath(dstDesc);
     mkString(v, dstPath, {dstPath});
 }
 
@@ -1977,18 +1978,18 @@ static RegisterPrimOp primop_ipfsPath({
     .name = "__ipfsPath",
     .args = {"args"},
     .doc = R"(
-	  Download the specified IPLD CID, and unpack into a store path.
-	  Currently assumes that the referenced object is a metadata wrapper
-	  containing the name, references, a boolean indicating whether the
-	  path contains self references, and finally the data itself as a
-	  git tree/blob reference.
+      Download the specified IPLD CID, and unpack into a store path.
+      Currently assumes that the referenced object is a metadata wrapper
+      containing the name, references, a boolean indicating whether the
+      path contains self references, and finally the data itself as a
+      git tree/blob reference.
 
         - name  
-		  The name of the path when added to the store. This must match
-		  the name in the metadata used for self refereneces.
+          The name of the path when added to the store. This must match
+          the name in the metadata used for self refereneces.
 
         - cid
-		  The IPLD CID. Currently must be in base16.
+          The IPLD CID. Currently must be in base16.
     )",
     .fun = prim_ipfsPath,
 });

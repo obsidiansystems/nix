@@ -234,4 +234,10 @@ path5=$(nix --experimental-features 'nix-command ca-references' ensure-ca depend
 [ $(nix-store -q --references $path5 | wc -l) = $numRefs ]
 [ $(readlink -f $path5/self) = $path5 ]
 
+nix-store --delete $path5
+
+path6=$(nix --experimental-features 'nix-command ca-references' eval --expr "builtins.ipfsPath { name = \"dependencies-top\"; cid = \"$cid\"; }" --substituters ipfs:// --option substitute true)
+
+[ "$path5" == "$path6" ]
+
 source ./ipld-derivations.sh # TEMPORARY, to avoid spining up too IPFS deamons
