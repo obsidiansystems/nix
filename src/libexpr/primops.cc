@@ -1974,7 +1974,7 @@ static void prim_ipfsPath(EvalState & state, const Pos & pos, Value * * args, Va
 }
 
 static RegisterPrimOp primop_ipfsPath({
-    .name = "__path",
+    .name = "__ipfsPath",
     .args = {"args"},
     .doc = R"(
 	  Download the specified IPLD CID, and unpack into a store path.
