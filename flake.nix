@@ -91,7 +91,8 @@
             buildPackages.git
             buildPackages.mercurial
             buildPackages.jq
-          ];
+          ]
+          ++ lib.optional (stdenv.isLinux || stdenv.isDarwin) buildPackages.ipfs;
 
         buildDeps =
           [ curl
@@ -104,8 +105,7 @@
             gmock
           ]
           ++ lib.optionals stdenv.isLinux [libseccomp utillinuxMinimal]
-          ++ lib.optional (stdenv.isLinux || stdenv.isDarwin) libsodium
-          ++ lib.optional (stdenv.isLinux || stdenv.isDarwin) ipfs;
+          ++ lib.optional (stdenv.isLinux || stdenv.isDarwin) libsodium;
 
         awsDeps = lib.optional (stdenv.isLinux || stdenv.isDarwin)
           (aws-sdk-cpp.override {
