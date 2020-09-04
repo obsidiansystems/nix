@@ -9,6 +9,8 @@ fi
 
 startIpfs
 
+simpleFileIpfs
+
 drv=$(nix-instantiate --experimental-features ca-derivations ./ipfs-derivation-output.nix -A dependent)
 nix --experimental-features 'nix-command ca-derivations' show-derivation --derivation "$drv"
 echo $drv

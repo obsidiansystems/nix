@@ -2,6 +2,9 @@
 
 source common.sh
 
+# Make sure input src exists in db
+simpleFileIpfs
+
 # In the corresponding nix file, we have two derivations: the first, named root,
 # is a normal recursive derivation, while the second, named dependent, has the
 # new outputHashMode "text". Note that in "dependent", we don't refer to the

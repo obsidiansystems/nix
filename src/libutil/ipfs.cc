@@ -16,8 +16,9 @@ std::string IPFSHash::to_string() const
     return prefix + hash.to_string(Base16, false);
 }
 
-IPFSHash IPFSHash::from_string(std::string_view cid)
+IPFSHash IPFSHash::from_string(std::string_view cid_)
 {
+    auto cid = ipfsCidFormatBase16(cid_);
     auto prefix = cid.substr(0, 9);
     HashType algo = prefix == "f01781114" ? htSHA1
         : prefix == "f01711220" ? htSHA256

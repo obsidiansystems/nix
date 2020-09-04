@@ -83,7 +83,7 @@ struct CmdIpldDrvExport : StorePathCommand
                 auto pref = std::get_if<IPFSHash>(&*caOpt);
                 if (!pref) throw err2;
 
-                copyPaths(localStore, ref { ipfsStore }, { drvPath });
+                copyPaths(localStore, ref { ipfsStore }, { inputSource });
 
                 ipldDrv.inputSrcs.insert(IPFSRef {
                     .name = std::string(inputSource.name()),
@@ -105,7 +105,7 @@ struct CmdIpldDrvExport : StorePathCommand
             assert(splitPrefix(ipfsHash, "/ipfs/"));
             return {
                 .name = drv.name,
-                .hash = IPFSHash::from_string(ipfsCidFormatBase16(ipfsHash)),
+                .hash = IPFSHash::from_string(ipfsHash),
             };
         };
 
