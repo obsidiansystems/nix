@@ -236,7 +236,7 @@ path5=$(nix --experimental-features 'nix-command ca-references' ensure-ca depend
 
 nix-store --delete $path5
 
-path6=$(nix --experimental-features 'nix-command ca-references' eval --expr "builtins.ipfsPath { name = \"dependencies-top\"; cid = \"$cid\"; }" --substituters ipfs:// --option substitute true)
+path6=$(nix --experimental-features 'nix-command ca-references' eval --raw --expr "builtins.ipfsPath { name = \"dependencies-top\"; cid = \"$cid\"; }" --substituters ipfs:// --option substitute true)
 
 [ "$path5" == "$path6" ]
 
