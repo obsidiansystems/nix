@@ -81,10 +81,9 @@
           [
             buildPackages.bison
             buildPackages.flex
-            buildPackages.libxml2
-            buildPackages.libxslt
-            buildPackages.docbook5
-            buildPackages.docbook_xsl_ns
+            (lib.getBin buildPackages.lowdown)
+            buildPackages.mdbook
+            buildPackages.autoconf-archive
             buildPackages.autoreconfHook
             buildPackages.pkgconfig
 
@@ -95,19 +94,13 @@
           ];
 
         buildDeps =
-          [ bison
-            flex
-            mdbook
-            lowdown
-            autoconf-archive
-            autoreconfHook
-
-            curl
+          [ curl
             bzip2 xz brotli zlib editline
-            openssl pkgconfig sqlite
+            openssl sqlite
             libarchive
             boost
             nlohmann_json
+            lowdown
             gmock
           ]
           ++ lib.optionals stdenv.isLinux [libseccomp utillinuxMinimal]
@@ -190,14 +183,17 @@
 
             src = self;
 
+            nativeBuildInputs =
+              [ buildPackages.autoconf-archive
+                buildPackages.autoreconfHook
+                buildPackages.pkgconfig
+              ];
+
             buildInputs =
-              [ autoconf-archive
-                autoreconfHook
-                nix
+              [ nix
                 curl
                 bzip2
                 xz
-                pkgconfig
                 pkgs.perl
                 boost
                 nlohmann_json
@@ -228,15 +224,15 @@
 
           src = lowdown-src;
 
-          outputs = [ "out" "dev" ];
+          outputs = [ "out" "bin" "dev" ];
 
-          buildInputs = [ which ];
+          nativeBuildInputs = [ which ];
 
           configurePhase =
             ''
               ./configure \
                 PREFIX=${placeholder "dev"} \
-                BINDIR=${placeholder "out"}/bin
+                BINDIR=${placeholder "bin"}/bin
             '';
         };
 
@@ -516,6 +512,7 @@
 
           outputs = [ "out" "dev" "doc" ];
 
+          nativeBuildInputs = nativeBuildDeps;
           buildInputs = buildDeps ++ propagatedDeps ++ awsDeps ++ perlDeps;
 
           inherit configureFlags;
