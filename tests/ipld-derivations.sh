@@ -2,6 +2,12 @@
 
 source common.sh
 
+if [[ -z $(type -p ipfs) ]]; then
+    echo "Ipfs not installed; skipping ipfs tests"
+    exit 99
+fi
+
+startIpfs
 
 drv=$(nix-instantiate --experimental-features ca-derivations ./ipfs-derivation-output.nix -A dependent)
 nix --experimental-features 'nix-command ca-derivations' show-derivation --derivation "$drv"

@@ -90,6 +90,30 @@ killDaemon() {
     trap "" EXIT
 }
 
+startIpfs() {
+    # To see if ipfs is connected to the network, we check if we can see some peers
+    # other than ourselves.
+    if (! (ipfs log ls))
+    then
+        test ! -f .ipfs/api
+        echo "Ipfs daemon not detected; initializing.."
+        ipfs init --profile=randomports
+        #mv ~/.ipfs/config{,.old}
+        # TODO make nix able to talk to IPFS over unix domain socket, and then do this.
+        #jq '.Addresses.API = "/unix/$HOME/ipfs-api.sock" | .Addresses.Gateway = "/unix/$HOME/ipfs-gateway.sock"' \
+        #    < ~/.ipfs/config.old > ~/.ipfs/config
+        #rm ~/.ipfs/config.old
+        ipfs daemon --offline &
+        trap "ipfs shutdown" EXIT
+        while [ ! -e ${HOME}/.ipfs/api ]
+         do
+            echo "Waiting for IPFS to start";
+            sleep 1
+         done
+        stat ~/.ipfs/api
+    fi
+}
+
 if [[ $(uname) == Linux ]] && [[ -L /proc/self/ns/user ]] && unshare --user true; then
     _canUseSandbox=1
 fi

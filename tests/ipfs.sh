@@ -13,18 +13,7 @@ if [[ -z $(type -p ipfs) ]]; then
     exit 99
 fi
 
-# To see if ipfs is connected to the network, we check if we can see some peers
-# other than ourselves.
-if (! (ipfs log ls));
-then
-  echo "Ipfs daemon not detected; initializing.."
-  ipfs init
-  ipfs daemon --offline &
-  pidIpfsDaemon=$!
-  trap "kill -9 $pidIpfsDaemon" EXIT
-fi
-
-clearStore
+startIpfs
 
 ################################################################################
 ## Create the folders for the source and destination stores
