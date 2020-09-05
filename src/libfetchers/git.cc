@@ -505,11 +505,16 @@ struct GitInputScheme : InputScheme
 
         // verify treeHash is what we actually obtained in the nix store
         if (auto treeHash = input.getTreeHash()) {
-            auto path = store->toRealPath(store->printStorePath(storePath));
-            auto gotHash = dumpGitHash(htSHA1, path);
+            auto gotHash = Hash::dummy;
+            if (ingestionMethod == FileIngestionMethod::Git) {
+                auto fohp = std::get_if<FixedOutputInfo>(&storePathDesc.info);
+                assert(fohp);
+                gotHash = fohp->hash;
+            } else
+                gotHash = dumpGitHash(htSHA1, tmpDir);
             if (gotHash != input.getTreeHash())
                 throw Error("Git hash mismatch in input '%s' (%s), expected '%s', got '%s'",
-                    input.to_string(), path, treeHash->gitRev(), gotHash.gitRev());
+                    input.to_string(), tmpDir, treeHash->gitRev(), gotHash.gitRev());
         }
 
         Attrs infoAttrs({});
