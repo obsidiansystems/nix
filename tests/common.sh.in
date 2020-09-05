@@ -98,7 +98,7 @@ startIpfs() {
         test ! -f .ipfs/api
         echo "Ipfs daemon not detected; initializing.."
         ipfs init --profile=randomports
-        # TODO unix domain socket
+        # FIXME unix domain socket
         IPFS_GATEWAY_PORT=$(shuf -i 2000-65000 -n 1)
         mv ~/.ipfs/config{,.old}
         jq ".Addresses.Gateway = \"/ip4/127.0.0.1/tcp/$IPFS_GATEWAY_PORT"\" \
@@ -114,6 +114,9 @@ startIpfs() {
            sleep 1
         done
         stat ~/.ipfs/api
+    else
+        # FIXME consult IPFS_PATH/api
+        IPFS_GATEWAY_PORT=8080
     fi
 }
 
