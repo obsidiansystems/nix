@@ -16,6 +16,9 @@ nix_tests = \
   linux-sandbox.sh \
   build-dry.sh \
   build-remote-input-addressed.sh \
+  build-remote-trustless-should-pass-1.sh \
+  build-remote-trustless-should-pass-2.sh \
+  build-remote-trustless-should-fail-0.sh \
   nar-access.sh \
   structured-attrs.sh \
   fetchGit.sh \
@@ -41,7 +44,9 @@ nix_tests = \
   ipfs-derivation-output.sh
   # ipld-derivations.sh # TEMPORARY
   # parallel.sh
-  # build-remote-content-addressed-fixed.sh \
+  # build-remote-content-addressed-fixed.sh # problem with fixed output derivations
+  # build-remote-trustless-should-pass-0.sh # problem with legacy ssh-store only
+  # build-remote-trustless-should-pass-3.sh # problem with fixed output derivations
 
 install-tests += $(foreach x, $(nix_tests), tests/$(x))
 
