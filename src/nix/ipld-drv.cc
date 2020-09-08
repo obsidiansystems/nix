@@ -132,7 +132,7 @@ struct CmdIpldDrvImport : StoreCommand
 
     Category category() override { return catUtility; }
 
-    void run(ref<Store> store) override
+    void run(ref<Store> localStore) override
     {
         auto ipfsStore = std::make_shared<IPFSBinaryCacheStore>( Store::Params { }, "ipfs://" );
 
@@ -155,10 +155,11 @@ struct CmdIpldDrvImport : StoreCommand
             }
 
             for (IPFSRef inputSource : ipldDrv.inputSrcs) {
-                StorePath storePath = store->makeFixedOutputPathFromCA(StorePathDescriptor {
+                StorePath storePath = localStore->makeFixedOutputPathFromCA(StorePathDescriptor {
                     inputSource.name,
                     inputSource.hash,
                 });
+                copyPaths(ref { ipfsStore }, localStore, { storePath });
                 drv.inputSrcs.insert(storePath);
             }
 
@@ -169,13 +170,13 @@ struct CmdIpldDrvImport : StoreCommand
                 );
             }
 
-            return writeDerivation(*store, drv);
+            return writeDerivation(*localStore, drv);
 
         };
 
         auto finalStorePath = convertDerivation(IPFSHash::from_string(cidStr));
         std::cout
-           << store->printStorePath(finalStorePath)
+           << localStore->printStorePath(finalStorePath)
            << std::endl;
     }
 };
