@@ -121,15 +121,16 @@ startIpfs() {
 }
 
 simpleFileIpfs() {
-    [ ! -f simple-file ]
-    echo "this made it to ipfs" > simple-file
+    checkFile=$TEST_ROOT/simple-file
+    [ ! -f $checkFile ]
+    echo "this made it to ipfs" > $checkFile
     local body rewrite ca cid
-    body=$(nix add-to-store simple-file)
+    body=$(nix add-to-store $checkFile)
     rewrite=$(nix --experimental-features 'nix-command ca-references' make-content-addressable --ipfs --json -r $body | jq -r ".rewrites[\"$body\"]")
     ca=$(nix path-info --json $rewrite | jq -r '.[0].ca')
     cid=$(echo $ca | sed s,^ipfs:,,)
     [ "$cid" = f01711220d86887a477e7c55ca39bedc5df7215afb7bfd38e42f7e16f4c96695f4fe25d4f ]
-    rm simple-file
+    rm $checkFile
 }
 
 if [[ $(uname) == Linux ]] && [[ -L /proc/self/ns/user ]] && unshare --user true; then
