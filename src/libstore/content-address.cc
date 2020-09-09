@@ -7,6 +7,56 @@
 
 namespace nix {
 
+bool TextHash::operator ==(const TextHash & otherHash) const noexcept {
+    return hash == otherHash.hash;
+};
+
+bool TextHash::operator !=(const TextHash & otherHash) const noexcept {
+    return hash != otherHash.hash;
+};
+
+bool TextHash::operator < (const TextHash & otherHash) const noexcept {
+    return hash < otherHash.hash;
+};
+
+bool TextHash::operator > (const TextHash & otherHash) const noexcept {
+    return hash > otherHash.hash;
+};
+
+
+bool FixedOutputHash::operator ==(const FixedOutputHash & otherHash) const noexcept {
+    return method == otherHash.method && hash == otherHash.hash;
+};
+
+bool FixedOutputHash::operator !=(const FixedOutputHash & otherHash) const noexcept {
+    return method != otherHash.method || hash != otherHash.hash;
+};
+
+bool FixedOutputHash::operator < (const FixedOutputHash & otherHash) const noexcept {
+    if (method < otherHash.method)
+        return true;
+    if (method > otherHash.method)
+        return false;
+    if (hash < otherHash.hash)
+        return true;
+    if (hash > otherHash.hash)
+        return false;
+    return false;
+};
+
+bool FixedOutputHash::operator > (const FixedOutputHash & otherHash) const noexcept {
+    if (method > otherHash.method)
+        return true;
+    if (method < otherHash.method)
+        return false;
+    if (hash > otherHash.hash)
+        return true;
+    if (hash < otherHash.hash)
+        return false;
+    return false;
+};
+
+
 std::string FixedOutputHash::printMethodAlgo() const {
     return makeFileIngestionPrefix(method) + printHashType(hash.type);
 }
@@ -119,6 +169,120 @@ std::optional<ContentAddress> parseContentAddressOpt(std::string_view rawCaOpt) 
 
 std::string renderContentAddress(std::optional<ContentAddress> ca) {
     return ca ? renderContentAddress(*ca) : "";
+}
+
+
+bool TextInfo::operator == (const TextInfo & other) const
+{
+    return (TextHash &) (*this) == (TextHash &) other
+        && references == other.references;
+}
+
+bool TextInfo::operator < (const TextInfo & other) const
+{
+    if ((TextHash &) (*this) > (TextHash &) other)
+        return true;
+    if ((TextHash &) (*this) < (TextHash &) other)
+        return false;
+    return references < other.references;
+}
+
+bool TextInfo::operator > (const TextInfo & other) const
+{
+    if ((TextHash &) (*this) > (TextHash &) other)
+        return true;
+    if ((TextHash &) (*this) < (TextHash &) other)
+        return false;
+    return references > other.references;
+}
+
+
+bool FixedOutputInfo::operator == (const FixedOutputInfo & other) const
+{
+    return (FixedOutputHash &) (*this) == (FixedOutputHash &) other
+        && references == other.references;
+}
+
+bool FixedOutputInfo::operator < (const FixedOutputInfo & other) const
+{
+    if ((FixedOutputHash &) (*this) > (FixedOutputHash &) other)
+        return true;
+    if ((FixedOutputHash &) (*this) < (FixedOutputHash &) other)
+        return false;
+    return references < other.references;
+}
+
+bool FixedOutputInfo::operator > (const FixedOutputInfo & other) const
+{
+    if ((FixedOutputHash &) (*this) > (FixedOutputHash &) other)
+        return true;
+    if ((FixedOutputHash &) (*this) < (FixedOutputHash &) other)
+        return false;
+    return references > other.references;
+}
+
+
+bool IPFSRef::operator == (const IPFSRef & other) const
+{
+    return name == other.name
+        && hash == other.hash;
+}
+
+bool IPFSRef::operator < (const IPFSRef & other) const
+{
+    if (name > other.name)
+        return false;
+    if (name < other.name)
+        return true;
+    if (hash > other.hash)
+        return false;
+    if (hash < other.hash)
+        return true;
+    return false;
+}
+
+bool IPFSRef::operator > (const IPFSRef & other) const
+{
+    if (name < other.name)
+        return false;
+    if (name > other.name)
+        return true;
+    if (hash < other.hash)
+        return false;
+    if (hash > other.hash)
+        return true;
+    return false;
+}
+
+
+bool IPFSInfo::operator == (const IPFSInfo & other) const
+{
+    return hash == other.hash
+        && references == other.references;
+}
+
+bool IPFSInfo::operator != (const IPFSInfo & other) const
+{
+    return hash != other.hash
+        || references != other.references;
+}
+
+bool IPFSInfo::operator < (const IPFSInfo & other) const
+{
+    if (hash < other.hash)
+        return true;
+    if (hash > other.hash)
+        return false;
+    return references < other.references;
+}
+
+bool IPFSInfo::operator > (const IPFSInfo & other) const
+{
+    if (hash > other.hash)
+        return true;
+    if (hash < other.hash)
+        return false;
+    return references > other.references;
 }
 
 
@@ -517,6 +681,25 @@ Hash getContentAddressHash(const ContentAddressWithReferences & ca)
 std::string printMethodAlgo(const ContentAddressWithReferences & ca) {
     return makeContentAddressingPrefix(getContentAddressMethod(ca))
         + printHashType(getContentAddressHash(ca).type);
+}
+
+bool StorePathDescriptor::operator == (const StorePathDescriptor & other) const
+{
+    return name == other.name
+        && info == other.info;
+}
+
+bool StorePathDescriptor::operator < (const StorePathDescriptor & other) const
+{
+    if (name > other.name)
+        return false;
+    if (name < other.name)
+        return true;
+    if (info > other.info)
+        return false;
+    if (info < other.info)
+        return true;
+    return false;
 }
 
 }

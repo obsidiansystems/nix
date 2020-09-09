@@ -47,24 +47,20 @@ std::string makeContentAddressingPrefix(ContentAddressingMethod m);
 
 struct TextHash {
     Hash hash;
-    bool operator ==(TextHash otherHash) const noexcept {
-        return hash == otherHash.hash;
-    };
-    bool operator !=(TextHash otherHash) const noexcept {
-        return hash != otherHash.hash;
-    };
+    bool operator ==(const TextHash & otherHash) const noexcept;
+    bool operator !=(const TextHash & otherHash) const noexcept;
+    bool operator > (const TextHash & otherHash) const noexcept;
+    bool operator < (const TextHash & otherHash) const noexcept;
 };
 
 /// Pair of a hash, and how the file system was ingested
 struct FixedOutputHash {
     FileIngestionMethod method;
     Hash hash;
-    bool operator ==(FixedOutputHash otherHash) const noexcept {
-        return method == otherHash.method && hash == otherHash.hash;
-    };
-    bool operator !=(FixedOutputHash otherHash) const noexcept {
-        return method != otherHash.method && hash == otherHash.hash;
-    };
+    bool operator ==(const FixedOutputHash & therHash) const noexcept;
+    bool operator !=(const FixedOutputHash & therHash) const noexcept;
+    bool operator > (const FixedOutputHash & therHash) const noexcept;
+    bool operator < (const FixedOutputHash & therHash) const noexcept;
     std::string printMethodAlgo() const;
 };
 
@@ -117,6 +113,32 @@ struct PathReferences
     {
         return references != other.references
             || hasSelfReference != other.hasSelfReference;
+    }
+
+    bool operator < (const PathReferences<Ref> & other) const
+    {
+        if (references < other.references)
+            return true;
+        if (references > other.references)
+            return false;
+        if (hasSelfReference < other.hasSelfReference)
+            return true;
+        if (hasSelfReference > other.hasSelfReference)
+            return false;
+        return false;
+    }
+
+    bool operator > (const PathReferences<Ref> & other) const
+    {
+        if (references > other.references)
+            return true;
+        if (references < other.references)
+            return false;
+        if (hasSelfReference > other.hasSelfReference)
+            return true;
+        if (hasSelfReference < other.hasSelfReference)
+            return false;
+        return false;
     }
 
     /* Functions to view references + hasSelfReference as one set, mainly for
@@ -172,11 +194,21 @@ void from_json(const nlohmann::json& j, std::optional<ContentAddress> & c);
 struct TextInfo : TextHash {
     // References for the paths, self references disallowed
     StorePathSet references;
+
+    bool operator ==(const TextInfo & other) const;
+    bool operator !=(const TextInfo & other) const;
+    bool operator < (const TextInfo & other) const;
+    bool operator > (const TextInfo & other) const;
 };
 
 struct FixedOutputInfo : FixedOutputHash {
     // References for the paths
     PathReferences<StorePath> references;
+
+    bool operator ==(const FixedOutputInfo & other) const;
+    bool operator !=(const FixedOutputInfo & other) const;
+    bool operator < (const FixedOutputInfo & other) const;
+    bool operator > (const FixedOutputInfo & other) const;
 };
 
 // pair of name and a hash of a content address
@@ -184,17 +216,21 @@ struct IPFSRef {
     std::string name;
     IPFSHash hash;
 
-    bool operator < (const IPFSRef & other) const
-    {
-        return name < other.name;
-        // FIXME second field
-    }
+    bool operator ==(const IPFSRef & other) const;
+    bool operator !=(const IPFSRef & other) const;
+    bool operator < (const IPFSRef & other) const;
+    bool operator > (const IPFSRef & other) const;
 };
 
 struct IPFSInfo {
     Hash hash;
     // References for the paths
     PathReferences<IPFSRef> references;
+
+    bool operator ==(const IPFSInfo & other) const;
+    bool operator !=(const IPFSInfo & other) const;
+    bool operator < (const IPFSInfo & other) const;
+    bool operator > (const IPFSInfo & other) const;
 };
 
 typedef std::variant<
@@ -216,17 +252,10 @@ struct StorePathDescriptor {
     std::string name;
     ContentAddressWithReferences info;
 
-    bool operator == (const StorePathDescriptor & other) const
-    {
-        return name == other.name;
-        // FIXME second field
-    }
-
-    bool operator < (const StorePathDescriptor & other) const
-    {
-        return name < other.name;
-        // FIXME second field
-    }
+    bool operator ==(const StorePathDescriptor & other) const;
+    bool operator !=(const StorePathDescriptor & other) const;
+    bool operator < (const StorePathDescriptor & other) const;
+    bool operator > (const StorePathDescriptor & other) const;
 };
 
 std::string renderStorePathDescriptor(StorePathDescriptor ca);

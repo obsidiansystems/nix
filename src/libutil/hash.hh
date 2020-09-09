@@ -67,6 +67,7 @@ public:
 
     /* For sorting. */
     bool operator < (const Hash & h) const;
+    bool operator > (const Hash & h) const;
 
     /* Returns the length of a base-16 representation of this hash. */
     size_t base16Len() const

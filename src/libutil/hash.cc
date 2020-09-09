@@ -67,6 +67,18 @@ bool Hash::operator < (const Hash & h) const
 }
 
 
+bool Hash::operator > (const Hash & h) const
+{
+    if (hashSize > h.hashSize) return true;
+    if (hashSize < h.hashSize) return false;
+    for (unsigned int i = 0; i < hashSize; i++) {
+        if (hash[i] > h.hash[i]) return true;
+        if (hash[i] < h.hash[i]) return false;
+    }
+    return false;
+}
+
+
 const string base16Chars = "0123456789abcdef";
 
 
