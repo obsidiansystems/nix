@@ -77,13 +77,13 @@ struct CmdIpldDrvExport : StorePathCommand
             auto err2 = UsageError("In order to upload a derivation as IPLD the paths it references must be content addressed as IPFS");
             for (auto & inputSource : drv.inputSrcs) {
 
-                auto caOpt = localStore->queryPathInfo(inputSource)->optCA();
+                auto caOpt = localStore->queryPathInfo(inputSource)->fullStorePathDescriptorOpt();
                 if (!caOpt) throw err;
 
-                auto pref = std::get_if<IPFSHash>(&*caOpt);
+                auto pref = std::get_if<IPFSHash>(&caOpt->info);
                 if (!pref) throw err2;
 
-                copyPaths(localStore, ref { ipfsStore }, { inputSource });
+                copyPaths(localStore, ref { ipfsStore }, { *caOpt });
 
                 ipldDrv.inputSrcs.insert(IPFSRef {
                     .name = std::string(inputSource.name()),
@@ -155,12 +155,12 @@ struct CmdIpldDrvImport : StoreCommand
             }
 
             for (IPFSRef inputSource : ipldDrv.inputSrcs) {
-                StorePath storePath = localStore->makeFixedOutputPathFromCA(StorePathDescriptor {
+                StorePathDescriptor desc {
                     inputSource.name,
                     inputSource.hash,
-                });
-                copyPaths(ref { ipfsStore }, localStore, { storePath });
-                drv.inputSrcs.insert(storePath);
+                };
+                copyPaths(ref { ipfsStore }, localStore, { desc });
+                drv.inputSrcs.insert(localStore->makeFixedOutputPathFromCA(desc));
             }
 
             for (auto & [inputDrvPath, outputs] : ipldDrv.inputDrvs) {

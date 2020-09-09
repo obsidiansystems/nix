@@ -273,6 +273,7 @@ public:
     StorePath makeFixedOutputPathFromCA(const StorePathDescriptor & info) const;
 
     StorePath bakeCaIfNeeded(StorePathOrDesc path) const;
+    StorePath bakeCaIfNeeded(const OwnedStorePathOrDesc & path) const;
 
     StorePath makeIPFSPath(std::string name, IPFSHash hash) const;
 
@@ -311,6 +312,8 @@ public:
 
     /* Query which of the given paths is valid. Optionally, try to
        substitute missing paths. */
+    virtual std::set<OwnedStorePathOrDesc> queryValidPaths(const std::set<OwnedStorePathOrDesc> & paths,
+        SubstituteFlag maybeSubstitute = NoSubstitute);
     virtual StorePathSet queryValidPaths(const StorePathSet & paths,
         SubstituteFlag maybeSubstitute = NoSubstitute);
 
@@ -690,9 +693,13 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
    in parallel. They are copied in a topologically sorted order (i.e.
    if A is a reference of B, then A is copied before B), but the set
    of store paths is not automatically closed; use copyClosure() for
-   that. Returns a map of what each path was copied to the dstStore
-   as. */
-std::map<StorePath, StorePath> copyPaths(ref<Store> srcStore, ref<Store> dstStore,
+   that. */
+void copyPaths(ref<Store> srcStore, ref<Store> dstStore,
+    const std::set<OwnedStorePathOrDesc> & storePaths,
+    RepairFlag repair = NoRepair,
+    CheckSigsFlag checkSigs = CheckSigs,
+    SubstituteFlag substitute = NoSubstitute);
+void copyPaths(ref<Store> srcStore, ref<Store> dstStore,
     const StorePathSet & storePaths,
     RepairFlag repair = NoRepair,
     CheckSigsFlag checkSigs = CheckSigs,

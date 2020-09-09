@@ -285,7 +285,7 @@ connected:
             if (!result.success())
                 throw Error("build of '%s' on '%s' failed: %s", store->printStorePath(*drvPath), storeUri, result.errorMsg);
         } else {
-            copyPaths(store, sshStore2, {*drvPath}, NoRepair, NoCheckSigs, substitute);
+            copyPaths(store, sshStore2, StorePathSet {*drvPath}, NoRepair, NoCheckSigs, substitute);
             sshStore2->buildPaths({{*drvPath}});
         }
 
