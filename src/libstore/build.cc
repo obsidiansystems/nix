@@ -4314,17 +4314,26 @@ void DerivationGoal::registerOutputs()
        outputs, this will fail. */
     {
         ValidPathInfos infos2;
+
+        /* We'll write derivation for CA derivations so we can cache them. */
+        bool isCaFloating = drv->type() == DerivationType::CAFloating;
+
+        auto drvPath2 = drvPath;
+        if (!useDerivation && isCaFloating) {
+            /* Once a floating CA derivations reaches this point, it
+               must already be resolved, so we don't bother trying to
+               downcast drv to get would would just be an empty
+               inputDrvs field. */
+            Derivation drv2 { *drv };
+            drvPath2 = writeDerivation(worker.store, drv2);
+        }
+
         for (auto & [outputName, newInfo] : infos) {
-            if (useDerivation)
-                worker.store.linkDeriverToPath(drvPath, outputName, newInfo.path);
-            else {
-                /* Once a floating CA derivations reaches this point, it must
-                   already be resolved, drvPath the basic derivation path, and
-                   a file existsing at that path for sake of the DB's foreign key. */
-                assert(drv->type() != DerivationType::CAFloating);
-            }
+            if (useDerivation || isCaFloating)
+                worker.store.linkDeriverToPath(drvPath2, outputName, newInfo.path);
             infos2.push_back(newInfo);
         }
+
         worker.store.registerValidPaths(infos2);
     }
 

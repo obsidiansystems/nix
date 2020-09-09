@@ -145,6 +145,7 @@ struct Derivation : BasicDerivation
     std::optional<BasicDerivation> tryResolve(Store & store);
 
     Derivation() = default;
+    Derivation(const BasicDerivation & bd) : BasicDerivation(bd) { }
     Derivation(BasicDerivation && bd) : BasicDerivation(std::move(bd)) { }
 };
 
