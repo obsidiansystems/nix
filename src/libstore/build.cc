@@ -4628,7 +4628,7 @@ void DerivationGoal::flushLine()
 
 std::map<std::string, std::optional<StorePath>> DerivationGoal::queryPartialDerivationOutputMap()
 {
-    if (drv->type() != DerivationType::CAFloating) {
+    if (!useDerivation || drv->type() != DerivationType::CAFloating) {
         std::map<std::string, std::optional<StorePath>> res;
         for (auto & [name, output] : drv->outputs)
             res.insert_or_assign(name, output.pathOpt(worker.store, drv->name, name));
@@ -4640,7 +4640,7 @@ std::map<std::string, std::optional<StorePath>> DerivationGoal::queryPartialDeri
 
 OutputPathMap DerivationGoal::queryDerivationOutputMap()
 {
-    if (drv->type() != DerivationType::CAFloating) {
+    if (!useDerivation || drv->type() != DerivationType::CAFloating) {
         OutputPathMap res;
         for (auto & [name, output] : drv->outputsAndOptPaths(worker.store))
             res.insert_or_assign(name, *output.second);
