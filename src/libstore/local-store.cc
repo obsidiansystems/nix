@@ -42,7 +42,8 @@ namespace nix {
 
 
 LocalStore::LocalStore(const Params & params)
-    : Store(params)
+    : StoreConfig(params)
+    , Store(params)
     , LocalFSStore(params)
     , realStoreDir_{this, false, rootDir != "" ? rootDir + "/nix/store" : storeDir, "real",
         "physical path to the Nix store"}
@@ -731,7 +732,7 @@ uint64_t LocalStore::queryValidPathId(State & state, const StorePath & path)
 {
     auto use(state.stmtQueryPathInfo.use()(printStorePath(path)));
     if (!use.next())
-        throw Error("path '%s' is not valid", printStorePath(path));
+        throw InvalidPath("path '%s' is not valid", printStorePath(path));
     return use.getInt(0);
 }
 
@@ -829,8 +830,14 @@ std::map<std::string, std::optional<StorePath>> LocalStore::queryPartialDerivati
     /* can't just use else-if instead of `!haveCached` because we need to unlock
        `drvPathResolutions` before it is locked in `Derivation::resolve`. */
     if (!haveCached && drv.type() == DerivationType::CAFloating) {
-        /* Resolve drv and use that path instead. */
-        auto pathResolved = writeDerivation(*this, drv.resolve(*this));
+        /* Try resolve drv and use that path instead. */
+        auto attempt = drv.tryResolve(*this);
+        if (!attempt)
+            /* If we cannot resolve the derivation, we cannot have any path
+               assigned so we return the map of all std::nullopts. */
+            return outputs;
+        /* Just compute store path */
+        auto pathResolved = writeDerivation(*this, *std::move(attempt), NoRepair, true);
         /* Store in memo table. */
         /* FIXME: memo logic should not be local-store specific, should have
            wrapper-method instead. */
@@ -840,8 +847,19 @@ std::map<std::string, std::optional<StorePath>> LocalStore::queryPartialDerivati
     return retrySQLite<std::map<std::string, std::optional<StorePath>>>([&]() {
         auto state(_state.lock());
 
-        auto useQueryDerivationOutputs(state->stmtQueryDerivationOutputs.use()
-            (queryValidPathId(*state, path)));
+        uint64_t drvId;
+        try {
+            drvId = queryValidPathId(*state, path);
+        } catch (InvalidPath &) {
+            /* FIXME? if the derivation doesn't exist, we cannot have a mapping
+               for it. */
+            return outputs;
+        }
+
+        auto useQueryDerivationOutputs {
+            state->stmtQueryDerivationOutputs.use()
+            (drvId)
+        };
 
         while (useQueryDerivationOutputs.next())
             outputs.insert_or_assign(

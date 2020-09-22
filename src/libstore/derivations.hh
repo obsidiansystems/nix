@@ -52,7 +52,7 @@ struct DerivationOutput
     /* Note, when you use this function you should make sure that you're passing
        the right derivation name. When in doubt, you should use the safer
        interface provided by BasicDerivation::outputsAndOptPaths */
-    std::optional<StorePath> pathOpt(const Store & store, std::string_view drvName, std::string_view outputName) const;
+    std::optional<StorePath> path(const Store & store, std::string_view drvName, std::string_view outputName) const;
 };
 
 typedef std::map<string, DerivationOutput> DerivationOutputs;
@@ -133,9 +133,10 @@ struct Derivation : BasicDerivation
        1. input drv outputs moved to input sources.
 
        2. placeholders replaced with realized input store paths. */
-    BasicDerivation resolve(Store & store);
+    std::optional<BasicDerivation> tryResolve(Store & store);
 
     Derivation() = default;
+    Derivation(const BasicDerivation & bd) : BasicDerivation(bd) { }
     Derivation(BasicDerivation && bd) : BasicDerivation(std::move(bd)) { }
 };
 
@@ -146,14 +147,21 @@ enum RepairFlag : bool { NoRepair = false, Repair = true };
 
 /* Write a derivation to the Nix store, and return its path. */
 StorePath writeDerivation(Store & store,
-    const Derivation & drv, RepairFlag repair = NoRepair);
+    const Derivation & drv,
+    RepairFlag repair = NoRepair,
+    bool readOnly = false);
 
 /* Read a derivation from a file. */
-Derivation readDerivation(const Store & store, const Path & drvPath, std::string_view name);
+Derivation parseDerivation(const Store & store, std::string && s, std::string_view name);
 
 // FIXME: remove
 bool isDerivation(const string & fileName);
 
+/* Calculate the name that will be used for the store path for this
+   output.
+
+   This is usually <drv-name>-<output-name>, but is just <drv-name> when
+   the output name is "out". */
 std::string outputPathName(std::string_view drvName, std::string_view outputName);
 
 // known CA drv's output hashes, current just for fixed-output derivations
@@ -213,8 +221,21 @@ struct Sink;
 Source & readDerivation(Source & in, const Store & store, BasicDerivation & drv, std::string_view name);
 void writeDerivation(Sink & out, const Store & store, const BasicDerivation & drv);
 
+/* This creates an opaque and almost certainly unique string
+   deterministically from the output name.
+
+   It is used as a placeholder to allow derivations to refer to their
+   own outputs without needing to use the hash of a derivation in
+   itself, making the hash near-impossible to calculate. */
 std::string hashPlaceholder(const std::string & outputName);
 
+/* This creates an opaque and almost certainly unique string
+   deterministically from a derivation path and output name.
+
+   It is used as a placeholder to allow derivations to refer to
+   content-addressed paths whose content --- and thus the path
+   themselves --- isn't yet known. This occurs when a derivation has a
+   dependency which is a CA derivation. */
 std::string downstreamPlaceholder(const Store & store, const StorePath & drvPath, std::string_view outputName);
 
 }

@@ -7,7 +7,7 @@
 
 namespace nix {
 
-std::optional<StorePath> DerivationOutput::pathOpt(const Store & store, std::string_view drvName, std::string_view outputName) const
+std::optional<StorePath> DerivationOutput::path(const Store & store, std::string_view drvName, std::string_view outputName) const
 {
     return std::visit(overloaded {
         [](DerivationOutputInputAddressed doi) -> std::optional<StorePath> {
@@ -69,7 +69,7 @@ bool BasicDerivation::isBuiltin() const
 
 
 StorePath writeDerivation(Store & store,
-    const Derivation & drv, RepairFlag repair)
+    const Derivation & drv, RepairFlag repair, bool readOnly)
 {
     auto references = drv.inputSrcs;
     for (auto & i : drv.inputDrvs)
@@ -79,7 +79,7 @@ StorePath writeDerivation(Store & store,
        held during a garbage collection). */
     auto suffix = std::string(drv.name) + drvExtension;
     auto contents = drv.unparse(store, false);
-    return settings.readOnlyMode
+    return readOnly || settings.readOnlyMode
         ? store.computeStorePathForText(suffix, contents, references)
         : store.addTextToStore(suffix, contents, references, repair);
 }
@@ -200,7 +200,7 @@ static DerivationOutput parseDerivationOutput(const Store & store, std::istrings
 }
 
 
-static Derivation parseDerivation(const Store & store, std::string && s, std::string_view name)
+Derivation parseDerivation(const Store & store, std::string && s, std::string_view name)
 {
     Derivation drv;
     drv.name = name;
@@ -245,34 +245,6 @@ static Derivation parseDerivation(const Store & store, std::string && s, std::st
 
     expect(str, ")");
     return drv;
-}
-
-
-Derivation readDerivation(const Store & store, const Path & drvPath, std::string_view name)
-{
-    try {
-        return parseDerivation(store, readFile(drvPath), name);
-    } catch (FormatError & e) {
-        throw Error("error parsing derivation '%1%': %2%", drvPath, e.msg());
-    }
-}
-
-
-Derivation Store::derivationFromPath(const StorePath & drvPath)
-{
-    ensurePath(drvPath);
-    return readDerivation(drvPath);
-}
-
-
-Derivation Store::readDerivation(const StorePath & drvPath)
-{
-    auto accessor = getFSAccessor();
-    try {
-        return parseDerivation(*this, accessor->readFile(printStorePath(drvPath)), Derivation::nameFromPath(drvPath));
-    } catch (FormatError & e) {
-        throw Error("error parsing derivation '%s': %s", printStorePath(drvPath), e.msg());
-    }
 }
 
 
@@ -585,7 +557,7 @@ DerivationOutputsAndOptPaths BasicDerivation::outputsAndOptPaths(const Store & s
     for (auto output : outputs)
         outsAndOptPaths.insert(std::make_pair(
             output.first,
-            std::make_pair(output.second, output.second.pathOpt(store, name, output.first))
+            std::make_pair(output.second, output.second.path(store, name, output.first))
             )
         );
     return outsAndOptPaths;
@@ -699,7 +671,7 @@ static void rewriteDerivation(Store & store, BasicDerivation & drv, const String
 
 Sync<DrvPathResolutions> drvPathResolutions;
 
-BasicDerivation Derivation::resolve(Store & store) {
+std::optional<BasicDerivation> Derivation::tryResolve(Store & store) {
     BasicDerivation resolved { *this };
 
     // Input paths that we'll want to rewrite in the derivation
@@ -711,7 +683,7 @@ BasicDerivation Derivation::resolve(Store & store) {
         for (auto & outputName : input.second) {
             auto actualPathOpt = inputDrvOutputs.at(outputName);
             if (!actualPathOpt)
-                throw Error("input drv '%s' wasn't yet built", store.printStorePath(input.first));
+                return std::nullopt;
             auto actualPath = *actualPathOpt;
             inputRewrites.emplace(
                 downstreamPlaceholder(store, input.first, outputName),

@@ -718,22 +718,31 @@ typedef enum {rpAccept, rpDecline, rpPostpone} HookReply;
 
 class SubstitutionGoal;
 
-struct KnownInitialOutputStatus {
-    StorePath path;
-    /* The output optional indicates whether it's already valid; i.e. exists
-       and is registered. If we're repairing, inner bool indicates whether the
-       valid path is in fact not corrupt. Otherwise, the inner bool is always
-       true (assumed no corruption). */
-    std::optional<bool> valid;
-    /* Valid in the store, and additionally non-corrupt if we are repairing */
-    bool isValid() const {
-        return valid && *valid;
-    }
+/* Unless we are repairing, we don't both to test validity and just assume it,
+   so the choices are `Absent` or `Valid`. */
+enum struct PathStatus {
+    Corrupt,
+    Absent,
+    Valid,
 };
 
 struct InitialOutputStatus {
+    StorePath path;
+    PathStatus status;
+    /* Valid in the store, and additionally non-corrupt if we are repairing */
+    bool isValid() const {
+        return status == PathStatus::Valid;
+    }
+    /* Merely present, allowed to be corrupt */
+    bool isPresent() const {
+        return status == PathStatus::Corrupt
+            || status == PathStatus::Valid;
+    }
+};
+
+struct InitialOutput {
     bool wanted;
-    std::optional<KnownInitialOutputStatus> known;
+    std::optional<InitialOutputStatus> known;
 };
 
 class DerivationGoal : public Goal
@@ -770,7 +779,7 @@ private:
        immediate input paths). */
     StorePathSet inputPaths;
 
-    std::map<std::string, InitialOutputStatus> initialOutputs;
+    std::map<std::string, InitialOutput> initialOutputs;
 
     /* User selected for running the builder. */
     std::unique_ptr<UserLock> buildUser;
@@ -1052,11 +1061,14 @@ private:
     /* Forcibly kill the child process, if any. */
     void killChild();
 
-    /* Map a path to another (reproducably) so we can avoid overwriting outputs
+    /* Create alternative path calculated from but distinct from the
+       input, so we can avoid overwriting outputs (or other store paths)
        that already exist. */
     StorePath makeFallbackPath(const StorePath & path);
-    /* Make a path to another based on the output name alone, if one doesn't
-       want to use a random path for CA builds. */
+    /* Make a path to another based on the output name along with the
+       derivation hash. */
+    /* FIXME add option to randomize, so we can audit whether our
+       rewrites caught everything */
     StorePath makeFallbackPath(std::string_view outputName);
 
     void repairClosure();
@@ -1268,7 +1280,7 @@ void DerivationGoal::haveDerivation()
         for (auto & [_, status] : initialOutputs) {
             if (!status.wanted) continue;
             if (!status.known) {
-                warn("Do not know how to query for unknown floating CA drv output yet");
+                warn("do not know how to query for unknown floating content-addressed derivation output yet");
                 /* Nothing to wait for; tail call */
                 return DerivationGoal::gaveUpOnSubstitution();
             }
@@ -1459,7 +1471,9 @@ void DerivationGoal::inputsRealised()
             /* We are be able to resolve this derivation based on the
                now-known results of dependencies. If so, we become a stub goal
                aliasing that resolved derivation goal */
-            Derivation drvResolved { fullDrv.resolve(worker.store) };
+            std::optional attempt = fullDrv.tryResolve(worker.store);
+            assert(attempt);
+            Derivation drvResolved { *std::move(attempt) };
 
             auto pathResolved = writeDerivation(worker.store, drvResolved);
             /* Add to memotable to speed up downstream goal's queries with the
@@ -1476,8 +1490,7 @@ void DerivationGoal::inputsRealised()
                    });
 
             auto resolvedGoal = worker.makeDerivationGoal(
-                pathResolved, wantedOutputs,
-                buildMode == bmRepair ? bmRepair : bmNormal);
+                pathResolved, wantedOutputs, buildMode);
             addWaitee(resolvedGoal);
 
             state = &DerivationGoal::resolvedFinished;
@@ -1495,7 +1508,7 @@ void DerivationGoal::inputsRealised()
                     auto optRealizedInput = outputs.at(j);
                     if (!optRealizedInput)
                         throw Error(
-                            "derivation '%s' requires output '%s' from input derivation '%s', which is supposedly realized already, yet we still don't know what path corresponds to that output.",
+                            "derivation '%s' requires output '%s' from input derivation '%s', which is supposedly realized already, yet we still don't know what path corresponds to that output",
                             worker.store.printStorePath(drvPath), j, worker.store.printStorePath(drvPath));
                     worker.store.computeFSClosure(*optRealizedInput, inputPaths);
                 } else
@@ -2068,7 +2081,7 @@ StorePathSet DerivationGoal::exportReferences(const StorePathSet & storePaths)
                        `computeFSClosure` on the output path, rather than
                        derivation itself. That doesn't seem right to me, so I
                        won't try to implemented this for CA derivations. */
-                    throw UnimplementedError("export references including CA derivations (themselves) is not yet implemented");
+                    throw UnimplementedError("exportReferences on CA derivations is not yet implemented");
                 worker.store.computeFSClosure(*k.second.second, paths);
             }
         }
@@ -2177,16 +2190,14 @@ void DerivationGoal::startBuilder()
            with the actual hashes. */
         auto scratchPath =
             !status.known
-                /* FIXME add option to randomize, so we can audit whether our
-                 * rewrites caught everything */
                 ? makeFallbackPath(outputName)
             : !needsHashRewrite()
                 /* Can always use original path in sandbox */
                 ? status.known->path
-            : !status.known->valid
+            : !status.known->isPresent()
                 /* If path doesn't yet exist can just use it */
                 ? status.known->path
-            : buildMode != bmRepair && !*status.known->valid
+            : buildMode != bmRepair && !status.known->isValid()
                 /* If we aren't repairing we'll delete a corrupted path, so we
                    can use original path */
                 ? status.known->path
@@ -2196,7 +2207,7 @@ void DerivationGoal::startBuilder()
         scratchOutputs.insert_or_assign(outputName, scratchPath);
 
         /* A non-removed corrupted path needs to be stored here, too */
-        if (buildMode == bmRepair && !*status.known->valid)
+        if (buildMode == bmRepair && !status.known->isValid())
             redirectedBadOutputs.insert(status.known->path);
 
         /* Substitute output placeholders with the scratch output paths.
@@ -2211,7 +2222,7 @@ void DerivationGoal::startBuilder()
            differ. */
         if (fixedFinalPath == scratchPath) continue;
 
-        /* Ensure scratch scratch path is ours to use */
+        /* Ensure scratch path is ours to use. */
         deletePath(worker.store.printStorePath(scratchPath));
 
         /* Rewrite and unrewrite paths */
@@ -2898,18 +2909,23 @@ void DerivationGoal::writeStructuredAttrs()
     chownToBuilder(tmpDir + "/.attrs.sh");
 }
 
+struct RestrictedStoreConfig : LocalFSStoreConfig
+{
+    using LocalFSStoreConfig::LocalFSStoreConfig;
+    const std::string name() { return "Restricted Store"; }
+};
 
 /* A wrapper around LocalStore that only allows building/querying of
    paths that are in the input closures of the build or were added via
    recursive Nix calls. */
-struct RestrictedStore : public LocalFSStore
+struct RestrictedStore : public LocalFSStore, public virtual RestrictedStoreConfig
 {
     ref<LocalStore> next;
 
     DerivationGoal & goal;
 
     RestrictedStore(const Params & params, ref<LocalStore> next, DerivationGoal & goal)
-        : Store(params), LocalFSStore(params), next(next), goal(goal)
+        : StoreConfig(params), Store(params), LocalFSStore(params), next(next), goal(goal)
     { }
 
     Path getRealStoreDir() override
@@ -4102,7 +4118,7 @@ void DerivationGoal::registerOutputs()
            floating CA derivations and hash-mismatching fixed-output
            derivations. */
         PathLocks dynamicOutputLock;
-        auto optFixedPath = output.pathOpt(worker.store, drv->name, outputName);
+        auto optFixedPath = output.path(worker.store, drv->name, outputName);
         if (!optFixedPath ||
             worker.store.printStorePath(*optFixedPath) != finalDestPath)
         {
@@ -4132,8 +4148,13 @@ void DerivationGoal::registerOutputs()
                     if (lstat(actualPath.c_str(), &st))
                         throw SysError("getting attributes of path '%1%'", actualPath);
                     mode |= 0200;
-                    if (chmod(actualPath.c_str(), mode) == -1)
-                        throw SysError("changing mode of '%1%' to %2$o", actualPath, mode);
+                    /* Try to change the perms, but only if the file isn't a
+                       symlink as symlinks permissions are mostly ignored and
+                       calling `chmod` on it will just forward the call to the
+                       target of the link. */
+                    if (!S_ISLNK(st.st_mode))
+                        if (chmod(actualPath.c_str(), mode) == -1)
+                            throw SysError("changing mode of '%1%' to %2$o", actualPath, mode);
                 }
                 if (rename(
                         actualPath.c_str(),
@@ -4279,14 +4300,6 @@ void DerivationGoal::registerOutputs()
     {
         ValidPathInfos infos2;
         for (auto & [outputName, newInfo] : infos) {
-            if (useDerivation)
-                worker.store.linkDeriverToPath(drvPath, outputName, newInfo.path);
-            else {
-                /* Once a floating CA derivations reaches this point, it must
-                   already be resolved, drvPath the basic derivation path, and
-                   a file existsing at that path for sake of the DB's foreign key. */
-                assert(drv->type() != DerivationType::CAFloating);
-            }
             infos2.push_back(newInfo);
         }
         worker.store.registerValidPaths(infos2);
@@ -4296,6 +4309,27 @@ void DerivationGoal::registerOutputs()
        exception now that we have registered the output as valid. */
     if (delayedException)
         std::rethrow_exception(delayedException);
+
+    /* If we made it this far, we are sure the output matches the derivation
+       (since the delayedException would be a fixed output CA mismatch). That
+       means it's safe to link the derivation to the output hash. We must do
+       that for floating CA derivations, which otherwise couldn't be cached,
+       but it's fine to do in all cases. */
+    bool isCaFloating = drv->type() == DerivationType::CAFloating;
+
+    auto drvPath2 = drvPath;
+    if (!useDerivation && isCaFloating) {
+        /* Once a floating CA derivations reaches this point, it
+           must already be resolved, so we don't bother trying to
+           downcast drv to get would would just be an empty
+           inputDrvs field. */
+        Derivation drv2 { *drv };
+        drvPath2 = writeDerivation(worker.store, drv2);
+    }
+
+    if (useDerivation || isCaFloating)
+        for (auto & [outputName, newInfo] : infos)
+            worker.store.linkDeriverToPath(drvPath, outputName, newInfo.path);
 }
 
 
@@ -4585,10 +4619,10 @@ void DerivationGoal::flushLine()
 
 std::map<std::string, std::optional<StorePath>> DerivationGoal::queryPartialDerivationOutputMap()
 {
-    if (drv->type() != DerivationType::CAFloating) {
+    if (!useDerivation || drv->type() != DerivationType::CAFloating) {
         std::map<std::string, std::optional<StorePath>> res;
         for (auto & [name, output] : drv->outputs)
-            res.insert_or_assign(name, output.pathOpt(worker.store, drv->name, name));
+            res.insert_or_assign(name, output.path(worker.store, drv->name, name));
         return res;
     } else {
         return worker.store.queryPartialDerivationOutputMap(drvPath);
@@ -4597,7 +4631,7 @@ std::map<std::string, std::optional<StorePath>> DerivationGoal::queryPartialDeri
 
 OutputPathMap DerivationGoal::queryDerivationOutputMap()
 {
-    if (drv->type() != DerivationType::CAFloating) {
+    if (!useDerivation || drv->type() != DerivationType::CAFloating) {
         OutputPathMap res;
         for (auto & [name, output] : drv->outputsAndOptPaths(worker.store))
             res.insert_or_assign(name, *output.second);
@@ -4612,19 +4646,21 @@ void DerivationGoal::checkPathValidity()
 {
     bool checkHash = buildMode == bmRepair;
     for (auto & i : queryPartialDerivationOutputMap()) {
-        InitialOutputStatus status {
+        InitialOutput info {
             .wanted = wantOutput(i.first, wantedOutputs),
         };
         if (i.second) {
             auto outputPath = *i.second;
-            status.known = {
+            info.known = {
                 .path = outputPath,
-                .valid = !worker.store.isValidPath(outputPath)
-                    ? std::optional<bool> {}
-                    : !checkHash || worker.pathContentsGood(outputPath),
+                .status = !worker.store.isValidPath(outputPath)
+                    ? PathStatus::Absent
+                    : !checkHash || worker.pathContentsGood(outputPath)
+                    ? PathStatus::Valid
+                    : PathStatus::Corrupt,
             };
         }
-        initialOutputs.insert_or_assign(i.first, status);
+        initialOutputs.insert_or_assign(i.first, info);
     }
 }
 

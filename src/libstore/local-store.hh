@@ -23,9 +23,6 @@ namespace nix {
 const int nixSchemaVersion = 10;
 
 
-struct Derivation;
-
-
 struct OptimiseStats
 {
     unsigned long filesLinked = 0;
@@ -33,8 +30,19 @@ struct OptimiseStats
     uint64_t blocksFreed = 0;
 };
 
+struct LocalStoreConfig : virtual LocalFSStoreConfig
+{
+    using LocalFSStoreConfig::LocalFSStoreConfig;
 
-class LocalStore : public LocalFSStore
+    Setting<bool> requireSigs{(StoreConfig*) this,
+        settings.requireSigs,
+        "require-sigs", "whether store paths should have a trusted signature on import"};
+
+    const std::string name() override { return "Local Store"; }
+};
+
+
+class LocalStore : public LocalFSStore, public virtual LocalStoreConfig
 {
 private:
 
@@ -97,10 +105,6 @@ public:
     const Path fnTempRoots;
 
 private:
-
-    Setting<bool> requireSigs{(Store*) this,
-        settings.requireSigs,
-        "require-sigs", "whether store paths should have a trusted signature on import"};
 
     const PublicKeys & getPublicKeys();
 
@@ -283,9 +287,8 @@ private:
        specified by the ‘secret-key-files’ option. */
     void signPathInfo(ValidPathInfo & info);
 
-    /* Add a mapping from the deriver of the path info (if specified) to its
-     * out path
-     */
+    /* Register the store path 'output' as the output named 'outputName' of
+       derivation 'deriver'. */
     void linkDeriverToPath(const StorePath & deriver, const string & outputName, const StorePath & output);
     void linkDeriverToPath(State & state, uint64_t deriver, const string & outputName, const StorePath & output);
 
