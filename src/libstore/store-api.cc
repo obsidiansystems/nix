@@ -9,9 +9,7 @@
 #include "url.hh"
 #include "references.hh"
 #include "archive.hh"
-
-#include <future>
-
+#include "callback.hh"
 
 namespace nix {
 

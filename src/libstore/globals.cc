@@ -3,6 +3,7 @@
 #include "archive.hh"
 #include "args.hh"
 #include "sync.hh"
+#include "abstract-setting-to-json.hh"
 
 #include <algorithm>
 #include <map>
