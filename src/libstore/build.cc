@@ -18,6 +18,7 @@
 #include "daemon.hh"
 #include "worker-protocol.hh"
 #include "topo-sort.hh"
+#include "callback.hh"
 
 #include <algorithm>
 #include <iostream>
@@ -719,16 +720,25 @@ typedef enum {rpAccept, rpDecline, rpPostpone} HookReply;
 
 class SubstitutionGoal;
 
+/* Unless we are repairing, we don't both to test validity and just assume it,
+   so the choices are `Absent` or `Valid`. */
+enum struct PathStatus {
+    Corrupt,
+    Absent,
+    Valid,
+};
+
 struct InitialOutputStatus {
     StorePath path;
-    /* The output optional indicates whether it's already valid; i.e. exists
-       and is registered. If we're repairing, inner bool indicates whether the
-       valid path is in fact not corrupt. Otherwise, the inner bool is always
-       true (assumed no corruption). */
-    std::optional<bool> valid;
+    PathStatus status;
     /* Valid in the store, and additionally non-corrupt if we are repairing */
     bool isValid() const {
-        return valid && *valid;
+        return status == PathStatus::Valid;
+    }
+    /* Merely present, allowed to be corrupt */
+    bool isPresent() const {
+        return status == PathStatus::Corrupt
+            || status == PathStatus::Valid;
     }
 };
 
@@ -2186,10 +2196,10 @@ void DerivationGoal::startBuilder()
             : !needsHashRewrite()
                 /* Can always use original path in sandbox */
                 ? status.known->path
-            : !status.known->valid
+            : !status.known->isPresent()
                 /* If path doesn't yet exist can just use it */
                 ? status.known->path
-            : buildMode != bmRepair && !*status.known->valid
+            : buildMode != bmRepair && !status.known->isValid()
                 /* If we aren't repairing we'll delete a corrupted path, so we
                    can use original path */
                 ? status.known->path
@@ -2199,7 +2209,7 @@ void DerivationGoal::startBuilder()
         scratchOutputs.insert_or_assign(outputName, scratchPath);
 
         /* A non-removed corrupted path needs to be stored here, too */
-        if (buildMode == bmRepair && !*status.known->valid)
+        if (buildMode == bmRepair && !status.known->isValid())
             redirectedBadOutputs.insert(status.known->path);
 
         /* Substitute output placeholders with the scratch output paths.
@@ -2901,18 +2911,23 @@ void DerivationGoal::writeStructuredAttrs()
     chownToBuilder(tmpDir + "/.attrs.sh");
 }
 
+struct RestrictedStoreConfig : LocalFSStoreConfig
+{
+    using LocalFSStoreConfig::LocalFSStoreConfig;
+    const std::string name() { return "Restricted Store"; }
+};
 
 /* A wrapper around LocalStore that only allows building/querying of
    paths that are in the input closures of the build or were added via
    recursive Nix calls. */
-struct RestrictedStore : public LocalFSStore
+struct RestrictedStore : public LocalFSStore, public virtual RestrictedStoreConfig
 {
     ref<LocalStore> next;
 
     DerivationGoal & goal;
 
     RestrictedStore(const Params & params, ref<LocalStore> next, DerivationGoal & goal)
-        : Store(params), LocalFSStore(params), next(next), goal(goal)
+        : StoreConfig(params), Store(params), LocalFSStore(params), next(next), goal(goal)
     { }
 
     Path getRealStoreDir() override
@@ -4133,7 +4148,7 @@ void DerivationGoal::registerOutputs()
            floating CA derivations and hash-mismatching fixed-output
            derivations. */
         PathLocks dynamicOutputLock;
-        auto optFixedPath = output.pathOpt(worker.store, drv->name, outputName);
+        auto optFixedPath = output.path(worker.store, drv->name, outputName);
         if (!optFixedPath ||
             worker.store.printStorePath(*optFixedPath) != finalDestPath)
         {
@@ -4341,6 +4356,27 @@ void DerivationGoal::registerOutputs()
        exception now that we have registered the output as valid. */
     if (delayedException)
         std::rethrow_exception(delayedException);
+
+    /* If we made it this far, we are sure the output matches the derivation
+       (since the delayedException would be a fixed output CA mismatch). That
+       means it's safe to link the derivation to the output hash. We must do
+       that for floating CA derivations, which otherwise couldn't be cached,
+       but it's fine to do in all cases. */
+    bool isCaFloating = drv->type() == DerivationType::CAFloating;
+
+    auto drvPath2 = drvPath;
+    if (!useDerivation && isCaFloating) {
+        /* Once a floating CA derivations reaches this point, it
+           must already be resolved, so we don't bother trying to
+           downcast drv to get would would just be an empty
+           inputDrvs field. */
+        Derivation drv2 { *drv };
+        drvPath2 = writeDerivation(worker.store, drv2);
+    }
+
+    if (useDerivation || isCaFloating)
+        for (auto & [outputName, newInfo] : infos)
+            worker.store.linkDeriverToPath(drvPath, outputName, newInfo.path);
 }
 
 
@@ -4640,7 +4676,7 @@ std::map<std::string, std::optional<StorePath>> DerivationGoal::queryPartialDeri
     if (!useDerivation || drv->type() != DerivationType::CAFloating) {
         std::map<std::string, std::optional<StorePath>> res;
         for (auto & [name, output] : drv->outputs)
-            res.insert_or_assign(name, output.pathOpt(worker.store, drv->name, name));
+            res.insert_or_assign(name, output.path(worker.store, drv->name, name));
         return res;
     } else {
         return worker.store.queryPartialDerivationOutputMap(drvPath);
@@ -4671,9 +4707,11 @@ void DerivationGoal::checkPathValidity()
             auto outputPath = *i.second;
             info.known = {
                 .path = outputPath,
-                .valid = !worker.store.isValidPath(outputPath)
-                    ? std::optional<bool> {}
-                    : !checkHash || worker.pathContentsGood(outputPath),
+                .status = !worker.store.isValidPath(outputPath)
+                    ? PathStatus::Absent
+                    : !checkHash || worker.pathContentsGood(outputPath)
+                    ? PathStatus::Valid
+                    : PathStatus::Corrupt,
             };
         }
         initialOutputs.insert_or_assign(i.first, info);

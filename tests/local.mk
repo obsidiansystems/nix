@@ -19,6 +19,7 @@ nix_tests = \
   build-remote-trustless-should-pass-1.sh \
   build-remote-trustless-should-pass-2.sh \
   build-remote-trustless-should-fail-0.sh \
+  ssh-relay.sh \
   nar-access.sh \
   structured-attrs.sh \
   fetchGit.sh \
@@ -37,6 +38,7 @@ nix_tests = \
   function-trace.sh \
   recursive.sh \
   ipfs.sh \
+  describe-stores.sh \
   flakes.sh \
   content-addressed.sh \
   ensure-ca.sh \

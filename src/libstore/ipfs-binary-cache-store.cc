@@ -9,13 +9,20 @@
 #include "git.hh"
 #include "names.hh"
 #include "references.hh"
+#include "callback.hh"
 
 namespace nix {
 
+IPFSBinaryCacheStore::IPFSBinaryCacheStore(const Params & params)
+    : IPFSBinaryCacheStore("ipfs", "", params)
+{ }
+
 IPFSBinaryCacheStore::IPFSBinaryCacheStore(
-  const Params & params, const Path & _cacheUri)
+   const std::string & scheme, const std::string & uri, const Params & params)
         : Store(params)
-        , cacheUri(_cacheUri)
+        , IPFSBinaryCacheStoreConfig(params)
+        , cacheScheme(scheme)
+        , cacheUri(uri)
 {
     auto state(_state.lock());
 
@@ -26,26 +33,24 @@ IPFSBinaryCacheStore::IPFSBinaryCacheStore(
     sink << narVersionMagic1;
     narMagic = *sink.s;
 
-    if (cacheUri.back() == '/' && cacheUri != "ipfs://")
+    if (cacheUri.back() == '/')
         cacheUri.pop_back();
 
-    if (hasPrefix(cacheUri, "ipfs://")) {
-        if (cacheUri == "ipfs://") {
-            trustless = true;
-            allowModify = true;
-        } else {
-            initialIpfsPath = "/ipfs/" + std::string(cacheUri, 7);
-            state->ipfsPath = initialIpfsPath;
-            allowModify = get(params, "allow-modify").value_or("") == "true";
-        }
-    } else if (hasPrefix(cacheUri, "ipns://")) {
-        ipnsPath = "/ipns/" + std::string(cacheUri, 7);
+    if (cacheScheme == "ipfs" && cacheUri == "") {
+        trustless = true;
+        allowModify = true;
+    } else if (cacheScheme == "ipfs") {
+        initialIpfsPath = "/ipfs/" + cacheUri;
+        state->ipfsPath = initialIpfsPath;
+        allowModify = get(params, "allow-modify").value_or("") == "true";
+    } else if (cacheScheme == "ipns") {
+        ipnsPath = "/ipns/" + cacheUri;
 
         // TODO: we should try to determine if we are able to modify
         // this ipns
         allowModify = true;
     } else
-        throw Error("unknown IPNS URI '%s'", cacheUri);
+        throw Error("unknown IPNS URI '%s'", getUri());
 
     std::string ipfsAPIHost(get(params, "host").value_or("127.0.0.1"));
     std::string ipfsAPIPort(get(params, "port").value_or("5001"));
@@ -205,7 +210,7 @@ void IPFSBinaryCacheStore::sync()
 
     if (!ipnsPath) {
         warn("created new store at '%s'. The old store at %s is immutable, so we can't update it",
-            "ipfs://" + std::string(state->ipfsPath, 6), cacheUri);
+            "ipfs://" + std::string(state->ipfsPath, 6), getUri());
         return;
     }
 
@@ -307,7 +312,7 @@ void IPFSBinaryCacheStore::upsertFile(const std::string & path, const std::strin
     try {
         addLink(path, "/ipfs/" + addFile(data));
     } catch (FileTransferError & e) {
-        throw UploadToIPFS("while uploading to IPFS binary cache at '%s': %s", cacheUri, e.msg());
+        throw UploadToIPFS("while uploading to IPFS binary cache at '%s': %s", getUri(), e.msg());
     }
 }
 
@@ -613,7 +618,7 @@ void IPFSBinaryCacheStore::addToStore(const ValidPathInfo & info, Source & narSo
     if (!repair && isValidPath(info.path)) return;
 
     if (!allowModify)
-        throw Error("can't update '%s'", cacheUri);
+        throw Error("can't update '%s'", getUri());
 
     /* Verify that all references are valid. This may do some .narinfo
        reads, but typically they'll already be cached. */
@@ -1002,7 +1007,7 @@ StorePath IPFSBinaryCacheStore::addTextToStore(const string & name, const string
 void IPFSBinaryCacheStore::addSignatures(const StorePath & storePath, const StringSet & sigs)
 {
     if (!allowModify)
-        throw Error("can't update '%s'", cacheUri);
+        throw Error("can't update '%s'", getUri());
 
     // trustless already has a signature, nothing more is needed
     if (trustless)
@@ -1037,15 +1042,6 @@ void IPFSBinaryCacheStore::addTempRoot(const StorePath & path)
     getFileTransfer()->upload(request);
 }
 
-static RegisterStoreImplementation regStore([](
-    const std::string & uri, const Store::Params & params)
-    -> std::shared_ptr<Store>
-{
-    if (uri.substr(0, strlen("ipfs://")) != "ipfs://" &&
-        uri.substr(0, strlen("ipns://")) != "ipns://")
-        return 0;
-    auto store = std::make_shared<IPFSBinaryCacheStore>(params, uri);
-    return store;
-});
+static RegisterStoreImplementation<IPFSBinaryCacheStore, IPFSBinaryCacheStoreConfig> regStore;
 
 }
