@@ -65,7 +65,7 @@ struct CmdIpldDrvExport : StorePathCommand
 
                 if (!drvOutputCAFloating)
                     throw UsageError("In order to upload a derivation as IPLD the outputs should be content addressed and floating");
-                if (!std::get_if<IsIPFS>(&drvOutputCAFloating->method))
+                if (!std::get_if<IPFSHashMethod>(&drvOutputCAFloating->method))
                     throw UsageError("In order to upload a derivation as IPLD the outputs should be content addressed as IPFS and floating");
                 if (drvOutputCAFloating->hashType != htSHA256)
                     throw UsageError("In order to upload a derivation as IPLD the outputs should have a SHA256 hash");
@@ -150,7 +150,7 @@ struct CmdIpldDrvImport : StoreCommand
             for (auto name : ipldDrv.outputs) {
                 drv.outputs.insert_or_assign(
                     name,
-                    DerivationOutput { DerivationOutputCAFloating { IsIPFS { } , htSHA256 } }
+                    DerivationOutput { DerivationOutputCAFloating { IPFSHashMethod { } , htSHA256 } }
                 );
             }
 

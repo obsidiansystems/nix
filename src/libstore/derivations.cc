@@ -155,13 +155,7 @@ static DerivationOutput parseDerivationOutput(Store & store,
     std::string_view pathS, std::string_view hashAlgo, std::string_view hashS)
 {
     if (hashAlgo != "") {
-        ContentAddressingMethod method = FileIngestionMethod::Flat;
-        if (splitPrefix(hashAlgo, "r:"))
-            method = FileIngestionMethod::Recursive;
-        else if (splitPrefix(hashAlgo, "text:"))
-            method = IsText {};
-        else if (splitPrefix(hashAlgo, "ipfs:"))
-            method = IsIPFS {};
+        ContentAddressMethod method = parseContentAddressingPrefix(hashAlgo);
         const auto hashType = parseHashType(hashAlgo);
         if (hashS != "") {
             validatePath(pathS);

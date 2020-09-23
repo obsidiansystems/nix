@@ -13,9 +13,10 @@ namespace nix {
  * Mini content address
  */
 
-/* Counterpart of FileIngestionMethod that is a struct because there is only
-   one method. */
-struct IsText : std::monostate { };
+/* We only have one way to hash text with references, so this is a single-value
+   type, mainly useful with std::variant.
+*/
+struct TextHashMethod : std::monostate { };
 
 enum struct FileIngestionMethod : uint8_t {
     Flat,
@@ -23,7 +24,7 @@ enum struct FileIngestionMethod : uint8_t {
     Git,
 };
 
-struct IsIPFS : std::monostate { };
+struct IPFSHashMethod : std::monostate { };
 
 /* Compute the prefix to the hash algorithm which indicates how the files were
    ingested. */
@@ -35,14 +36,25 @@ std::string makeFileIngestionPrefix(FileIngestionMethod m);
    on references, and we have `ContentAddressWithReferences`, as defined
    further below. */
 typedef std::variant<
-    IsText,
+    TextHashMethod,
     FileIngestionMethod,
-    IsIPFS
-> ContentAddressingMethod;
+    IPFSHashMethod
+> ContentAddressMethod;
 
-/* Compute the prefix to the hash algorithm which indicates how the files were
-   ingested. */
-std::string makeContentAddressingPrefix(ContentAddressingMethod m);
+/* Parse and pretty print the algorithm which indicates how the files
+   were ingested, with the the fixed output case not prefixed for back
+   compat. */
+
+std::string makeContentAddressingPrefix(ContentAddressMethod m);
+
+ContentAddressMethod parseContentAddressingPrefix(std::string_view & m);
+
+/* Parse and pretty print a content addressing method and hash in a
+   nicer way, prefixing both cases. */
+
+std::string renderContentAddressMethodAndHash(ContentAddressMethod cam, HashType ht);
+
+std::pair<ContentAddressMethod, HashType> parseContentAddressMethod(std::string_view caMethod);
 
 
 struct TextHash {
@@ -241,9 +253,9 @@ typedef std::variant<
 > ContentAddressWithReferences;
 
 ContentAddressWithReferences contentAddressFromMethodHashAndRefs(
-    Store & store, ContentAddressingMethod method, Hash && hash, PathReferences<StorePath> && refs);
+    Store & store, ContentAddressMethod method, Hash && hash, PathReferences<StorePath> && refs);
 
-ContentAddressingMethod getContentAddressMethod(const ContentAddressWithReferences & ca);
+ContentAddressMethod getContentAddressMethod(const ContentAddressWithReferences & ca);
 Hash getContentAddressHash(const ContentAddressWithReferences & ca);
 
 std::string printMethodAlgo(const ContentAddressWithReferences &);

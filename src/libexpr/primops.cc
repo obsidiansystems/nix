@@ -851,7 +851,7 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
     bool contentAddressed = false;
     std::optional<std::string> outputHash;
     std::string outputHashAlgo;
-    ContentAddressingMethod ingestionMethod = FileIngestionMethod::Flat;
+    ContentAddressMethod ingestionMethod = FileIngestionMethod::Flat;
 
     StringSet outputs;
     outputs.insert("out");
@@ -864,8 +864,8 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
         auto handleHashMode = [&](const std::string & s) {
             if (s == "recursive") ingestionMethod = FileIngestionMethod::Recursive;
             else if (s == "flat") ingestionMethod = FileIngestionMethod::Flat;
-            else if (s == "text") ingestionMethod = IsText {};
-            else if (s == "ipfs") ingestionMethod = IsIPFS {};
+            else if (s == "text") ingestionMethod = TextHashMethod {};
+            else if (s == "ipfs") ingestionMethod = IPFSHashMethod {};
             else
                 throw EvalError({
                     .hint = hintfmt("invalid value '%s' for 'outputHashMode' attribute", s),
@@ -1030,7 +1030,7 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
         });
 
     /* Check whether the derivation name is valid. */
-    if (isDerivation(drvName) && ingestionMethod != ContentAddressingMethod { IsText { } })
+    if (isDerivation(drvName) && ingestionMethod != ContentAddressMethod { TextHashMethod { } })
         throw EvalError({
             .hint = hintfmt("derivation names are allowed to end in '%s' only if they produce a single derivation file", drvExtension),
             .errPos = posDrvName

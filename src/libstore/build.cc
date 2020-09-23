@@ -2988,14 +2988,6 @@ struct RestrictedStore : public LocalFSStore, public virtual RestrictedStoreConf
         goal.addDependency(info.path);
     }
 
-    StorePath addToStoreFromDump(Source & dump, const string & name,
-        FileIngestionMethod method = FileIngestionMethod::Recursive, HashType hashAlgo = htSHA256, RepairFlag repair = NoRepair) override
-    {
-        auto path = next->addToStoreFromDump(dump, name, method, hashAlgo, repair);
-        goal.addDependency(path);
-        return path;
-    }
-
     StorePath addTextToStore(const string & name, const string & s,
         const StorePathSet & references, RepairFlag repair = NoRepair) override
     {
@@ -4023,8 +4015,8 @@ void DerivationGoal::registerOutputs()
 
         auto newInfoFromCA = [&](const DerivationOutputCAFloating outputHash) -> ValidPathInfo {
             auto & st = outputStats.at(outputName);
-            if (outputHash.method == ContentAddressingMethod { FileIngestionMethod::Flat } ||
-                outputHash.method == ContentAddressingMethod { IsText {} })
+            if (outputHash.method == ContentAddressMethod { FileIngestionMethod::Flat } ||
+                outputHash.method == ContentAddressMethod { TextHashMethod {} })
             {
                 /* The output path should be a regular file without execute permission. */
                 if (!S_ISREG(st.st_mode) || (st.st_mode & S_IXUSR) != 0)
@@ -4037,9 +4029,8 @@ void DerivationGoal::registerOutputs()
             /* FIXME optimize and deduplicate with addToStore */
             std::string oldHashPart { scratchPath.hashPart() };
             Hash got { outputHash.hashType }; // Dummy value
-            HashModuloSink caSink { outputHash.hashType, oldHashPart };
             std::visit(overloaded {
-                [&](IsText _) {
+                [&](TextHashMethod _) {
                     HashModuloSink caSink { outputHash.hashType, oldHashPart };
                     readFile(actualPath, caSink);
                     got = caSink.finish().first;
@@ -4066,7 +4057,7 @@ void DerivationGoal::registerOutputs()
                     }
                     }
                 },
-                [&](IsIPFS _) {
+                [&](IPFSHashMethod _) {
                     got = dumpGitHashWithCustomHash(
                         [&]{ return std::make_unique<HashModuloSink>(outputHash.hashType, oldHashPart); },
                         actualPath);
