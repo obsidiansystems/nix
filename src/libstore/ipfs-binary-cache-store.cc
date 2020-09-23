@@ -13,14 +13,10 @@
 
 namespace nix {
 
-IPFSBinaryCacheStore::IPFSBinaryCacheStore(const Params & params)
-    : IPFSBinaryCacheStore("ipfs", "", params)
-{ }
-
 IPFSBinaryCacheStore::IPFSBinaryCacheStore(
    const std::string & scheme, const std::string & uri, const Params & params)
-        : Store(params)
-        , IPFSBinaryCacheStoreConfig(params)
+        : StoreConfig(params)
+        , Store(params)
         , cacheScheme(scheme)
         , cacheUri(uri)
 {
