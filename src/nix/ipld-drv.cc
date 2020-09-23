@@ -51,7 +51,7 @@ struct CmdIpldDrvExport : StorePathCommand
 
     void run(ref<Store> localStore, const StorePath & drvPath0) override
     {
-        auto ipfsStore = std::make_shared<IPFSBinaryCacheStore>( Store::Params { }, "ipfs://" );
+        auto ipfsStore = std::make_shared<IPFSBinaryCacheStore>("ipfs", "", Store::Params { });
 
         std::function<IPFSRef(const StorePath &)> convertDerivation = [&](const StorePath & drvPath) -> IPFSRef {
             Derivation drv = localStore->readDerivation(drvPath);
@@ -134,7 +134,7 @@ struct CmdIpldDrvImport : StoreCommand
 
     void run(ref<Store> localStore) override
     {
-        auto ipfsStore = std::make_shared<IPFSBinaryCacheStore>( Store::Params { }, "ipfs://" );
+        auto ipfsStore = std::make_shared<IPFSBinaryCacheStore>("ipfs", "", Store::Params { });
 
         std::function<StorePath (const IPFSHash &)> convertDerivation = [&](const IPFSHash & ipfsHash) -> StorePath {
 
