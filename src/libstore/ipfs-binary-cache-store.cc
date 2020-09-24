@@ -308,6 +308,7 @@ void IPFSBinaryCacheStore::upsertFile(const std::string & path, const std::strin
     try {
         addLink(path, "/ipfs/" + addFile(data));
     } catch (FileTransferError & e) {
+        // TODO: may wrap the inner error in a better way.
         throw UploadToIPFS("while uploading to IPFS binary cache at '%s': %s", getUri(), e.msg());
     }
 }
