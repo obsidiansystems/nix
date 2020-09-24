@@ -83,8 +83,12 @@ SV * queryPathHash(char * path)
     PPCODE:
         try {
             auto storePath = store()->parseStorePath(path);
-            auto s = store()->queryPathInfo(storePath)->narHash.to_string(Base32, true);
-            XPUSHs(sv_2mortal(newSVpv(s.c_str(), 0)));
+            if (auto optHash = store()->queryPathInfo(storePath)->optNarHash()) {
+                auto s = optHash->to_string(Base32, true);
+                XPUSHs(sv_2mortal(newSVpv(s.c_str(), 0)));
+            } else {
+                XPUSHs((SV *) NULL);
+            }
         } catch (Error & e) {
             croak("%s", e.what());
         }
@@ -111,10 +115,17 @@ SV * queryPathInfo(char * path, int base32)
                 XPUSHs(&PL_sv_undef);
             else
                 XPUSHs(sv_2mortal(newSVpv(store()->printStorePath(*info->deriver).c_str(), 0)));
-            auto s = info->narHash.to_string(base32 ? Base32 : Base16, true);
-            XPUSHs(sv_2mortal(newSVpv(s.c_str(), 0)));
-            mXPUSHi(info->registrationTime);
-            mXPUSHi(info->narSize);
+            if (auto optHashSize = *info->viewHashResultConst()) {
+                auto [narHash, narSize] = *optHashSize;
+                auto s = narHash.to_string(base32 ? Base32 : Base16, true);
+                XPUSHs(sv_2mortal(newSVpv(s.c_str(), 0)));
+                mXPUSHi(info->registrationTime);
+                mXPUSHi(narSize);
+            } else {
+                XPUSHs((SV *) NULL);
+                mXPUSHi(info->registrationTime);
+                mXPUSHi(0);
+            }
             AV * arr = newAV();
             for (auto & i : info->referencesPossiblyToSelf())
                 av_push(arr, newSVpv(store()->printStorePath(i).c_str(), 0));

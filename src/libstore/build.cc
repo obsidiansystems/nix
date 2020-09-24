@@ -4132,6 +4132,9 @@ void DerivationGoal::registerOutputs()
             },
         }, output.output);
 
+        /* Always calculate nar hash for new builds. */
+        assert(newInfo.optNarHash().has_value());
+
         /* Calculate where we'll move the output files. In the checking case we
            will leave leave them where they are, for now, rather than move to
            their usual "final destination" */
