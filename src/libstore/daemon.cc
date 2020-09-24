@@ -437,16 +437,19 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
             TeeSource savedNARSource(from, saved);
             RetrieveRegularNARSink savedRegular { saved };
 
-            if (method == FileIngestionMethod::Flat) {
-                parseDump(savedRegular, from);
-			} else if (method == FileIngestionMethod::Recursive) {
+            if (method == FileIngestionMethod::Recursive) {
                 /* Get the entire NAR dump from the client and save it to
                    a string so that we can pass it to
                    addToStoreFromDump(). */
                 ParseSink sink; /* null sink; just parse the NAR */
                 parseDump(sink, savedNARSource);
-            } else
-                throw Error("unsupported FileIngestionMethod with value of %i; you may need to upgrade nix-daemon", recursive);
+            } else if (method == FileIngestionMethod::Flat) {
+                parseDump(savedRegular, from);
+            } else {
+                /* Should have validated above that no other file ingestion
+                   method was used. */
+                assert(false);
+            }
 
             logger->startWork();
             if (!savedRegular.regular) throw Error("regular file expected");
