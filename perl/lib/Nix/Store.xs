@@ -83,8 +83,12 @@ SV * queryPathHash(char * path)
     PPCODE:
         try {
             auto storePath = store()->parseStorePath(path);
-            auto s = store()->queryPathInfo(storePath)->narHash.to_string(Base32, true);
-            XPUSHs(sv_2mortal(newSVpv(s.c_str(), 0)));
+            if (auto optHash = store()->queryPathInfo(storePath)->optNarHash()) {
+                auto s = optHash->to_string(Base32, true);
+                XPUSHs(sv_2mortal(newSVpv(s.c_str(), 0)));
+            } else {
+                XPUSHs((SV *) NULL);
+            }
         } catch (Error & e) {
             croak("%s", e.what());
         }
@@ -111,8 +115,12 @@ SV * queryPathInfo(char * path, int base32)
                 XPUSHs(&PL_sv_undef);
             else
                 XPUSHs(sv_2mortal(newSVpv(store()->printStorePath(*info->deriver).c_str(), 0)));
-            auto s = info->narHash.to_string(base32 ? Base32 : Base16, true);
-            XPUSHs(sv_2mortal(newSVpv(s.c_str(), 0)));
+            if (auto optHash = info->optNarHash()) {
+                auto s = optHash->narHash.to_string(base32 ? Base32 : Base16, true);
+                XPUSHs(sv_2mortal(newSVpv(s.c_str(), 0)));
+            } else {
+                XPUSHs((SV *) NULL);
+            }
             mXPUSHi(info->registrationTime);
             mXPUSHi(info->narSize);
             AV * arr = newAV();
