@@ -3,6 +3,7 @@
 #include "archive.hh"
 #include "args.hh"
 #include "sync.hh"
+#include "abstract-setting-to-json.hh"
 
 #include <algorithm>
 #include <map>
@@ -10,6 +11,8 @@
 #include <dlfcn.h>
 #include <sys/utsname.h>
 #include <unordered_set>
+
+#include <nlohmann/json.hpp>
 
 namespace nix {
 
@@ -40,6 +43,7 @@ Settings::Settings()
 {
     buildUsersGroup = getuid() == 0 ? "nixbld" : "";
     lockCPU = getEnv("NIX_AFFINITY_HACK") == "1";
+    allowSymlinkedStore = getEnv("NIX_IGNORE_SYMLINK_STORE") == "1";
 
     caFile = getEnv("NIX_SSL_CERT_FILE").value_or(getEnv("SSL_CERT_FILE").value_or(""));
     if (caFile == "") {
@@ -151,6 +155,12 @@ bool Settings::isWSL1()
 
 const string nixVersion = PACKAGE_VERSION;
 
+NLOHMANN_JSON_SERIALIZE_ENUM(SandboxMode, {
+    {SandboxMode::smEnabled, true},
+    {SandboxMode::smRelaxed, "relaxed"},
+    {SandboxMode::smDisabled, false},
+});
+
 template<> void BaseSetting<SandboxMode>::set(const std::string & str)
 {
     if (str == "true") value = smEnabled;
@@ -165,11 +175,6 @@ template<> std::string BaseSetting<SandboxMode>::to_string() const
     else if (value == smRelaxed) return "relaxed";
     else if (value == smDisabled) return "false";
     else abort();
-}
-
-template<> void BaseSetting<SandboxMode>::toJSON(JSONPlaceholder & out)
-{
-    AbstractSetting::toJSON(out);
 }
 
 template<> void BaseSetting<SandboxMode>::convertToArg(Args & args, const std::string & category)

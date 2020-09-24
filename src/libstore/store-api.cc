@@ -9,9 +9,7 @@
 #include "url.hh"
 #include "references.hh"
 #include "archive.hh"
-
-#include <future>
-
+#include "callback.hh"
 
 namespace nix {
 
@@ -141,21 +139,28 @@ StorePathWithOutputs Store::followLinksToStorePathWithOutputs(std::string_view p
 */
 
 
-StorePath Store::makeStorePath(const string & type,
-    const Hash & hash, std::string_view name) const
+StorePath Store::makeStorePath(std::string_view type,
+    std::string_view hash, std::string_view name) const
 {
     /* e.g., "source:sha256:1abc...:/nix/store:foo.tar.gz" */
-    string s = type + ":" + hash.to_string(Base16, true) + ":" + storeDir + ":" + std::string(name);
+    string s = std::string { type } + ":" + std::string { hash }
+        + ":" + storeDir + ":" + std::string { name };
     auto h = compressHash(hashString(htSHA256, s), 20);
     return StorePath(h, name);
 }
 
 
-StorePath Store::makeOutputPath(const string & id,
+StorePath Store::makeStorePath(std::string_view type,
     const Hash & hash, std::string_view name) const
 {
-    return makeStorePath("output:" + id, hash,
-        std::string(name) + (id == "out" ? "" : "-" + id));
+    return makeStorePath(type, hash.to_string(Base16, true), name);
+}
+
+
+StorePath Store::makeOutputPath(std::string_view id,
+    const Hash & hash, std::string_view name) const
+{
+    return makeStorePath("output:" + std::string { id }, hash, outputPathName(name, id));
 }
 
 
@@ -175,6 +180,11 @@ static std::string makeType(
     return std::move(type);
 }
 
+StorePath Store::bakeCaIfNeeded(const OwnedStorePathOrDesc & path) const
+{
+    return bakeCaIfNeeded(borrowStorePathOrDesc(path));
+}
+
 StorePath Store::bakeCaIfNeeded(StorePathOrDesc path) const
 {
     return std::visit(overloaded {
@@ -185,6 +195,15 @@ StorePath Store::bakeCaIfNeeded(StorePathOrDesc path) const
             return makeFixedOutputPathFromCA(ca);
         },
     }, path);
+}
+
+StorePathOrDesc borrowStorePathOrDesc(const OwnedStorePathOrDesc & storePathOrDesc) {
+    // Can't use std::visit as it would copy :(
+    if (auto p = std::get_if<StorePath>(&storePathOrDesc))
+        return *p;
+    if (auto p = std::get_if<StorePathDescriptor>(&storePathOrDesc))
+        return *p;
+    abort();
 }
 
 StorePath Store::makeFixedOutputPath(std::string_view name, const FixedOutputInfo & info) const
@@ -367,7 +386,7 @@ ValidPathInfo Store::addToStoreSlow(std::string_view name, const Path & srcPath,
 
 
 Store::Store(const Params & params)
-    : Config(params)
+    : StoreConfig(params)
     , state({(size_t) pathInfoCacheSize})
 {
 }
@@ -547,21 +566,37 @@ void Store::queryPathInfo(StorePathOrDesc pathOrCa,
 
 StorePathSet Store::queryValidPaths(const StorePathSet & paths, SubstituteFlag maybeSubstitute)
 {
+    std::set<OwnedStorePathOrDesc> paths2;
+    for (auto & p : paths)
+        paths2.insert(p);
+    auto res = queryValidPaths(paths2, maybeSubstitute);
+    StorePathSet res2;
+    for (auto & r : res) {
+        auto p = std::get_if<StorePath>(&r);
+        assert(p);
+        res2.insert(*p);
+    }
+    return res2;
+}
+
+std::set<OwnedStorePathOrDesc> Store::queryValidPaths(const std::set<OwnedStorePathOrDesc> & paths, SubstituteFlag maybeSubstitute)
+{
     struct State
     {
         size_t left;
-        StorePathSet valid;
+        std::set<OwnedStorePathOrDesc> valid;
         std::exception_ptr exc;
     };
 
-    Sync<State> state_(State{paths.size(), StorePathSet()});
+    Sync<State> state_(State{paths.size(), {}});
 
     std::condition_variable wakeup;
     ThreadPool pool;
 
-    auto doQuery = [&](const StorePath & path) {
+    auto doQuery = [&](const OwnedStorePathOrDesc & path) {
         checkInterrupt();
-        queryPathInfo(path, {[path, this, &state_, &wakeup](std::future<ref<const ValidPathInfo>> fut) {
+        auto path2 = borrowStorePathOrDesc(path);
+        queryPathInfo(path2, {[path, this, &state_, &wakeup](std::future<ref<const ValidPathInfo>> fut) {
             auto state(state_.lock());
             try {
                 auto info = fut.get();
@@ -812,20 +847,25 @@ void copyStorePath(ref<Store> srcStore, ref<Store> dstStore,
 }
 
 
-std::map<StorePath, StorePath> copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & storePaths,
+void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const StorePathSet & storePaths,
+    RepairFlag repair, CheckSigsFlag checkSigs, SubstituteFlag substitute)
+{
+    std::set<OwnedStorePathOrDesc> storePaths2;
+    for (auto & p : storePaths)
+        storePaths2.insert(p);
+    return copyPaths(srcStore, dstStore, storePaths2, repair, checkSigs, substitute);
+}
+
+void copyPaths(ref<Store> srcStore, ref<Store> dstStore, const std::set<OwnedStorePathOrDesc> & storePaths,
     RepairFlag repair, CheckSigsFlag checkSigs, SubstituteFlag substitute)
 {
     auto valid = dstStore->queryValidPaths(storePaths, substitute);
 
-    StorePathSet missing;
+    std::set<OwnedStorePathOrDesc>  missing;
     for (auto & path : storePaths)
         if (!valid.count(path)) missing.insert(path);
 
-    std::map<StorePath, StorePath> pathsMap;
-    for (auto & path : storePaths)
-        pathsMap.insert_or_assign(path, path);
-
-    if (missing.empty()) return pathsMap;
+    if (missing.empty()) return;
 
     Activity act(*logger, lvlInfo, actCopyPaths, fmt("copying %d paths", missing.size()));
 
@@ -840,25 +880,25 @@ std::map<StorePath, StorePath> copyPaths(ref<Store> srcStore, ref<Store> dstStor
 
     ThreadPool pool;
 
-    processGraph<StorePath>(pool,
-        StorePathSet(missing.begin(), missing.end()),
+    processGraph<OwnedStorePathOrDesc>(pool,
+        std::set<OwnedStorePathOrDesc>(missing.begin(), missing.end()),
 
-        [&](const StorePath & storePath) {
-            auto info = srcStore->queryPathInfo(storePath);
-            auto storePathForDst = storePath;
-            if (info->optCA() && info->references.empty() && !info->hasSelfReference) {
-                storePathForDst = dstStore->makeFixedOutputPathFromCA(*info->fullStorePathDescriptorOpt());
-                if (dstStore->storeDir == srcStore->storeDir)
-                    assert(storePathForDst == storePath);
-                if (storePathForDst != storePath)
-                    debug("replaced path '%s' to '%s' for substituter '%s'", srcStore->printStorePath(storePath), dstStore->printStorePath(storePathForDst), dstStore->getUri());
+        [&](const OwnedStorePathOrDesc & storePathOrDesc) -> std::set<OwnedStorePathOrDesc> {
+            auto info = srcStore->queryPathInfo(borrowStorePathOrDesc(storePathOrDesc));
+
+            /* If we can "upgrade" the node into a descriptor, do that. */
+            if (auto storePathP = std::get_if<StorePath>(&storePathOrDesc)) {
+                if (auto descOpt = info->fullStorePathDescriptorOpt()) {
+                    auto & desc = *descOpt;
+                    debug("found CA description for path '%s'", srcStore->printStorePath(*storePathP));
+                    return { desc };
+                }
             }
-            pathsMap.insert_or_assign(storePath, storePathForDst);
 
-            if (dstStore->isValidPath(storePath)) {
+            if (dstStore->isValidPath(borrowStorePathOrDesc(storePathOrDesc))) {
                 nrDone++;
                 showProgress();
-                return StorePathSet();
+                return {};
             }
 
             if (std::optional optNarSize = info->optNarSize()) {
@@ -866,33 +906,33 @@ std::map<StorePath, StorePath> copyPaths(ref<Store> srcStore, ref<Store> dstStor
                 act.setExpected(actCopyPath, bytesExpected);
             }
 
-            return info->references;
+            std::set<OwnedStorePathOrDesc> res;
+            for (auto & i : info->references)
+                res.insert(i);
+            return res;
         },
 
-        [&](const StorePath & storePath) {
+        [&](const OwnedStorePathOrDesc & storePathOrDesc) {
             checkInterrupt();
 
-            auto info = srcStore->queryPathInfo(storePath);
+            auto storePathOrDescB = borrowStorePathOrDesc(storePathOrDesc);
 
-            auto storePathForDst = storePath;
-            if (info->optCA() && info->references.empty() && !info->hasSelfReference) {
-                storePathForDst = dstStore->makeFixedOutputPathFromCA(*info->fullStorePathDescriptorOpt());
-                if (dstStore->storeDir == srcStore->storeDir)
-                    assert(storePathForDst == storePath);
-                if (storePathForDst != storePath)
-                    debug("replaced path '%s' to '%s' for substituter '%s'", srcStore->printStorePath(storePath), dstStore->printStorePath(storePathForDst), dstStore->getUri());
-            }
-            pathsMap.insert_or_assign(storePath, storePathForDst);
+            auto info = srcStore->queryPathInfo(storePathOrDescB);
 
-            if (!dstStore->isValidPath(storePathForDst)) {
+            auto descOpt = info->fullStorePathDescriptorOpt();
+            if (descOpt)
+                storePathOrDescB = *descOpt;
+
+            if (!dstStore->isValidPath(storePathOrDescB)) {
                 MaintainCount<decltype(nrRunning)> mc(nrRunning);
                 showProgress();
                 try {
-                    copyStorePath(srcStore, dstStore, storePath, repair, checkSigs);
+                    copyStorePath(srcStore, dstStore, storePathOrDescB, repair, checkSigs);
                 } catch (Error &e) {
                     nrFailed++;
                     if (!settings.keepGoing)
                         throw e;
+                    auto storePath = dstStore->bakeCaIfNeeded(storePathOrDescB);
                     logger->log(lvlError, fmt("could not copy %s: %s", dstStore->printStorePath(storePath), e.what()));
                     showProgress();
                     return;
@@ -903,7 +943,7 @@ std::map<StorePath, StorePath> copyPaths(ref<Store> srcStore, ref<Store> dstStor
             showProgress();
         });
 
-    return pathsMap;
+    return;
 }
 
 
@@ -1108,7 +1148,6 @@ Derivation Store::readDerivation(const StorePath & drvPath)
     }
 }
 
-
 }
 
 
@@ -1117,9 +1156,6 @@ Derivation Store::readDerivation(const StorePath & drvPath)
 
 
 namespace nix {
-
-
-RegisterStoreImplementation::Implementations * RegisterStoreImplementation::implementations = 0;
 
 /* Split URI into protocol+hierarchy part and its parameter set. */
 std::pair<std::string, Store::Params> splitUriAndParams(const std::string & uri_)
@@ -1134,24 +1170,6 @@ std::pair<std::string, Store::Params> splitUriAndParams(const std::string & uri_
     return {uri, params};
 }
 
-ref<Store> openStore(const std::string & uri_,
-    const Store::Params & extraParams)
-{
-    auto [uri, uriParams] = splitUriAndParams(uri_);
-    auto params = extraParams;
-    params.insert(uriParams.begin(), uriParams.end());
-
-    for (auto fun : *RegisterStoreImplementation::implementations) {
-        auto store = fun(uri, params);
-        if (store) {
-            store->warnUnknownSettings();
-            return ref<Store>(store);
-        }
-    }
-
-    throw Error("don't know how to open Nix store '%s'", uri);
-}
-
 static bool isNonUriPath(const std::string & spec) {
     return
         // is not a URL
@@ -1161,44 +1179,62 @@ static bool isNonUriPath(const std::string & spec) {
         && spec.find("/") != std::string::npos;
 }
 
-StoreType getStoreType(const std::string & uri, const std::string & stateDir)
+std::shared_ptr<Store> openFromNonUri(const std::string & uri, const Store::Params & params)
 {
-    if (uri == "daemon") {
-        return tDaemon;
-    } else if (uri == "local" || isNonUriPath(uri)) {
-        return tLocal;
-    } else if (uri == "" || uri == "auto") {
+    if (uri == "" || uri == "auto") {
+        auto stateDir = get(params, "state").value_or(settings.nixStateDir);
         if (access(stateDir.c_str(), R_OK | W_OK) == 0)
-            return tLocal;
+            return std::make_shared<LocalStore>(params);
         else if (pathExists(settings.nixDaemonSocketFile))
-            return tDaemon;
+            return std::make_shared<UDSRemoteStore>(params);
         else
-            return tLocal;
+            return std::make_shared<LocalStore>(params);
+    } else if (uri == "daemon") {
+        return std::make_shared<UDSRemoteStore>(params);
+    } else if (uri == "local") {
+        return std::make_shared<LocalStore>(params);
+    } else if (isNonUriPath(uri)) {
+        Store::Params params2 = params;
+        params2["root"] = absPath(uri);
+        return std::make_shared<LocalStore>(params2);
     } else {
-        return tOther;
+        return nullptr;
     }
 }
 
-
-static RegisterStoreImplementation regStore([](
-    const std::string & uri, const Store::Params & params)
-    -> std::shared_ptr<Store>
+ref<Store> openStore(const std::string & uri_,
+    const Store::Params & extraParams)
 {
-    switch (getStoreType(uri, get(params, "state").value_or(settings.nixStateDir))) {
-        case tDaemon:
-            return std::shared_ptr<Store>(std::make_shared<UDSRemoteStore>(params));
-        case tLocal: {
-            Store::Params params2 = params;
-            if (isNonUriPath(uri)) {
-                params2["root"] = absPath(uri);
-            }
-            return std::shared_ptr<Store>(std::make_shared<LocalStore>(params2));
-        }
-        default:
-            return nullptr;
-    }
-});
+    auto params = extraParams;
+    try {
+        auto parsedUri = parseURL(uri_);
+        params.insert(parsedUri.query.begin(), parsedUri.query.end());
 
+        auto baseURI = parsedUri.authority.value_or("") + parsedUri.path;
+
+        for (auto implem : *Implementations::registered) {
+            if (implem.uriSchemes.count(parsedUri.scheme)) {
+                auto store = implem.create(parsedUri.scheme, baseURI, params);
+                if (store) {
+                    store->init();
+                    store->warnUnknownSettings();
+                    return ref<Store>(store);
+                }
+            }
+        }
+    }
+    catch (BadURL &) {
+        auto [uri, uriParams] = splitUriAndParams(uri_);
+        params.insert(uriParams.begin(), uriParams.end());
+
+        if (auto store = openFromNonUri(uri, params)) {
+            store->warnUnknownSettings();
+            return ref<Store>(store);
+        }
+    }
+
+    throw Error("don't know how to open Nix store '%s'", uri_);
+}
 
 std::list<ref<Store>> getDefaultSubstituters()
 {
@@ -1232,5 +1268,6 @@ std::list<ref<Store>> getDefaultSubstituters()
     return stores;
 }
 
+std::vector<StoreFactory> * Implementations::registered = 0;
 
 }

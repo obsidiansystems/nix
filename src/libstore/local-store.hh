@@ -30,8 +30,19 @@ struct OptimiseStats
     uint64_t blocksFreed = 0;
 };
 
+struct LocalStoreConfig : virtual LocalFSStoreConfig
+{
+    using LocalFSStoreConfig::LocalFSStoreConfig;
 
-class LocalStore : public LocalFSStore
+    Setting<bool> requireSigs{(StoreConfig*) this,
+        settings.requireSigs,
+        "require-sigs", "whether store paths should have a trusted signature on import"};
+
+    const std::string name() override { return "Local Store"; }
+};
+
+
+class LocalStore : public LocalFSStore, public virtual LocalStoreConfig
 {
 private:
 
@@ -95,10 +106,6 @@ public:
 
 private:
 
-    Setting<bool> requireSigs{(Store*) this,
-        settings.requireSigs,
-        "require-sigs", "whether store paths should have a trusted signature on import"};
-
     const PublicKeys & getPublicKeys();
 
 public:
@@ -118,7 +125,7 @@ public:
 
     bool isValidPathUncached(StorePathOrDesc path) override;
 
-    StorePathSet queryValidPaths(const StorePathSet & paths,
+    std::set<OwnedStorePathOrDesc> queryValidPaths(const std::set<OwnedStorePathOrDesc> & paths,
         SubstituteFlag maybeSubstitute = NoSubstitute) override;
 
     StorePathSet queryAllValidPaths() override;
@@ -279,6 +286,11 @@ private:
     /* Add signatures to a ValidPathInfo using the secret keys
        specified by the ‘secret-key-files’ option. */
     void signPathInfo(ValidPathInfo & info);
+
+    /* Register the store path 'output' as the output named 'outputName' of
+       derivation 'deriver'. */
+    void linkDeriverToPath(const StorePath & deriver, const string & outputName, const StorePath & output);
+    void linkDeriverToPath(State & state, uint64_t deriver, const string & outputName, const StorePath & output);
 
     Path getRealStoreDir() override { return realStoreDir; }
 

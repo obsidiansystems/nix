@@ -11,6 +11,7 @@
 #include "nar-accessor.hh"
 #include "json.hh"
 #include "thread-pool.hh"
+#include "callback.hh"
 
 #include <chrono>
 #include <future>
@@ -22,7 +23,8 @@
 namespace nix {
 
 BinaryCacheStore::BinaryCacheStore(const Params & params)
-    : Store(params)
+    : BinaryCacheStoreConfig(params)
+    , Store(params)
 {
     if (secretKeyFile != "")
         secretKey = std::unique_ptr<SecretKey>(new SecretKey(readFile(secretKeyFile)));
@@ -106,7 +108,7 @@ std::string BinaryCacheStore::narInfoFileFor(const StorePath & storePath)
 
 void BinaryCacheStore::writeNarInfo(ref<NarInfo> narInfo)
 {
-    auto narInfoFile = narInfoFileFor(bakeCaIfNeeded(narInfo->path));
+    auto narInfoFile = narInfoFileFor(narInfo->path);
 
     upsertFile(narInfoFile, narInfo->to_string(*this), "text/x-nix-narinfo");
 
