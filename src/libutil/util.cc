@@ -1641,6 +1641,13 @@ AutoCloseFD createUnixDomainSocket(const Path & path, mode_t mode)
     return fdSocket;
 }
 
+
+string showBytes(uint64_t bytes)
+{
+    return fmt("%.2f MiB", bytes / (1024.0 * 1024.0));
+}
+
+
 void commonChildInit(Pipe & logPipe)
 {
     const static string pathNullDevice = "/dev/null";
