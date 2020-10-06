@@ -1,6 +1,9 @@
+#pragma once
+
 #include "machines.hh"
 #include "parsed-derivations.hh"
 #include "lock.hh"
+#include "local-store.hh"
 
 #include <memory>
 #include <algorithm>
@@ -750,5 +753,34 @@ public:
 
     StorePath getStorePath() { return storePath; }
 };
+
+struct HookInstance
+{
+    /* Pipes for talking to the build hook. */
+    Pipe toHook;
+
+    /* Pipe for the hook's standard output/error. */
+    Pipe fromHook;
+
+    /* Pipe for the builder's standard output/error. */
+    Pipe builderOut;
+
+    /* The process ID of the hook. */
+    Pid pid;
+
+    FdSink sink;
+
+    std::map<ActivityId, Activity> activities;
+
+    HookInstance();
+
+    ~HookInstance();
+};
+
+
+void addToWeakGoals(WeakGoals & goals, GoalPtr p);
+
+/** Common initialisation performed in child processes. */
+void commonChildInit(Pipe & logPipe);
 
 }
