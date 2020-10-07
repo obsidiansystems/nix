@@ -1671,6 +1671,12 @@ void DerivationGoal::startBuilder()
 
         userNamespaceSync.readSide = -1;
 
+        /* Close the write side to prevent runChild() from hanging
+           reading from this. */
+        Finally cleanup([&]() {
+            userNamespaceSync.writeSide = -1;
+        });
+
         pid_t tmp;
         if (!string2Int<pid_t>(readLine(builderOut.readSide.get()), tmp)) abort();
         pid = tmp;
@@ -1697,7 +1703,6 @@ void DerivationGoal::startBuilder()
 
         /* Signal the builder that we've updated its user namespace. */
         writeFull(userNamespaceSync.writeSide.get(), "1");
-        userNamespaceSync.writeSide = -1;
 
     } else
 #endif
