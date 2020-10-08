@@ -1340,7 +1340,8 @@ void DerivationGoal::startBuilder()
                     worker.store.computeFSClosure(worker.store.toStorePath(i.second.source).first, closure);
             } catch (InvalidPath & e) {
             } catch (Error & e) {
-                throw Error("while processing 'sandbox-paths': %s", e.what());
+                e.addTrace({}, "while processing 'sandbox-paths'");
+                throw;
             }
         for (auto & i : closure) {
             auto p = worker.store.printStorePath(i);
@@ -1722,9 +1723,12 @@ void DerivationGoal::startBuilder()
     /* Check if setting up the build environment failed. */
     while (true) {
         string msg = readLine(builderOut.readSide.get());
+        if (string(msg, 0, 1) == "\2") break;
         if (string(msg, 0, 1) == "\1") {
-            if (msg.size() == 1) break;
-            throw Error(string(msg, 1));
+            FdSource source(builderOut.readSide.get());
+            auto ex = readError(source);
+            ex.addTrace({}, "while setting up the build environment");
+            throw ex;
         }
         debug(msg);
     }
@@ -2770,7 +2774,7 @@ void DerivationGoal::runChild()
             args.push_back(rewriteStrings(i, inputRewrites));
 
         /* Indicate that we managed to set up the build environment. */
-        writeFull(STDERR_FILENO, string("\1\n"));
+        writeFull(STDERR_FILENO, string("\2\n"));
 
         /* Execute the program.  This should not return. */
         if (drv->isBuiltin()) {
@@ -2791,7 +2795,7 @@ void DerivationGoal::runChild()
                     throw Error("unsupported builtin function '%1%'", string(drv->builder, 8));
                 _exit(0);
             } catch (std::exception & e) {
-                writeFull(STDERR_FILENO, "error: " + string(e.what()) + "\n");
+                writeFull(STDERR_FILENO, e.what() + std::string("\n"));
                 _exit(1);
             }
         }
@@ -2800,8 +2804,11 @@ void DerivationGoal::runChild()
 
         throw SysError("executing '%1%'", drv->builder);
 
-    } catch (std::exception & e) {
-        writeFull(STDERR_FILENO, "\1while setting up the build environment: " + string(e.what()) + "\n");
+    } catch (Error & e) {
+        writeFull(STDERR_FILENO, "\1\n");
+        FdSink sink(STDERR_FILENO);
+        sink << e;
+        sink.flush();
         _exit(1);
     }
 }
