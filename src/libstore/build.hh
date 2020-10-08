@@ -407,6 +407,10 @@ private:
        paths to the sandbox as a result of recursive Nix calls. */
     AutoCloseFD sandboxMountNamespace;
 
+    /* On Linux, whether we're doing the build in its own user
+       namespace. */
+    bool usingUserNamespace = true;
+
     /* The build hook. */
     std::unique_ptr<HookInstance> hook;
 
@@ -496,8 +500,8 @@ private:
        result. */
     std::map<Path, ValidPathInfo> prevInfos;
 
-    const uid_t sandboxUid = 1000;
-    const gid_t sandboxGid = 100;
+    uid_t sandboxUid = 1000;
+    gid_t sandboxGid = 100;
 
     const static Path homeDir;
 

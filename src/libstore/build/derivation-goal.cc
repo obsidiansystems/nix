@@ -1614,6 +1614,24 @@ void DerivationGoal::startBuilder()
 
         options.allowVfork = false;
 
+        Path maxUserNamespaces = "/proc/sys/user/max_user_namespaces";
+        static bool userNamespacesEnabled =
+            pathExists(maxUserNamespaces)
+            && trim(readFile(maxUserNamespaces)) != "0";
+
+        usingUserNamespace = userNamespacesEnabled;
+
+        if (usingUserNamespace) {
+            sandboxUid = 1000;
+            sandboxGid = 100;
+        } else {
+            debug("note: not using a user namespace");
+            if (!buildUser)
+                throw Error("cannot perform a sandboxed build because user namespaces are not enabled; check /proc/sys/user/max_user_namespaces");
+            sandboxUid = buildUser->getUID();
+            sandboxGid = buildUser->getGID();
+        }
+
         Pid helper = startProcess([&]() {
 
             /* Drop additional groups here because we can't do it
@@ -1632,9 +1650,11 @@ void DerivationGoal::startBuilder()
                 PROT_WRITE | PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0);
             if (stack == MAP_FAILED) throw SysError("allocating stack");
 
-            int flags = CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNS | CLONE_NEWIPC | CLONE_NEWUTS | CLONE_PARENT | SIGCHLD;
+            int flags = CLONE_NEWPID | CLONE_NEWNS | CLONE_NEWIPC | CLONE_NEWUTS | CLONE_PARENT | SIGCHLD;
             if (privateNetwork)
                 flags |= CLONE_NEWNET;
+            if (usingUserNamespace)
+                flags |= CLONE_NEWUSER;
 
             pid_t child = clone(childEntry, stack + stackSize, flags, this);
             if (child == -1 && errno == EINVAL) {
@@ -1682,19 +1702,21 @@ void DerivationGoal::startBuilder()
         if (!string2Int<pid_t>(readLine(builderOut.readSide.get()), tmp)) abort();
         pid = tmp;
 
-        /* Set the UID/GID mapping of the builder's user namespace
-           such that the sandbox user maps to the build user, or to
-           the calling user (if build users are disabled). */
-        uid_t hostUid = buildUser ? buildUser->getUID() : getuid();
-        uid_t hostGid = buildUser ? buildUser->getGID() : getgid();
+        if (usingUserNamespace) {
+            /* Set the UID/GID mapping of the builder's user namespace
+               such that the sandbox user maps to the build user, or to
+               the calling user (if build users are disabled). */
+            uid_t hostUid = buildUser ? buildUser->getUID() : getuid();
+            uid_t hostGid = buildUser ? buildUser->getGID() : getgid();
 
-        writeFile("/proc/" + std::to_string(pid) + "/uid_map",
-            (format("%d %d 1") % sandboxUid % hostUid).str());
+            writeFile("/proc/" + std::to_string(pid) + "/uid_map",
+                (format("%d %d 1") % sandboxUid % hostUid).str());
 
-        writeFile("/proc/" + std::to_string(pid) + "/setgroups", "deny");
+            writeFile("/proc/" + std::to_string(pid) + "/setgroups", "deny");
 
-        writeFile("/proc/" + std::to_string(pid) + "/gid_map",
-            (format("%d %d 1") % sandboxGid % hostGid).str());
+            writeFile("/proc/" + std::to_string(pid) + "/gid_map",
+                (format("%d %d 1") % sandboxGid % hostGid).str());
+        }
 
         /* Save the mount namespace of the child. We have to do this
            *before* the child does a chroot. */
@@ -1730,7 +1752,7 @@ void DerivationGoal::startBuilder()
             ex.addTrace({}, "while setting up the build environment");
             throw ex;
         }
-        debug(msg);
+        debug("sandbox setup: " + msg);
     }
 }
 
