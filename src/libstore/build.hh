@@ -500,8 +500,8 @@ private:
        result. */
     std::map<Path, ValidPathInfo> prevInfos;
 
-    uid_t sandboxUid = 1000;
-    gid_t sandboxGid = 100;
+    uid_t sandboxUid() { return usingUserNamespace ? 1000 : buildUser->getUID(); }
+    gid_t sandboxGid() { return usingUserNamespace ?  100 : buildUser->getGID(); }
 
     const static Path homeDir;
 
