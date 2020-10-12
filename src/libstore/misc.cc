@@ -220,8 +220,7 @@ void Store::queryMissing(const std::vector<StorePathWithOutputs> & targets,
                     knownOutputPaths = false;
                     break;
                 }
-                if (wantOutput(outputName, path.outputs)
-                    && !isValidPath(StorePathOrDesc { *pathOpt }))
+                if (wantOutput(outputName, path.outputs) && !isValidPath(*pathOpt))
                     invalid.insert(printStorePath(*pathOpt));
             }
             if (knownOutputPaths && invalid.empty()) return;

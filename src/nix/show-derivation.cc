@@ -67,8 +67,8 @@ struct CmdShowDerivation : InstallablesCommand
 
             {
                 auto outputsObj(drvObj.object("outputs"));
-                for (auto & [outputName_, output] : drv.outputs) {
-                    auto & outputName = outputName_; // work around clang-7 bug
+                for (auto & [_outputName, output] : drv.outputs) {
+                    auto & outputName = _outputName; // work around clang bug
                     auto outputObj { outputsObj.object(outputName) };
                     std::visit(overloaded {
                         [&](DerivationOutputInputAddressed doi) {
@@ -123,4 +123,4 @@ struct CmdShowDerivation : InstallablesCommand
     }
 };
 
-static auto r1 = registerCommand<CmdShowDerivation>("show-derivation");
+static auto rCmdShowDerivation = registerCommand<CmdShowDerivation>("show-derivation");

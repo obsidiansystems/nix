@@ -4,6 +4,7 @@
 
 #include "pathlocks.hh"
 #include "store-api.hh"
+#include "local-fs-store.hh"
 #include "sync.hh"
 #include "util.hh"
 
@@ -125,7 +126,7 @@ public:
 
     bool isValidPathUncached(StorePathOrDesc path) override;
 
-    StorePathSet queryValidPaths(const StorePathSet & paths,
+    std::set<OwnedStorePathOrDesc> queryValidPaths(const std::set<OwnedStorePathOrDesc> & paths,
         SubstituteFlag maybeSubstitute = NoSubstitute) override;
 
     StorePathSet queryAllValidPaths() override;
