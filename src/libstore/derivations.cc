@@ -582,7 +582,7 @@ Source & readDerivation(Source & in, const Store & store, BasicDerivation & drv,
         drv.outputs.emplace(std::move(name), std::move(output));
     }
 
-    drv.inputSrcs = WorkerProto<StorePathSet>::read(store, in);
+    drv.inputSrcs = worker_proto::read(store, in, Phantom<StorePathSet> {});
     in >> drv.platform >> drv.builder;
     drv.args = readStrings<Strings>(in);
 
@@ -620,7 +620,7 @@ void writeDerivation(Sink & out, const Store & store, const BasicDerivation & dr
             },
         }, i.second.output);
     }
-    WorkerProto<StorePathSet>::write(store, out, drv.inputSrcs);
+    worker_proto::write(store, out, drv.inputSrcs);
     out << drv.platform << drv.builder << drv.args;
     out << drv.env.size();
     for (auto & i : drv.env)
