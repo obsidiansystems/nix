@@ -183,7 +183,7 @@ ref<const ValidPathInfo> BinaryCacheStore::addToStoreCommon(
            compression == "br" ? ".br" :
            "");
 
-	auto narSize = *narInfo->optNarSize();
+    auto narSize = *narInfo->optNarSize();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now2 - now1).count();
     printMsg(lvlTalkative, "copying path '%1%' (%2% bytes, compressed %3$.1f%% in %4% ms) to binary cache",
         printStorePath(narInfo->path), narSize,
