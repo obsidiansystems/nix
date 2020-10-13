@@ -10,7 +10,7 @@
 namespace nix {
 
 /*
- * Mini content address
+ * Content addressing method
  */
 
 /* We only have one way to hash text with references, so this is a single-value
@@ -57,6 +57,10 @@ std::string renderContentAddressMethodAndHash(ContentAddressMethod cam, HashType
 std::pair<ContentAddressMethod, HashType> parseContentAddressMethod(std::string_view caMethod);
 
 
+/*
+ * Mini content address
+ */
+
 struct TextHash {
     Hash hash;
     bool operator ==(const TextHash & otherHash) const noexcept;
@@ -75,7 +79,6 @@ struct FixedOutputHash {
     bool operator < (const FixedOutputHash & therHash) const noexcept;
     std::string printMethodAlgo() const;
 };
-
 
 /*
   We've accumulated several types of content-addressed paths over the years;
