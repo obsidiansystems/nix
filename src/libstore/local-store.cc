@@ -1094,7 +1094,7 @@ void LocalStore::addToStore(const ValidPathInfo & info_, Source & source,
 
             // text hashing has long been allowed to have non-self-references because it is used for drv files.
             auto optCA = info.optCA();
-            if (optCA.has_value() && !info.references.empty() && !(std::holds_alternative<TextHash>(*optCA) && info.hasSelfReference))
+            if (optCA.has_value() && !info.references.empty() && !(std::holds_alternative<TextHash>(*optCA) && !info.hasSelfReference))
                 settings.requireExperimentalFeature("ca-references");
 
             /* While restoring the path from the NAR, compute the hash
