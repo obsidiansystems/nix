@@ -154,6 +154,9 @@ public:
     std::shared_ptr<PathSubstitutionGoal> makePathSubstitutionGoal(const StorePath & storePath, RepairFlag repair = NoRepair, std::optional<ContentAddress> ca = std::nullopt);
     std::shared_ptr<DrvOutputSubstitutionGoal> makeDrvOutputSubstitutionGoal(const DrvOutput & id, RepairFlag repair = NoRepair, std::optional<ContentAddress> ca = std::nullopt);
 
+    /* derivation or substitution goal, as needed */
+    GoalPtr makeGoal(const DerivedPath & req, BuildMode buildMode = bmNormal);
+
     /* Remove a dead goal. */
     void removeGoal(GoalPtr goal);
 
