@@ -335,7 +335,7 @@ void DerivationGoal::gaveUpOnSubstitution()
     /* The inputs must be built before we can build this goal. */
     if (useDerivation)
         for (auto & i : dynamic_cast<Derivation *>(drv.get())->inputDrvs)
-            addWaitee(worker.makeDerivationGoal(i.first, i.second, buildMode == bmRepair ? bmRepair : bmNormal));
+            addWaitee(worker.makeGoal(BuildableReqFromDrv { staticDrv(i.first), i.second }, buildMode == bmRepair ? bmRepair : bmNormal));
 
     for (auto & i : drv->inputSrcs) {
         if (worker.store.isValidPath(i)) continue;
@@ -395,7 +395,7 @@ void DerivationGoal::repairClosure()
         if (drvPath2 == outputsToDrv.end())
             addWaitee(upcast_goal(worker.makePathSubstitutionGoal(i, Repair)));
         else
-            addWaitee(worker.makeDerivationGoal(drvPath2->second, StringSet(), bmRepair));
+            addWaitee(worker.makeGoal(BuildableReqFromDrv { staticDrv(drvPath2->second) }, bmRepair));
     }
 
     if (waitees.empty()) {
@@ -466,8 +466,9 @@ void DerivationGoal::inputsRealised()
                        worker.store.printStorePath(pathResolved),
                    });
 
-            auto resolvedGoal = worker.makeDerivationGoal(
-                pathResolved, wantedOutputs, buildMode);
+            auto resolvedGoal = worker.makeGoal(
+                BuildableReqFromDrv { staticDrv(pathResolved), wantedOutputs },
+                buildMode);
             addWaitee(resolvedGoal);
 
             state = &DerivationGoal::resolvedFinished;
