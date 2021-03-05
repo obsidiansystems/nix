@@ -142,10 +142,10 @@ private:
     std::shared_ptr<DerivationGoal> makeDerivationGoalCommon(
         const StorePath & drvPath, const StringSet & wantedOutputs,
         std::function<std::shared_ptr<DerivationGoal>()> mkDrvGoal);
-public:
     std::shared_ptr<DerivationGoal> makeDerivationGoal(
         const StorePath & drvPath,
         const StringSet & wantedOutputs, BuildMode buildMode = bmNormal);
+public:
     std::shared_ptr<DerivationGoal> makeBasicDerivationGoal(
         const StorePath & drvPath, const BasicDerivation & drv,
         const StringSet & wantedOutputs, BuildMode buildMode = bmNormal);
