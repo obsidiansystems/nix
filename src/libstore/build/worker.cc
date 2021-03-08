@@ -46,22 +46,7 @@ std::shared_ptr<OuterDerivationGoal> Worker::makeOuterDerivationGoal(
     const StringSet & wantedOutputs,
     BuildMode buildMode)
 {
-    std::function<OuterDerivationGoalsMapNode & (const SingleDerivedPath &)> findSlot;
-
-    findSlot = [&](const SingleDerivedPath & drvReq) -> auto &
-    {
-        return std::visit(overloaded {
-            [&](const SingleDerivedPath::Opaque & bo) -> auto & {
-                return outerDerivationGoals[bo.path];
-            },
-            [&](const SingleDerivedPath::Built & bfd) -> auto & {
-                auto & mapNode = findSlot(*bfd.drvPath);
-                return mapNode.childMap[bfd.outputs];
-            },
-        }, drvReq.raw());
-    };
-
-    std::weak_ptr<OuterDerivationGoal> & goal_weak = findSlot(*drvReq).goal; // = outerDerivationGoals[drvReq];
+    std::weak_ptr<OuterDerivationGoal> & goal_weak = outerDerivationGoals.ensureSlot(*drvReq).value;
     std::shared_ptr<OuterDerivationGoal> goal = goal_weak.lock();
     if (!goal) {
         goal = std::make_shared<OuterDerivationGoal>(drvReq, wantedOutputs, *this, buildMode);
@@ -173,17 +158,17 @@ static void removeGoal(std::shared_ptr<G> goal, std::map<K, std::weak_ptr<G>> & 
 }
 
 template<typename K>
-static void removeGoal(std::shared_ptr<OuterDerivationGoal> goal, std::map<K, OuterDerivationGoalsMapNode> & goalMap);
+static void removeGoal(std::shared_ptr<OuterDerivationGoal> goal, std::map<K, DerivedPathMap<std::weak_ptr<OuterDerivationGoal>>::Node> & goalMap);
 
 template<typename K>
-static void removeGoal(std::shared_ptr<OuterDerivationGoal> goal, std::map<K, OuterDerivationGoalsMapNode> & goalMap)
+static void removeGoal(std::shared_ptr<OuterDerivationGoal> goal, std::map<K, DerivedPathMap<std::weak_ptr<OuterDerivationGoal>>::Node> & goalMap)
 {
     /* !!! inefficient */
-    filterMap(goalMap, [&](OuterDerivationGoalsMapNode & node) -> bool {
-        if (node.goal.lock() == goal)
-            node.goal.reset();
+    filterMap(goalMap, [&](DerivedPathMap<std::weak_ptr<OuterDerivationGoal>>::Node & node) -> bool {
+        if (node.value.lock() == goal)
+            node.value.reset();
         removeGoal(goal, node.childMap);
-        return !node.goal.expired() || !node.childMap.empty();
+        return !node.value.expired() || !node.childMap.empty();
     });
 }
 
@@ -191,7 +176,7 @@ static void removeGoal(std::shared_ptr<OuterDerivationGoal> goal, std::map<K, Ou
 void Worker::removeGoal(GoalPtr goal)
 {
     if (auto drvGoal = std::dynamic_pointer_cast<OuterDerivationGoal>(goal))
-        nix::removeGoal(drvGoal, outerDerivationGoals);
+        nix::removeGoal(drvGoal, outerDerivationGoals.map);
     else if (auto drvGoal = std::dynamic_pointer_cast<DerivationGoal>(goal))
         nix::removeGoal(drvGoal, derivationGoals);
     else if (auto subGoal = std::dynamic_pointer_cast<PathSubstitutionGoal>(goal))
