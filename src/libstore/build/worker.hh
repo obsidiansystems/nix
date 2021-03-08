@@ -3,6 +3,7 @@
 #include "types.hh"
 #include "lock.hh"
 #include "store-api.hh"
+#include "derived-path-map.hh"
 #include "goal.hh"
 #include "realisation.hh"
 
@@ -50,13 +51,6 @@ struct Child
 /* Forward definition. */
 struct HookInstance;
 
-struct OuterDerivationGoalsMapNode;
-typedef std::map<std::string, OuterDerivationGoalsMapNode> OuterDerivationGoalsChildMap;
-struct OuterDerivationGoalsMapNode {
-    std::weak_ptr<OuterDerivationGoal> goal;
-    OuterDerivationGoalsChildMap childMap;
-};
-
 /* The worker class. */
 class Worker
 {
@@ -83,8 +77,7 @@ private:
 
     /* Maps used to prevent multiple instantiations of a goal for the
        same derivation / path. */
-
-    std::map<StorePath, OuterDerivationGoalsMapNode> outerDerivationGoals;
+    DerivedPathMap<std::weak_ptr<OuterDerivationGoal>> outerDerivationGoals;
 
     std::map<StorePath, std::weak_ptr<DerivationGoal>> derivationGoals;
     std::map<StorePath, std::weak_ptr<PathSubstitutionGoal>> substitutionGoals;
