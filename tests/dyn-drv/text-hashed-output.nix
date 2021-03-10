@@ -26,4 +26,14 @@ rec {
     outputHashMode = "text";
     outputHashAlgo = "sha256";
   };
+  wrapper = mkDerivation {
+    name = "put-it-all-together";
+    buildCommand = ''
+      echo "Copying the output of the dynamic derivation"
+      cp -r ${builtins.outputOf dependent.out "out"} $out
+    '';
+    __contentAddressed = true;
+    outputHashMode = "recursive";
+    outputHashAlgo = "sha256";
+  };
 }
