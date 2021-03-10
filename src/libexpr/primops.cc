@@ -40,12 +40,17 @@ void EvalState::realiseContext(const PathSet & context)
     std::vector<DerivedPath::Built> drvs;
 
     for (auto & i : context) {
-        auto [ctxS, outputName] = decodeContext(i);
+        auto [ctxS, outputNames] = decodeContext(i);
         auto ctx = store->parseStorePath(ctxS);
         if (!store->isValidPath(ctx))
             throw InvalidPathError(store->printStorePath(ctx));
-        if (!outputName.empty() && ctx.isDerivation()) {
-            drvs.push_back({staticDrvReq(ctx), {outputName}});
+        if (!outputNames.empty() && ctx.isDerivation()) {
+            auto req = staticDrvReq(ctx);
+            auto lastOutput = outputNames.back();
+            outputNames.pop_back();
+            for (auto && outputName : std::move(outputNames))
+                req = std::make_shared<SingleDerivedPath>(SingleDerivedPath::Built { req, outputName });
+            drvs.push_back({ req, { lastOutput } });
         }
     }
 
@@ -1082,8 +1087,14 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
 
         /* Handle derivation outputs of the form ‘!<name>!<path>’. */
         else if (path.at(0) == '!') {
-            std::pair<string, string> ctx = decodeContext(path);
-            drv.inputDrvs.map[state.store->parseStorePath(ctx.first)].value.insert(ctx.second);
+            auto [drvPath, outputNames] = decodeContext(path);
+            assert(!outputNames.empty());
+            auto lastOutput = outputNames.back();
+            outputNames.pop_back();
+            auto * node = &drv.inputDrvs.map[state.store->parseStorePath(drvPath)];
+            for (auto && outputName : std::move(outputNames))
+                node = &node->childMap[outputName];
+            node->value.insert(lastOutput);
         }
 
         /* Otherwise it's a source file. */

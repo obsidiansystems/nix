@@ -90,8 +90,11 @@ UnresolvedApp Installable::toApp(EvalState & state)
 
 
         std::vector<StorePathWithOutputs> context2;
-        for (auto & [path, name] : context)
-            context2.push_back({state.store->parseStorePath(path), {name}});
+        for (auto & [path, names] : context) {
+            if (names.size() != 1)
+                throw Error("dynamic drvs not yet supported by this command");
+            context2.push_back({state.store->parseStorePath(path), {*names.begin()}});
+        }
 
         return UnresolvedApp{App {
             .context = std::move(context2),
