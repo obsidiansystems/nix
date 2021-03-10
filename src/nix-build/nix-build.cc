@@ -398,7 +398,8 @@ static void main_nix_build(int argc, char * * argv)
         };
 
         // Build or fetch all dependencies of the derivation.
-        for (const auto & [inputDrv, inputNode] : drv.inputDrvs.map) {
+        for (const auto & entry : drv.inputDrvs.map) {
+            const auto & [inputDrv, inputNode] = entry;
             if (std::all_of(envExclude.cbegin(), envExclude.cend(),
                     [&](const string & exclude) { return !std::regex_search(store->printStorePath(inputDrv), std::regex(exclude)); }))
             {
