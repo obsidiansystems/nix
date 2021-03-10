@@ -1575,6 +1575,50 @@ static RegisterPrimOp primop_readDir({
     .fun = prim_readDir,
 });
 
+/* Extend single element string context with another output. */
+static void prim_outputOf(EvalState & state, const Pos & pos, Value * * args, Value & v)
+{
+    PathSet context;
+    Path path = state.coerceToPath(pos, *args[0], context);
+
+    Path outputName = state.forceStringNoCtx(*args[1], pos);
+
+    Path path2;
+    try {
+        auto p = DownstreamPlaceholder::parse(path);
+        path2 = DownstreamPlaceholder { p, outputName }.render();
+    } catch (BadHash &) {
+        path2 = DownstreamPlaceholder { state.store->parseStorePath(path), outputName }.render();
+    }
+
+    if (context.size() != 1)
+        throw EvalError({
+            .msg = hintfmt("path '%s' should have exactly one item in string context, but has", context.size()),
+            .errPos = pos
+        });
+    auto [ctxS, outputNames] = decodeContext(*context.begin());
+    outputNames.push_back(outputName);
+    PathSet context2 = { "!" + concatStringsSep("!", outputNames) + "!" + ctxS };
+
+    mkString(v, path2, context2);
+}
+
+static RegisterPrimOp primop_outputOf({
+    .name = "__outputOf",
+    .args = {"drv path", "output name"},
+    .doc = R"(
+      Return path (actually placeholder path) to the output of the given drv.
+      The drv path may itself be a placeholder, which permits chaining this primop.
+
+      For instance, `builtins.outputOf (builtins.outputOf myDrv "out) "out"`
+      will return a placeholder for the output of the output of `myDrv`,
+      interpreted as a derivation.
+
+      It may help to compare to the `->` operator in C, which can also by
+      chained. E.g. compare the above example to `drv->out->out`.
+    )",
+    .fun = prim_outputOf,
+});
 
 /*************************************************************
  * Creating files

@@ -259,6 +259,8 @@ public:
        dependency which is a CA derivation. */
     std::string render() const;
 
+    static DownstreamPlaceholder parse(std::string_view);
+
     // For CA derivations
     DownstreamPlaceholder(const StorePath & drvPath, std::string_view outputName);
 
@@ -266,6 +268,7 @@ public:
     DownstreamPlaceholder(const DownstreamPlaceholder & placeholder, std::string_view outputName);
 
 private:
+    DownstreamPlaceholder(Hash && h) : hash(std::move(h)) {}
     static inline Hash worker1(const StorePath & drvPath, std::string_view outputName);
     static inline Hash worker2(const DownstreamPlaceholder & placeholder, std::string_view outputName);
 };

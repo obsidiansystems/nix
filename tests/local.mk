@@ -46,6 +46,8 @@ nix_tests = \
   flakes.sh \
   dyn-drv/text-hashed-output.sh \
   dyn-drv/build-built-drv.sh \
+  dyn-drv/eval-outputOf.sh \
+  dyn-drv/dep-built-drv.sh \
   build.sh \
   build-explicit-output.sh \
   compute-levels.sh \
