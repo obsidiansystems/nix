@@ -734,6 +734,14 @@ std::string DownstreamPlaceholder::render() const
 }
 
 
+DownstreamPlaceholder DownstreamPlaceholder::parse(std::string_view s)
+{
+    assert(s[0] == '/');
+    s = s.substr(1);
+    return { Hash::parseNonSRIUnprefixed(s, htSHA256) };
+}
+
+
 inline Hash DownstreamPlaceholder::worker1(const StorePath & drvPath, std::string_view outputName)
 {
     auto drvNameWithExtension = drvPath.name();
