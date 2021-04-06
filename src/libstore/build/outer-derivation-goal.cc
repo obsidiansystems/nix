@@ -97,14 +97,21 @@ void OuterDerivationGoal::getDerivation()
         auto & drvPath = drvPathP->path;
         if (!worker.store.isValidPath(drvPath)) goto load;
 
+        trace(fmt("already have drv '%s' for '%s', can go straight to building",
+            worker.store.printStorePath(drvPath),
+            drvReq->to_string(worker.store)));
+
         loadAndBuildDerivation();
         return;
     }
 
 load:
+    trace("need to obtain drv we want to build");
+
     addWaitee(worker.makeGoal(drvReq->to_multi()));
 
     state = &OuterDerivationGoal::loadAndBuildDerivation;
+    if (waitees.empty()) work();
 }
 
 
