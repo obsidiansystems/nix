@@ -276,12 +276,13 @@ struct CmdProfileInstall : InstallablesCommand, MixDefaultProfile
                             element.storePaths.insert(bo.path);
                         },
                         [&](DerivedPathWithHints::Built bfd) {
+                            auto drvPath = resolveDerivedPathWithHints(*store, *bfd.drvPath);
                             // TODO: Why are we querying if we know the output
                             // names already? Is it just to figure out what the
                             // default one is?
-                            for (auto & output : store->queryDerivationOutputMap(bfd.drvPath)) {
+                            for (auto & output : resolveDerivedPathWithHints(*store, bfd)) {
                                 pathsToBuild.push_back(DerivedPath::Built {
-                                    staticDrvReq(bfd.drvPath),
+                                    staticDrvReq(drvPath),
                                     {output.first},
                                 });
                                 element.storePaths.insert(output.second);

@@ -5,31 +5,62 @@
 
 namespace nix {
 
-nlohmann::json DerivedPath::Opaque::toJSON(ref<Store> store) const
+nlohmann::json DerivedPath::Opaque::toJSON(const Store & store) const
 {
     nlohmann::json res;
-    res["path"] = store->printStorePath(path);
+    res["path"] = store.printStorePath(path);
     return res;
 }
 
-nlohmann::json DerivedPathWithHints::Built::toJSON(ref<Store> store) const
+static void setOutputs(const Store & store, nlohmann::json & res, const std::pair<std::string, std::optional<StorePath>> & output)
 {
-    nlohmann::json res;
-    res["drvPath"] = store->printStorePath(drvPath);
-    for (const auto& [output, path] : outputs) {
-        res["outputs"][output] = path ? store->printStorePath(*path) : "";
+    auto & [outputName, optOutputPath] = output;
+    res["output"] = outputName;
+    res["outputPath"] = optOutputPath ? store.printStorePath(*optOutputPath) : "";
+}
+
+static void setOutputs(const Store & store, nlohmann::json & res, const std::map<std::string, std::optional<StorePath>> & outputs)
+{
+    for (const auto & [output, path] : outputs) {
+        res["outputs"][output] = path ? store.printStorePath(*path) : "";
     }
+}
+
+nlohmann::json DerivedPathWithHints::Built::toJSON(const Store & store) const
+{
+    nlohmann::json res;
+    res["drvPath"] = drvPath->toJSON(store);
+    setOutputs(store, res, outputs);
     return res;
 }
 
-nlohmann::json derivedPathsWithHintsToJSON(const DerivedPathsWithHints & buildables, ref<Store> store)
+nlohmann::json SingleDerivedPathWithHints::Built::toJSON(const Store & store) const
+{
+    nlohmann::json res;
+    res["drvPath"] = drvPath->toJSON(store);
+    setOutputs(store, res, outputs);
+    return res;
+}
+
+nlohmann::json SingleDerivedPathWithHints::toJSON(const Store & store) const
+{
+    return std::visit([&](const auto & buildable) {
+        return buildable.toJSON(store);
+    }, raw());
+}
+
+nlohmann::json DerivedPathWithHints::toJSON(const Store & store) const
+{
+    return std::visit([&](const auto & buildable) {
+        return buildable.toJSON(store);
+    }, raw());
+}
+
+nlohmann::json derivedPathsWithHintsToJSON(const DerivedPathsWithHints & buildables, const Store & store)
 {
     auto res = nlohmann::json::array();
-    for (const DerivedPathWithHints & buildable : buildables) {
-        std::visit([&res, store](const auto & buildable) {
-            res.push_back(buildable.toJSON(store));
-        }, buildable.raw());
-    }
+    for (const DerivedPathWithHints & buildable : buildables)
+        res.push_back(buildable.toJSON(store));
     return res;
 }
 

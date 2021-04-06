@@ -772,6 +772,7 @@ void removeTempRoots();
    much as possible, but where the derivation resolution doesn't exists, leave
    as-is. */
 SingleDerivedPath tryResolveDerivedPath(Store &, const SingleDerivedPath &);
+SingleDerivedPathWithHints tryResolveDerivedPathWithHints(Store &, const SingleDerivedPathWithHints &);
 #if 0
 DerivedPath tryResolveDerivedPath(Store &, const DerivedPath &);
 #endif
@@ -779,7 +780,9 @@ DerivedPath tryResolveDerivedPath(Store &, const DerivedPath &);
 /* Resolve the buildable req completely, failing if any derivation output is
    unknown. */
 StorePath resolveDerivedPath(Store &, const SingleDerivedPath &);
+StorePath resolveDerivedPathWithHints(Store &, const SingleDerivedPathWithHints &);
 std::map<std::string, StorePath> resolveDerivedPath(Store &, const DerivedPath::Built &);
+std::map<std::string, StorePath> resolveDerivedPathWithHints(Store &, const DerivedPathWithHints::Built &);
 
 
 /* Return a Store object to access the Nix store denoted by

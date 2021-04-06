@@ -330,7 +330,7 @@ struct InstallableStorePath : Installable
                 outputs.emplace(name, output.second);
             return {
                 DerivedPathWithHints::Built {
-                    .drvPath = storePath,
+                    .drvPath = staticDrv(storePath),
                     .outputs = std::move(outputs)
                 }
             };
@@ -364,7 +364,7 @@ DerivedPathsWithHints InstallableValue::toDerivedPathsWithHints()
     }
 
     for (auto & i : drvsToOutputs)
-        res.push_back(DerivedPathWithHints::Built { i.first, i.second });
+        res.push_back(DerivedPathWithHints::Built { staticDrv(i.first), i.second });
 
     return res;
 }
@@ -671,6 +671,21 @@ std::shared_ptr<Installable> SourceExprCommand::parseInstallable(
     return installables.front();
 }
 
+static SingleDerivedPath toReq(const SingleDerivedPathWithHints & b)
+{
+    return std::visit(overloaded {
+        [&](const SingleDerivedPathWithHints::Opaque & bo) -> SingleDerivedPath {
+            return bo;
+        },
+        [&](const SingleDerivedPathWithHints::Built & bfd) -> SingleDerivedPath {
+            return SingleDerivedPath::Built {
+                std::make_shared<SingleDerivedPath>(toReq(*bfd.drvPath)),
+                bfd.outputs.first,
+            };
+        },
+    }, b.raw());
+}
+
 DerivedPathsWithHints build(ref<Store> store, Realise mode,
     std::vector<std::shared_ptr<Installable>> installables, BuildMode bMode)
 {
@@ -683,18 +698,21 @@ DerivedPathsWithHints build(ref<Store> store, Realise mode,
 
     for (auto & i : installables) {
         for (auto & b : i->toDerivedPathsWithHints()) {
-            std::visit(overloaded {
-                [&](DerivedPathWithHints::Opaque bo) {
-                    pathsToBuild.push_back(bo);
+
+            pathsToBuild.push_back(std::visit(overloaded {
+                [&](const DerivedPathWithHints::Opaque & bo) -> DerivedPath {
+                    return bo;
                 },
-                [&](DerivedPathWithHints::Built bfd) {
+                [&](const DerivedPathWithHints::Built & bfd) -> DerivedPath {
                     StringSet outputNames;
                     for (auto & output : bfd.outputs)
                         outputNames.insert(output.first);
-                    pathsToBuild.push_back(
-                        DerivedPath::Built{staticDrvReq(bfd.drvPath), outputNames});
+                    return DerivedPath::Built {
+                        std::make_shared<SingleDerivedPath>(toReq(*bfd.drvPath)),
+                        outputNames,
+                    };
                 },
-            }, b.raw());
+            }, b.raw()));
             buildables.push_back(std::move(b));
         }
     }
@@ -721,14 +739,15 @@ std::set<RealisedPath> toRealisedPaths(
                     res.insert(bo.path);
                 },
                 [&](DerivedPathWithHints::Built bfd) {
-                    auto drv = store->readDerivation(bfd.drvPath);
+                    auto drvPath = resolveDerivedPathWithHints(*store, *bfd.drvPath);
+                    auto drv = store->readDerivation(drvPath);
                     auto outputHashes = staticOutputHashes(*store, drv);
                     for (auto & output : bfd.outputs) {
                         if (settings.isExperimentalFeatureEnabled("ca-derivations")) {
                             if (!outputHashes.count(output.first))
                                 throw Error(
                                     "the derivation '%s' doesn't have an output named '%s'",
-                                    store->printStorePath(bfd.drvPath),
+                                    toReq(*bfd.drvPath).to_string(*store),
                                     output.first);
                             auto outputId = DrvOutput{outputHashes.at(output.first), output.first};
                             auto realisation = store->queryRealisation(outputId);
@@ -753,7 +772,7 @@ std::set<RealisedPath> toRealisedPaths(
         for (auto & i : installables)
             for (auto & b : i->toDerivedPathsWithHints())
                 if (auto bfd = std::get_if<DerivedPathWithHints::Built>(&b))
-                    res.insert(bfd->drvPath);
+                    res.insert(resolveDerivedPathWithHints(*store, *bfd->drvPath));
     }
 
     return res;
@@ -799,7 +818,7 @@ StorePathSet toDerivations(ref<Store> store,
                     drvPaths.insert(*derivers.begin());
                 },
                 [&](DerivedPathWithHints::Built bfd) {
-                    drvPaths.insert(bfd.drvPath);
+                    drvPaths.insert(resolveDerivedPathWithHints(*store, *bfd.drvPath));
                 },
             }, b.raw());
 

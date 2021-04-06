@@ -22,7 +22,7 @@ class Store;
 struct DerivedPathOpaque {
     StorePath path;
 
-    nlohmann::json toJSON(ref<Store> store) const;
+    nlohmann::json toJSON(const Store & store) const;
     std::string to_string(const Store & store) const;
     static DerivedPathOpaque parse(const Store & store, std::string_view);
 };
@@ -132,16 +132,51 @@ struct DerivedPath : _DerivedPathRaw {
     static DerivedPath parse(const Store & store, std::string_view);
 };
 
+struct SingleDerivedPathWithHints;
+
+struct SingleDerivedPathWithHintsBuilt {
+    std::shared_ptr<SingleDerivedPathWithHints> drvPath;
+    std::pair<std::string, std::optional<StorePath>> outputs; // FIXME rename "output" no "s"
+
+    nlohmann::json toJSON(const Store & store) const;
+    static SingleDerivedPathWithHintsBuilt parse(const Store & store, std::string_view, std::string_view);
+};
+
+using _SingleDerivedPathWithHintsRaw = std::variant<
+    DerivedPathOpaque,
+    SingleDerivedPathWithHintsBuilt
+>;
+
+struct SingleDerivedPathWithHints : _SingleDerivedPathWithHintsRaw {
+    using Raw = _SingleDerivedPathWithHintsRaw;
+    using Raw::Raw;
+
+    using Opaque = DerivedPathOpaque;
+    using Built = SingleDerivedPathWithHintsBuilt;
+
+    inline const Raw & raw() const {
+        return static_cast<const Raw &>(*this);
+    }
+
+    nlohmann::json toJSON(const Store & store) const;
+    static SingleDerivedPathWithHints parse(const Store & store, std::string_view);
+};
+
+static inline std::shared_ptr<SingleDerivedPathWithHints> staticDrv(StorePath drvPath)
+{
+    return std::make_shared<SingleDerivedPathWithHints>(SingleDerivedPathWithHints::Opaque { drvPath });
+}
+
 /**
  * A built derived path with hints in the form of optional concrete output paths.
  *
  * See 'DerivedPathWithHints' for more an explanation.
  */
 struct DerivedPathWithHintsBuilt {
-    StorePath drvPath;
+    std::shared_ptr<SingleDerivedPathWithHints> drvPath;
     std::map<std::string, std::optional<StorePath>> outputs;
 
-    nlohmann::json toJSON(ref<Store> store) const;
+    nlohmann::json toJSON(const Store & store) const;
     static DerivedPathWithHintsBuilt parse(const Store & store, std::string_view);
 };
 
@@ -176,10 +211,11 @@ struct DerivedPathWithHints : _DerivedPathWithHintsRaw {
         return static_cast<const Raw &>(*this);
     }
 
+    nlohmann::json toJSON(const Store & store) const;
 };
 
 typedef std::vector<DerivedPathWithHints> DerivedPathsWithHints;
 
-nlohmann::json derivedPathsWithHintsToJSON(const DerivedPathsWithHints & buildables, ref<Store> store);
+nlohmann::json derivedPathsWithHintsToJSON(const DerivedPathsWithHints & buildables, const Store & store);
 
 }

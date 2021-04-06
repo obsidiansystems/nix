@@ -334,6 +334,24 @@ DerivedPath tryResolveDerivedPath(Store &, const DerivedPath &)
 #endif
 
 
+StorePath resolveDerivedPathWithHints(Store & store, const SingleDerivedPathWithHints & req)
+{
+    return std::visit(overloaded {
+        [&](SingleDerivedPathWithHints::Opaque bo) {
+            return bo.path;
+        },
+        [&](SingleDerivedPathWithHints::Built bfd) {
+            if (bfd.outputs.second)
+                return *bfd.outputs.second;
+            else
+                return resolveDerivedPath(store, SingleDerivedPath::Built {
+                    staticDrvReq(resolveDerivedPathWithHints(store, *bfd.drvPath)),
+                    bfd.outputs.first,
+                });
+        },
+    }, req.raw());
+}
+
 StorePath resolveDerivedPath(Store & store, const SingleDerivedPath & req)
 {
     return std::visit(overloaded {
@@ -353,6 +371,27 @@ StorePath resolveDerivedPath(Store & store, const SingleDerivedPath & req)
             return *optPath;
         },
     }, req.raw());
+}
+
+
+std::map<std::string, StorePath> resolveDerivedPathWithHints(Store & store, const DerivedPathWithHints::Built & bfd)
+{
+    std::map<std::string, StorePath> res;
+    for (auto & [outputName, optOutputPath] : bfd.outputs) {
+        if (optOutputPath)
+            res.insert_or_assign(outputName, *optOutputPath);
+        else {
+            // fallback on resolving anew
+            StringSet outputNames;
+            for (auto & [outputName, _] : bfd.outputs)
+                outputNames.insert(outputName);
+            return resolveDerivedPath(store, DerivedPath::Built {
+                staticDrvReq(resolveDerivedPathWithHints(store, *bfd.drvPath)),
+                outputNames,
+            });
+        }
+    }
+    return res;
 }
 
 std::map<std::string, StorePath> resolveDerivedPath(Store & store, const DerivedPath::Built & bfd)
