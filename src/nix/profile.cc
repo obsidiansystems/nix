@@ -258,7 +258,10 @@ struct CmdProfileInstall : InstallablesCommand, MixDefaultProfile
                     attrPath,
                 };
 
-                pathsToBuild.push_back(DerivedPath::Built{drv.drvPath, StringSet{drv.outputName}});
+                pathsToBuild.push_back(DerivedPath::Built {
+                    staticDrvReq(drv.drvPath),
+                    StringSet{drv.outputName},
+                });
 
                 manifest.elements.emplace_back(std::move(element));
             } else {
@@ -277,7 +280,10 @@ struct CmdProfileInstall : InstallablesCommand, MixDefaultProfile
                             // names already? Is it just to figure out what the
                             // default one is?
                             for (auto & output : store->queryDerivationOutputMap(bfd.drvPath)) {
-                                pathsToBuild.push_back(DerivedPath::Built{bfd.drvPath, {output.first}});
+                                pathsToBuild.push_back(DerivedPath::Built {
+                                    staticDrvReq(bfd.drvPath),
+                                    {output.first},
+                                });
                                 element.storePaths.insert(output.second);
                             }
                         },
@@ -435,7 +441,10 @@ struct CmdProfileUpgrade : virtual SourceExprCommand, MixDefaultProfile, MixProf
                     attrPath,
                 };
 
-                pathsToBuild.push_back(DerivedPath::Built{drv.drvPath, {"out"}}); // FIXME
+                pathsToBuild.push_back(DerivedPath::Built {
+                    staticDrvReq(drv.drvPath),
+                    {"out"}
+                }); // FIXME
             }
         }
 

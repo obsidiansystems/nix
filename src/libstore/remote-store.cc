@@ -693,6 +693,9 @@ static void writeDerivedPaths(RemoteStore & store, ConnectionHandle & conn, cons
                         GET_PROTOCOL_MAJOR(conn->daemonVersion),
                         GET_PROTOCOL_MINOR(conn->daemonVersion));
                 },
+                [&](std::monostate) {
+                    throw Error("wanted build derivation that is itself a build product, but the legacy ssh protocol doesn't support that. Try using ssh-ng://");
+                },
             }, sOrDrvPath);
         }
         conn->to << ss;

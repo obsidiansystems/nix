@@ -5,13 +5,15 @@
 
 namespace nix {
 
-nlohmann::json DerivedPath::Opaque::toJSON(ref<Store> store) const {
+nlohmann::json DerivedPath::Opaque::toJSON(ref<Store> store) const
+{
     nlohmann::json res;
     res["path"] = store->printStorePath(path);
     return res;
 }
 
-nlohmann::json DerivedPathWithHints::Built::toJSON(ref<Store> store) const {
+nlohmann::json DerivedPathWithHints::Built::toJSON(ref<Store> store) const
+{
     nlohmann::json res;
     res["drvPath"] = store->printStorePath(drvPath);
     for (const auto& [output, path] : outputs) {
@@ -20,7 +22,8 @@ nlohmann::json DerivedPathWithHints::Built::toJSON(ref<Store> store) const {
     return res;
 }
 
-nlohmann::json derivedPathsWithHintsToJSON(const DerivedPathsWithHints & buildables, ref<Store> store) {
+nlohmann::json derivedPathsWithHintsToJSON(const DerivedPathsWithHints & buildables, ref<Store> store)
+{
     auto res = nlohmann::json::array();
     for (const DerivedPathWithHints & buildable : buildables) {
         std::visit([&res, store](const auto & buildable) {
@@ -31,14 +34,28 @@ nlohmann::json derivedPathsWithHintsToJSON(const DerivedPathsWithHints & buildab
 }
 
 
-std::string DerivedPath::Opaque::to_string(const Store & store) const {
+std::string DerivedPath::Opaque::to_string(const Store & store) const
+{
     return store.printStorePath(path);
 }
 
-std::string DerivedPath::Built::to_string(const Store & store) const {
-    return store.printStorePath(drvPath)
+std::string SingleDerivedPath::Built::to_string(const Store & store) const
+{
+    return drvPath->to_string(store) + "!" + outputs;
+}
+
+std::string DerivedPath::Built::to_string(const Store & store) const
+{
+    return drvPath->to_string(store)
         + "!"
         + (outputs.empty() ? std::string { "*" } : concatStringsSep(",", outputs));
+}
+
+std::string SingleDerivedPath::to_string(const Store & store) const
+{
+    return std::visit(
+        [&](const auto & req) { return req.to_string(store); },
+        raw());
 }
 
 std::string DerivedPath::to_string(const Store & store) const
@@ -54,24 +71,37 @@ DerivedPath::Opaque DerivedPath::Opaque::parse(const Store & store, std::string_
     return {store.parseStorePath(s)};
 }
 
-DerivedPath::Built DerivedPath::Built::parse(const Store & store, std::string_view s)
+SingleDerivedPath::Built SingleDerivedPath::Built::parse(const Store & store, std::string_view drvS, std::string_view output)
 {
-    size_t n = s.find("!");
-    assert(n != s.npos);
-    auto drvPath = store.parseStorePath(s.substr(0, n));
-    auto outputsS = s.substr(n + 1);
+    auto drvPath = std::make_shared<SingleDerivedPath>(
+        SingleDerivedPath::parse(store, drvS));
+    return { std::move(drvPath), std::string { output } };
+}
+
+DerivedPath::Built DerivedPath::Built::parse(const Store & store, std::string_view drvS, std::string_view outputsS)
+{
+    auto drvPath = std::make_shared<SingleDerivedPath>(
+        SingleDerivedPath::parse(store, drvS));
     std::set<string> outputs;
     if (outputsS != "*")
         outputs = tokenizeString<std::set<string>>(outputsS);
-    return {drvPath, outputs};
+    return { std::move(drvPath), std::move(outputs) };
+}
+
+SingleDerivedPath SingleDerivedPath::parse(const Store & store, std::string_view s)
+{
+    size_t n = s.rfind("!");
+    return n == s.npos
+        ? (SingleDerivedPath) DerivedPath::Opaque::parse(store, s)
+        : (SingleDerivedPath) SingleDerivedPath::Built::parse(store, s.substr(0, n), s.substr(n + 1));
 }
 
 DerivedPath DerivedPath::parse(const Store & store, std::string_view s)
 {
-    size_t n = s.find("!");
+    size_t n = s.rfind("!");
     return n == s.npos
         ? (DerivedPath) DerivedPath::Opaque::parse(store, s)
-        : (DerivedPath) DerivedPath::Built::parse(store, s);
+        : (DerivedPath) DerivedPath::Built::parse(store, s.substr(0, n), s.substr(n + 1));
 }
 
 }

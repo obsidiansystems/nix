@@ -57,9 +57,9 @@ BuildResult Store::buildDerivation(const StorePath & drvPath, const BasicDerivat
     }
     // XXX: Should use `goal->queryPartialDerivationOutputMap()` once it's
     // extended to return the full realisation for each output
-    auto staticDrvOutputs = drv.outputsAndOptPaths(*this);
+    auto staticDrvReqOutputs = drv.outputsAndOptPaths(*this);
     auto outputHashes = staticOutputHashes(*this, drv);
-    for (auto & [outputName, staticOutput] : staticDrvOutputs) {
+    for (auto & [outputName, staticOutput] : staticDrvReqOutputs) {
         auto outputId = DrvOutput{outputHashes.at(outputName), outputName};
         if (staticOutput.second)
             result.builtOutputs.insert_or_assign(

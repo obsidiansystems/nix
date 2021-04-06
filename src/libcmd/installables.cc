@@ -692,7 +692,7 @@ DerivedPathsWithHints build(ref<Store> store, Realise mode,
                     for (auto & output : bfd.outputs)
                         outputNames.insert(output.first);
                     pathsToBuild.push_back(
-                        DerivedPath::Built{bfd.drvPath, outputNames});
+                        DerivedPath::Built{staticDrvReq(bfd.drvPath), outputNames});
                 },
             }, b.raw());
             buildables.push_back(std::move(b));

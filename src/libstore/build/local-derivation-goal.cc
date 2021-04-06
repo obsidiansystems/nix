@@ -1191,6 +1191,19 @@ void LocalDerivationGoal::writeStructuredAttrs()
 }
 
 
+static StorePath pathPartOfReq(const SingleDerivedPath & req)
+{
+    return std::visit(overloaded {
+        [&](SingleDerivedPath::Opaque bo) {
+            return bo.path;
+        },
+        [&](SingleDerivedPath::Built bfd)  {
+            return pathPartOfReq(*bfd.drvPath);
+        },
+    }, req.raw());
+}
+
+
 static StorePath pathPartOfReq(const DerivedPath & req)
 {
     return std::visit(overloaded {
@@ -1198,7 +1211,7 @@ static StorePath pathPartOfReq(const DerivedPath & req)
             return bo.path;
         },
         [&](DerivedPath::Built bfd)  {
-            return bfd.drvPath;
+            return pathPartOfReq(*bfd.drvPath);
         },
     }, req.raw());
 }
@@ -1346,13 +1359,11 @@ struct RestrictedStore : public virtual RestrictedStoreConfig, public virtual Lo
         next->buildPaths(paths, buildMode);
 
         for (auto & path : paths) {
-            auto p =  std::get_if<DerivedPath::Built>(&path);
+            auto p = std::get_if<DerivedPath::Built>(&path);
             if (!p) continue;
             auto & bfd = *p;
-            auto outputs = next->queryDerivationOutputMap(bfd.drvPath);
-            for (auto & [outputName, outputPath] : outputs)
-                if (wantOutput(outputName, bfd.outputs))
-                    newPaths.insert(outputPath);
+            for (auto & [_, output] : resolveDerivedPath(*next, bfd))
+                newPaths.insert(output);
         }
 
         StorePathSet closure;
