@@ -719,6 +719,9 @@ static void writeDerivedPaths(RemoteStore & store, ConnectionHandle & conn, cons
                         GET_PROTOCOL_MAJOR(conn->daemonVersion),
                         GET_PROTOCOL_MINOR(conn->daemonVersion));
                 },
+                [&](std::monostate) {
+                    throw Error("wanted build derivation that is itself a build product, but the legacy ssh protocol doesn't support that. Try using ssh-ng://");
+                },
             }, sOrDrvPath);
         }
         conn->to << ss;
@@ -731,9 +734,23 @@ void RemoteStore::buildPaths(const std::vector<DerivedPath> & drvPaths, BuildMod
         /* The remote doesn't have a way to access evalStore, so copy
            the .drvs. */
         RealisedPath::Set drvPaths2;
-        for (auto & i : drvPaths)
-            if (auto p = std::get_if<DerivedPath::Built>(&i))
-                drvPaths2.insert(p->drvPath);
+        for (const auto & i : drvPaths) {
+            if (const auto * p = std::get_if<DerivedPath::Built>(&i)) {
+                const SingleDerivedPath * sdp = &*p->drvPath;
+                bool cont = true;
+                while (cont) {
+                    std::visit(overloaded {
+                        [&](const SingleDerivedPath::Opaque & bp) {
+                            drvPaths2.insert(bp.path);
+                            cont = false;
+                        },
+                        [&](const SingleDerivedPath::Built & sdp2) {
+                            sdp = &*sdp2.drvPath;
+                        },
+                    }, sdp->raw());
+                }
+            }
+        }
         copyClosure(*evalStore, *this, drvPaths2);
     }
 

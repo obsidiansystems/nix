@@ -140,7 +140,7 @@ void Store::queryMissing(const std::vector<DerivedPath> & targets,
         }
 
         for (auto & i : drv.inputDrvs)
-            pool.enqueue(std::bind(doPath, DerivedPath::Built { i.first, i.second }));
+            pool.enqueue(std::bind(doPath, DerivedPath::Built { staticDrvReq(i.first), i.second }));
     };
 
     auto checkOutput = [&](
@@ -178,10 +178,14 @@ void Store::queryMissing(const std::vector<DerivedPath> & targets,
 
         std::visit(overloaded {
           [&](DerivedPath::Built bfd) {
-            if (!isValidPath(bfd.drvPath)) {
+            auto drvPathP = std::get_if<DerivedPath::Opaque>(&*bfd.drvPath);
+            if (!drvPathP) return; // TODO make work in this case.
+            auto & drvPath = drvPathP->path;
+
+            if (!isValidPath(drvPath)) {
                 // FIXME: we could try to substitute the derivation.
                 auto state(state_.lock());
-                state->unknown.insert(bfd.drvPath);
+                state->unknown.insert(drvPath);
                 return;
             }
 
@@ -189,7 +193,7 @@ void Store::queryMissing(const std::vector<DerivedPath> & targets,
             /* true for regular derivations, and CA derivations for which we
                have a trust mapping for all wanted outputs. */
             auto knownOutputPaths = true;
-            for (auto & [outputName, pathOpt] : queryPartialDerivationOutputMap(bfd.drvPath)) {
+            for (auto & [outputName, pathOpt] : queryPartialDerivationOutputMap(drvPath)) {
                 if (!pathOpt) {
                     knownOutputPaths = false;
                     break;
@@ -199,15 +203,15 @@ void Store::queryMissing(const std::vector<DerivedPath> & targets,
             }
             if (knownOutputPaths && invalid.empty()) return;
 
-            auto drv = make_ref<Derivation>(derivationFromPath(bfd.drvPath));
-            ParsedDerivation parsedDrv(StorePath(bfd.drvPath), *drv);
+            auto drv = make_ref<Derivation>(derivationFromPath(drvPath));
+            ParsedDerivation parsedDrv(StorePath(drvPath), *drv);
 
             if (knownOutputPaths && settings.useSubstitutes && parsedDrv.substitutesAllowed()) {
                 auto drvState = make_ref<Sync<DrvState>>(DrvState(invalid.size()));
                 for (auto & output : invalid)
-                    pool.enqueue(std::bind(checkOutput, bfd.drvPath, drv, output, drvState));
+                    pool.enqueue(std::bind(checkOutput, drvPath, drv, output, drvState));
             } else
-                mustBuildDrv(bfd.drvPath, *drv);
+                mustBuildDrv(drvPath, *drv);
 
           },
           [&](DerivedPath::Opaque bo) {
@@ -305,4 +309,97 @@ std::map<DrvOutput, StorePath> drvOutputReferences(
 
     return drvOutputReferences(Realisation::closure(store, inputRealisations), info->references);
 }
+
+SingleDerivedPath tryResolveDerivedPath(Store & store, const SingleDerivedPath & req)
+{
+    return std::visit(overloaded {
+        [&](SingleDerivedPath::Opaque _) {
+            return req;
+        },
+        [&](SingleDerivedPath::Built bfd) {
+            auto req2 = tryResolveDerivedPath(store, *bfd.drvPath);
+            return std::visit(overloaded {
+                [&](SingleDerivedPath::Opaque bo) -> SingleDerivedPath {
+                    auto & drvPath = bo.path;
+                    auto outputPaths = store.queryPartialDerivationOutputMap(drvPath);
+                    if (outputPaths.count(bfd.outputs) == 0)
+                        throw Error("derivation '%s' does not have an output named '%s'",
+                            store.printStorePath(drvPath), bfd.outputs);
+                    auto & optPath = outputPaths.at(bfd.outputs);
+                    if (optPath)
+                        // Can resolve this step
+                        return DerivedPath::Opaque { *optPath };
+                    // Can't resolve this step
+                    return req2;
+                },
+                [&](SingleDerivedPath::Built _) {
+                    // Can't resolve previous step, and thus all future steps.
+                    return req2;
+                },
+            }, req2.raw());
+        },
+    }, req.raw());
+}
+
+#if 0
+DerivedPath tryResolveDerivedPath(Store &, const DerivedPath &)
+{
+    // TODO
+}
+#endif
+
+
+StorePath resolveBuiltPath(Store & store, const SingleBuiltPath & req)
+{
+    return req.outPath();
+}
+
+StorePath resolveDerivedPath(Store & store, const SingleDerivedPath & req)
+{
+    return std::visit(overloaded {
+        [&](SingleDerivedPath::Opaque bo) {
+            return bo.path;
+        },
+        [&](SingleDerivedPath::Built bfd) {
+            auto drvPath = resolveDerivedPath(store, *bfd.drvPath);
+            auto outputPaths = store.queryPartialDerivationOutputMap(drvPath);
+            if (outputPaths.count(bfd.outputs) == 0)
+                throw Error("derivation '%s' does not have an output named '%s'",
+                    store.printStorePath(drvPath), bfd.outputs);
+            auto & optPath = outputPaths.at(bfd.outputs);
+            if (!optPath)
+                throw Error("'%s' does not yet map to a known concrete store path",
+                    bfd.to_string(store));
+            return *optPath;
+        },
+    }, req.raw());
+}
+
+
+std::map<std::string, StorePath> resolveBuiltPath(Store & store, const BuiltPath::Built & bfd)
+{
+    return bfd.outputs;
+}
+
+std::map<std::string, StorePath> resolveDerivedPath(Store & store, const DerivedPath::Built & bfd)
+{
+    auto drvPath = resolveDerivedPath(store, *bfd.drvPath);
+    auto outputMap = store.queryDerivationOutputMap(drvPath);
+    auto outputsLefts = bfd.outputs;
+    for (auto iter = outputMap.begin(); iter != outputMap.end();) {
+        auto & outputName = iter->first;
+        if (wantOutput(outputName, outputsLefts)) {
+            outputsLefts.erase(outputName);
+            ++iter;
+        } else {
+            iter = outputMap.erase(iter);
+        }
+    }
+    if (!outputsLefts.empty())
+        throw Error("derivation '%s' does not have an outputs %s",
+            store.printStorePath(drvPath),
+            concatStringsSep(", ", quoteStrings(bfd.outputs)));
+    return outputMap;
+}
+
 }

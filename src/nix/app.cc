@@ -43,7 +43,7 @@ StringPairs resolveRewrites(Store & store, const BuiltPaths dependencies)
         if (auto drvDep = std::get_if<BuiltPathBuilt>(&dep))
             for (auto & [ outputName, outputPath ] : drvDep->outputs)
                 res.emplace(
-                    downstreamPlaceholder(store, drvDep->drvPath, outputName),
+                    downstreamPlaceholder(store, drvDep->drvPath->outPath(), outputName),
                     store.printStorePath(outputPath)
                 );
     return res;

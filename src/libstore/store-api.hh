@@ -797,6 +797,23 @@ void copyClosure(
 void removeTempRoots();
 
 
+/* Attempt to recursively replace derivation outputs with produced paths as
+   much as possible, but where the derivation resolution doesn't exists, leave
+   as-is. */
+SingleDerivedPath tryResolveDerivedPath(Store &, const SingleDerivedPath &);
+SingleBuiltPath tryResolveBuiltPath(Store &, const SingleBuiltPath &);
+#if 0
+DerivedPath tryResolveDerivedPath(Store &, const DerivedPath &);
+#endif
+
+/* Resolve the buildable req completely, failing if any derivation output is
+   unknown. */
+StorePath resolveDerivedPath(Store &, const SingleDerivedPath &);
+StorePath resolveBuiltPath(Store &, const SingleBuiltPath &);
+std::map<std::string, StorePath> resolveDerivedPath(Store &, const DerivedPath::Built &);
+std::map<std::string, StorePath> resolveBuiltPath(Store &, const BuiltPath::Built &);
+
+
 /* Return a Store object to access the Nix store denoted by
    ‘uri’ (slight misnomer...). Supported values are:
 
