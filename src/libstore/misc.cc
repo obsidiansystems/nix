@@ -313,13 +313,16 @@ std::map<DrvOutput, StorePath> drvOutputReferences(
 SingleDerivedPath tryResolveDerivedPath(Store & store, const SingleDerivedPath & req)
 {
     return std::visit(overloaded {
-        [&](SingleDerivedPath::Opaque _) {
+        [&](const SingleDerivedPath::Opaque & _) -> SingleDerivedPath {
             return req;
         },
-        [&](SingleDerivedPath::Built bfd) {
-            auto req2 = tryResolveDerivedPath(store, *bfd.drvPath);
+        [&](const SingleDerivedPath::Built & bfd0) -> SingleDerivedPath {
+            SingleDerivedPath::Built bfd {
+                std::make_shared<SingleDerivedPath>(tryResolveDerivedPath(store, *bfd0.drvPath)),
+                bfd0.outputs,
+            };
             return std::visit(overloaded {
-                [&](SingleDerivedPath::Opaque bo) -> SingleDerivedPath {
+                [&](const SingleDerivedPath::Opaque & bo) -> SingleDerivedPath {
                     auto & drvPath = bo.path;
                     auto outputPaths = store.queryPartialDerivationOutputMap(drvPath);
                     if (outputPaths.count(bfd.outputs) == 0)
@@ -329,14 +332,15 @@ SingleDerivedPath tryResolveDerivedPath(Store & store, const SingleDerivedPath &
                     if (optPath)
                         // Can resolve this step
                         return DerivedPath::Opaque { *optPath };
-                    // Can't resolve this step
-                    return req2;
+                    else
+                        // Can't resolve this step
+                        return bfd;
                 },
-                [&](SingleDerivedPath::Built _) {
+                [&](const SingleDerivedPath::Built & _) -> SingleDerivedPath {
                     // Can't resolve previous step, and thus all future steps.
-                    return req2;
+                    return bfd;
                 },
-            }, req2.raw());
+            }, bfd.drvPath->raw());
         },
     }, req.raw());
 }
