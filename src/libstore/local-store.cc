@@ -631,7 +631,9 @@ void LocalStore::checkDerivationOutputs(const StorePath & drvPath, const Derivat
                 if (!h) {
                     // somewhat expensive so we do lazily
                     auto temp = hashDerivationModulo(*this, drv, true);
-                    h = std::get<Hash>(temp);
+                    auto temp2 = std::get<DrvHash>(temp);
+                    assert(!temp2.isDeferred);
+                    h = std::move(temp2.hash);
                 }
                 StorePath recomputed = makeOutputPath(i.first, *h, drvName);
                 if (doia.path != recomputed)

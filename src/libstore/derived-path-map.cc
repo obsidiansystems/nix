@@ -28,6 +28,7 @@ typename DerivedPathMap<V>::Node & DerivedPathMap<V>::ensureSlot(const SingleDer
 #include "outer-derivation-goal.hh"
 namespace nix {
 
+template struct DerivedPathMap<std::set<std::string>>;
 template struct DerivedPathMap<std::weak_ptr<OuterDerivationGoal>>;
 
 }

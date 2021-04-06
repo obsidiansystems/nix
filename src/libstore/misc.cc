@@ -158,14 +158,26 @@ void Store::queryMissing(const std::vector<DerivedPath> & targets,
 
     std::function<void(DerivedPath)> doPath;
 
+    std::function<void(std::shared_ptr<SingleDerivedPath>, const DerivedPathMap<StringSet>::Node &)> accumDerivedPath;
+
+    accumDerivedPath = [&](std::shared_ptr<SingleDerivedPath> inputDrv, const DerivedPathMap<StringSet>::Node & inputNode) {
+        if (!inputNode.value.empty())
+            pool.enqueue(std::bind(doPath, DerivedPath::Built { inputDrv, inputNode.value }));
+        for (const auto & [outputName, childNode] : inputNode.childMap)
+            accumDerivedPath(
+                std::make_shared<SingleDerivedPath>(SingleDerivedPath::Built { inputDrv, outputName }),
+                childNode);
+    };
+
     auto mustBuildDrv = [&](const StorePath & drvPath, const Derivation & drv) {
         {
             auto state(state_.lock());
             state->willBuild.insert(drvPath);
         }
 
-        for (auto & i : drv.inputDrvs)
-            pool.enqueue(std::bind(doPath, DerivedPath::Built { staticDrvReq(i.first), i.second }));
+        for (const auto & [inputDrv, inputNode] : drv.inputDrvs.map) {
+            accumDerivedPath(staticDrvReq(inputDrv), inputNode);
+        }
     };
 
     auto checkOutput = [&](
