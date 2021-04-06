@@ -12,6 +12,7 @@
 namespace nix {
 
 /* Forward definition. */
+struct OuterDerivationGoal;
 struct DerivationGoal;
 struct PathSubstitutionGoal;
 class DrvOutputSubstitutionGoal;
@@ -27,6 +28,7 @@ class DrvOutputSubstitutionGoal;
    is opaque. */
 GoalPtr upcast_goal(std::shared_ptr<PathSubstitutionGoal> subGoal);
 GoalPtr upcast_goal(std::shared_ptr<DrvOutputSubstitutionGoal> subGoal);
+GoalPtr upcast_goal(std::shared_ptr<DerivationGoal> subGoal);
 
 typedef std::chrono::time_point<std::chrono::steady_clock> steady_time_point;
 
@@ -47,6 +49,13 @@ struct Child
 
 /* Forward definition. */
 struct HookInstance;
+
+struct OuterDerivationGoalsMapNode;
+typedef std::map<std::string, OuterDerivationGoalsMapNode> OuterDerivationGoalsChildMap;
+struct OuterDerivationGoalsMapNode {
+    std::weak_ptr<OuterDerivationGoal> goal;
+    OuterDerivationGoalsChildMap childMap;
+};
 
 /* The worker class. */
 class Worker
@@ -74,6 +83,9 @@ private:
 
     /* Maps used to prevent multiple instantiations of a goal for the
        same derivation / path. */
+
+    std::map<StorePath, OuterDerivationGoalsMapNode> outerDerivationGoals;
+
     std::map<StorePath, std::weak_ptr<DerivationGoal>> derivationGoals;
     std::map<StorePath, std::weak_ptr<PathSubstitutionGoal>> substitutionGoals;
     std::map<DrvOutput, std::weak_ptr<DrvOutputSubstitutionGoal>> drvOutputSubstitutionGoals;
@@ -138,6 +150,9 @@ public:
 
     /* derivation goal */
 private:
+    std::shared_ptr<OuterDerivationGoal> makeOuterDerivationGoal(
+        std::shared_ptr<SingleDerivedPath> drvPath,
+        const StringSet & wantedOutputs, BuildMode buildMode = bmNormal);
     std::shared_ptr<DerivationGoal> makeDerivationGoalCommon(
         const StorePath & drvPath, const StringSet & wantedOutputs,
         std::function<std::shared_ptr<DerivationGoal>()> mkDrvGoal);
@@ -213,6 +228,8 @@ public:
         act.setExpected(actFileTransfer, expectedDownloadSize + doneDownloadSize);
         act.setExpected(actCopyPath, expectedNarSize + doneNarSize);
     }
+
+    friend struct OuterDerivationGoal;
 };
 
 }

@@ -49,6 +49,8 @@ using _SingleDerivedPathRaw = std::variant<
     SingleDerivedPathBuilt
 >;
 
+struct DerivedPath;
+
 /**
  * A "derived path" is a very simple sort of expression that evaluates
  * to (concrete) store path. It is either:
@@ -71,6 +73,7 @@ struct SingleDerivedPath : _SingleDerivedPathRaw {
     }
 
     std::string to_string(const Store & store) const;
+    DerivedPath to_multi() const;
     static SingleDerivedPath parse(const Store & store, std::string_view);
 };
 

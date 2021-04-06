@@ -70,7 +70,7 @@ DerivationGoal::DerivationGoal(const StorePath & drvPath,
     , wantedOutputs(wantedOutputs)
     , buildMode(buildMode)
 {
-    state = &DerivationGoal::getDerivation;
+    state = &DerivationGoal::loadDerivation;
     name = fmt(
         "building of '%s' from .drv file",
         DerivedPath::Built { staticDrvReq(drvPath), wantedOutputs }.to_string(worker.store));
@@ -155,24 +155,6 @@ void DerivationGoal::addWantedOutputs(const StringSet & outputs)
         for (auto & i : outputs)
             if (wantedOutputs.insert(i).second)
                 needRestart = true;
-}
-
-
-void DerivationGoal::getDerivation()
-{
-    trace("init");
-
-    /* The first thing to do is to make sure that the derivation
-       exists.  If it doesn't, it may be created through a
-       substitute. */
-    if (buildMode == bmNormal && worker.store.isValidPath(drvPath)) {
-        loadDerivation();
-        return;
-    }
-
-    addWaitee(upcast_goal(worker.makePathSubstitutionGoal(drvPath)));
-
-    state = &DerivationGoal::loadDerivation;
 }
 
 
@@ -335,7 +317,7 @@ void DerivationGoal::gaveUpOnSubstitution()
     /* The inputs must be built before we can build this goal. */
     if (useDerivation)
         for (auto & i : dynamic_cast<Derivation *>(drv.get())->inputDrvs)
-            addWaitee(worker.makeGoal(BuildableReqFromDrv { staticDrv(i.first), i.second }, buildMode == bmRepair ? bmRepair : bmNormal));
+            addWaitee(worker.makeGoal(DerivedPath::Built { staticDrvReq(i.first), i.second }, buildMode == bmRepair ? bmRepair : bmNormal));
 
     for (auto & i : drv->inputSrcs) {
         if (worker.store.isValidPath(i)) continue;
@@ -395,7 +377,7 @@ void DerivationGoal::repairClosure()
         if (drvPath2 == outputsToDrv.end())
             addWaitee(upcast_goal(worker.makePathSubstitutionGoal(i, Repair)));
         else
-            addWaitee(worker.makeGoal(BuildableReqFromDrv { staticDrv(drvPath2->second) }, bmRepair));
+            addWaitee(worker.makeGoal(DerivedPath::Built { staticDrvReq(drvPath2->second) }, bmRepair));
     }
 
     if (waitees.empty()) {
@@ -467,7 +449,7 @@ void DerivationGoal::inputsRealised()
                    });
 
             auto resolvedGoal = worker.makeGoal(
-                BuildableReqFromDrv { staticDrv(pathResolved), wantedOutputs },
+                DerivedPath::Built { staticDrvReq(pathResolved), wantedOutputs },
                 buildMode);
             addWaitee(resolvedGoal);
 
