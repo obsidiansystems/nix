@@ -349,6 +349,64 @@ struct InstallableStorePath : Installable
     }
 };
 
+static SingleDerivedPath toReq(const SingleDerivedPathWithHints & b)
+{
+    return std::visit(overloaded {
+        [&](const SingleDerivedPathWithHints::Opaque & bo) -> SingleDerivedPath {
+            return bo;
+        },
+        [&](const SingleDerivedPathWithHints::Built & bfd) -> SingleDerivedPath {
+            return SingleDerivedPath::Built {
+                std::make_shared<SingleDerivedPath>(toReq(*bfd.drvPath)),
+                bfd.outputs.first,
+            };
+        },
+    }, b.raw());
+}
+
+static SingleDerivedPathWithHints fromReq(const SingleDerivedPath & b)
+{
+    return std::visit(overloaded {
+        [&](const SingleDerivedPathWithHints::Opaque & bo) -> SingleDerivedPathWithHints {
+            return bo;
+        },
+        [&](const SingleDerivedPath::Built & bfd) -> SingleDerivedPathWithHints {
+            return SingleDerivedPathWithHints::Built {
+                std::make_shared<SingleDerivedPathWithHints>(fromReq(*bfd.drvPath)),
+                { bfd.outputs, std::nullopt },
+            };
+        },
+    }, b.raw());
+}
+
+struct InstallableIndexedStorePath : Installable
+{
+    ref<Store> store;
+    DerivedPath::Built req;
+
+    InstallableIndexedStorePath(ref<Store> store, DerivedPath::Built && req)
+        : store(store), req(std::move(req))
+    { }
+
+    std::string what() override
+    {
+        return req.to_string(*store);
+    }
+
+    DerivedPathsWithHints toDerivedPathsWithHints() override
+    {
+        std::map<std::string, std::optional<StorePath>> outputs;
+        for (auto & output : req.outputs)
+            outputs.insert_or_assign(output, std::nullopt);
+        return {
+            DerivedPathWithHints { DerivedPathWithHints::Built {
+                std::make_shared<SingleDerivedPathWithHints>(fromReq(*req.drvPath)),
+                std::move(outputs),
+            } }
+        };
+    }
+};
+
 DerivedPathsWithHints InstallableValue::toDerivedPathsWithHints()
 {
     DerivedPathsWithHints res;
@@ -638,7 +696,22 @@ std::vector<std::shared_ptr<Installable>> SourceExprCommand::parseInstallables(
                 ex = std::current_exception();
             }
 
-            if (s.find('/') != std::string::npos) {
+            auto found = s.rfind('!');
+            if (found != std::string::npos) {
+                try {
+                    result.push_back(std::make_shared<InstallableIndexedStorePath>(
+                        store,
+                        DerivedPath::Built::parse(*store, s.substr(0, found), s.substr(found + 1))));
+                    continue;
+                } catch (BadStorePath &) {
+                } catch (...) {
+                    if (!ex)
+                        ex = std::current_exception();
+                }
+            }
+
+            found = s.find('/');
+            if (found != std::string::npos) {
                 try {
                     result.push_back(std::make_shared<InstallableStorePath>(store, store->followLinksToStorePath(s)));
                     continue;
@@ -669,21 +742,6 @@ std::shared_ptr<Installable> SourceExprCommand::parseInstallable(
     auto installables = parseInstallables(store, {installable});
     assert(installables.size() == 1);
     return installables.front();
-}
-
-static SingleDerivedPath toReq(const SingleDerivedPathWithHints & b)
-{
-    return std::visit(overloaded {
-        [&](const SingleDerivedPathWithHints::Opaque & bo) -> SingleDerivedPath {
-            return bo;
-        },
-        [&](const SingleDerivedPathWithHints::Built & bfd) -> SingleDerivedPath {
-            return SingleDerivedPath::Built {
-                std::make_shared<SingleDerivedPath>(toReq(*bfd.drvPath)),
-                bfd.outputs.first,
-            };
-        },
-    }, b.raw());
 }
 
 DerivedPathsWithHints build(ref<Store> store, Realise mode,
