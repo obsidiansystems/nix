@@ -122,6 +122,19 @@ std::string DerivedPath::to_string(const Store & store) const
 }
 
 
+DerivedPath SingleDerivedPath::to_multi() const
+{
+    return std::visit(overloaded {
+        [&](const SingleDerivedPath::Opaque & bo) -> DerivedPath {
+            return bo;
+        },
+        [&](const SingleDerivedPath::Built & bfd) -> DerivedPath {
+            return DerivedPath::Built { bfd.drvPath, { bfd.outputs } };
+        },
+    }, this->raw());
+}
+
+
 DerivedPath::Opaque DerivedPath::Opaque::parse(const Store & store, std::string_view s)
 {
     return {store.parseStorePath(s)};
