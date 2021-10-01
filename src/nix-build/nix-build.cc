@@ -328,8 +328,7 @@ static void main_nix_build(int argc, char * * argv)
 
     state->printStats();
 
-    auto buildPaths = [&](const std::vector<StorePathWithOutputs> & paths0) {
-        auto paths = toDerivedPaths(paths0);
+    auto buildPaths = [&](const std::vector<DerivedPath> & paths) {
         /* Note: we do this even when !printMissing to efficiently
            fetch binary cache data. */
         uint64_t downloadSize, narSize;
@@ -351,7 +350,7 @@ static void main_nix_build(int argc, char * * argv)
         auto & drvInfo = drvs.front();
         auto drv = evalStore->derivationFromPath(evalStore->parseStorePath(drvInfo.queryDrvPath()));
 
-        std::vector<StorePathWithOutputs> pathsToBuild;
+        std::vector<DerivedPath> pathsToBuild;
         RealisedPath::Set pathsToCopy;
 
         /* Figure out what bash shell to use. If $NIX_BUILD_SHELL
@@ -372,7 +371,10 @@ static void main_nix_build(int argc, char * * argv)
                     throw Error("the 'bashInteractive' attribute in <nixpkgs> did not evaluate to a derivation");
 
                 auto bashDrv = store->parseStorePath(drv->queryDrvPath());
-                pathsToBuild.push_back({bashDrv});
+                pathsToBuild.push_back(DerivedPath::Built {
+                    .drvPath = staticDrvReq(bashDrv),
+                    .outputs = {},
+                });
                 pathsToCopy.insert(bashDrv);
 
                 shell = drv->queryOutPath() + "/bin/bash";
@@ -384,16 +386,28 @@ static void main_nix_build(int argc, char * * argv)
             }
         }
 
+        std::function<void(std::shared_ptr<SingleDerivedPath>, const DerivedPathMap<StringSet>::Node &)> accumDerivedPath;
+
+        accumDerivedPath = [&](std::shared_ptr<SingleDerivedPath> inputDrv, const DerivedPathMap<StringSet>::Node & inputNode) {
+            if (!inputNode.value.empty())
+                pathsToBuild.push_back(DerivedPath::Built { inputDrv, inputNode.value });
+            for (const auto & [outputName, childNode] : inputNode.childMap)
+                accumDerivedPath(
+                    std::make_shared<SingleDerivedPath>(SingleDerivedPath::Built { inputDrv, outputName }),
+                    childNode);
+        };
+
         // Build or fetch all dependencies of the derivation.
-        for (const auto & input : drv.inputDrvs)
+        for (const auto & [inputDrv, inputNode] : drv.inputDrvs.map) {
             if (std::all_of(envExclude.cbegin(), envExclude.cend(),
-                    [&](const string & exclude) { return !std::regex_search(store->printStorePath(input.first), std::regex(exclude)); }))
+                    [&](const string & exclude) { return !std::regex_search(store->printStorePath(inputDrv), std::regex(exclude)); }))
             {
-                pathsToBuild.push_back({input.first, input.second});
-                pathsToCopy.insert(input.first);
+                accumDerivedPath(staticDrvReq(inputDrv), inputNode);
+                pathsToCopy.insert(inputDrv);
             }
+        }
         for (const auto & src : drv.inputSrcs) {
-            pathsToBuild.push_back({src});
+            pathsToBuild.push_back(DerivedPath::Opaque{src});
             pathsToCopy.insert(src);
         }
 
@@ -446,13 +460,21 @@ static void main_nix_build(int argc, char * * argv)
 
         if (env.count("__json")) {
             StorePathSet inputs;
-            for (auto & [depDrvPath, wantedDepOutputs] : drv.inputDrvs) {
-                auto outputs = evalStore->queryPartialDerivationOutputMap(depDrvPath);
-                for (auto & i : wantedDepOutputs) {
+
+            std::function<void(const StorePath &, const DerivedPathMap<StringSet>::Node &)> accumInputClosure;
+
+            accumInputClosure = [&](const StorePath & inputDrv, const DerivedPathMap<StringSet>::Node & inputNode) {
+                auto outputs = evalStore->queryPartialDerivationOutputMap(inputDrv);
+                for (auto & i : inputNode.value) {
                     auto o = outputs.at(i);
                     store->computeFSClosure(*o, inputs);
                 }
-            }
+                for (const auto & [outputName, childNode] : inputNode.childMap)
+                    accumInputClosure(*outputs.at(outputName), childNode);
+            };
+
+            for (const auto & [inputDrv, inputNode] : drv.inputDrvs.map)
+                accumInputClosure(inputDrv, inputNode);
 
             ParsedDerivation parsedDrv(
                 StorePath(store->parseStorePath(drvInfo.queryDrvPath())),
@@ -541,7 +563,7 @@ static void main_nix_build(int argc, char * * argv)
 
     else {
 
-        std::vector<StorePathWithOutputs> pathsToBuild;
+        std::vector<DerivedPath> pathsToBuild;
         std::vector<std::pair<StorePath, std::string>> pathsToBuildOrdered;
         RealisedPath::Set drvsToCopy;
 
@@ -554,7 +576,7 @@ static void main_nix_build(int argc, char * * argv)
             if (outputName == "")
                 throw Error("derivation '%s' lacks an 'outputName' attribute", store->printStorePath(drvPath));
 
-            pathsToBuild.push_back({drvPath, {outputName}});
+            pathsToBuild.push_back(DerivedPath::Built{staticDrvReq(drvPath), {outputName}});
             pathsToBuildOrdered.push_back({drvPath, {outputName}});
             drvsToCopy.insert(drvPath);
 

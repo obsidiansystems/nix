@@ -89,11 +89,27 @@ struct CmdShowDerivation : InstallablesCommand
             }
 
             {
-                auto inputDrvsObj(drvObj.object("inputDrvs"));
-                for (auto & input : drv.inputDrvs) {
-                    auto inputList(inputDrvsObj.list(store->printStorePath(input.first)));
-                    for (auto & outputId : input.second)
-                        inputList.elem(outputId);
+                std::function<void(JSONList &, const DerivedPathMap<StringSet>::Node &)> doInput;
+                doInput = [&](JSONList & json, const auto & inputNode) {
+                    {
+                        auto inputList = json.list();
+                        for (auto & outputId : inputNode.value)
+                            inputList.elem(outputId);
+                    }
+                    {
+                        auto next = json.object();
+                        for (auto & [outputId, childNode] : inputNode.childMap) {
+                            auto j = next.list(outputId);
+                            doInput(j, childNode);
+                        }
+                    }
+                };
+                {
+                    auto inputDrvsObj(drvObj.object("inputDrvs"));
+                    for (auto & [inputDrv, inputNode] : drv.inputDrvs.map) {
+                        auto j = inputDrvsObj.list(store->printStorePath(inputDrv));
+                        doInput(j, inputNode);
+                    }
                 }
             }
 
