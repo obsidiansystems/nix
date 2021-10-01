@@ -257,7 +257,10 @@ struct CmdProfileInstall : InstallablesCommand, MixDefaultProfile
                     attrPath,
                 };
 
-                pathsToBuild.push_back(DerivedPath::Built{drv.drvPath, StringSet{drv.outputName}});
+                pathsToBuild.push_back(DerivedPath::Built {
+                    staticDrvReq(drv.drvPath),
+                    StringSet{drv.outputName},
+                });
 
                 manifest.elements.emplace_back(std::move(element));
             } else {
@@ -272,11 +275,15 @@ struct CmdProfileInstall : InstallablesCommand, MixDefaultProfile
                             element.storePaths.insert(bo.path);
                         },
                         [&](const BuiltPath::Built & bfd) {
+                            auto drvPath = resolveBuiltPath(*store, *bfd.drvPath);
                             // TODO: Why are we querying if we know the output
                             // names already? Is it just to figure out what the
                             // default one is?
-                            for (auto & output : store->queryDerivationOutputMap(bfd.drvPath)) {
-                                pathsToBuild.push_back(DerivedPath::Built{bfd.drvPath, {output.first}});
+                            for (auto & output : resolveBuiltPath(*store, bfd)) {
+                                pathsToBuild.push_back(DerivedPath::Built {
+                                    staticDrvReq(drvPath),
+                                    {output.first},
+                                });
                                 element.storePaths.insert(output.second);
                             }
                         },
@@ -434,7 +441,10 @@ struct CmdProfileUpgrade : virtual SourceExprCommand, MixDefaultProfile, MixProf
                     attrPath,
                 };
 
-                pathsToBuild.push_back(DerivedPath::Built{drv.drvPath, {drv.outputName}});
+                pathsToBuild.push_back(DerivedPath::Built {
+                    staticDrvReq(drv.drvPath),
+                    {drv.outputName}
+                });
             }
         }
 

@@ -1088,6 +1088,19 @@ void LocalDerivationGoal::writeStructuredAttrs()
 }
 
 
+static StorePath pathPartOfReq(const SingleDerivedPath & req)
+{
+    return std::visit(overloaded {
+        [&](const SingleDerivedPath::Opaque & bo) {
+            return bo.path;
+        },
+        [&](const SingleDerivedPath::Built & bfd)  {
+            return pathPartOfReq(*bfd.drvPath);
+        },
+    }, req.raw());
+}
+
+
 static StorePath pathPartOfReq(const DerivedPath & req)
 {
     return std::visit(overloaded {
@@ -1095,7 +1108,7 @@ static StorePath pathPartOfReq(const DerivedPath & req)
             return bo.path;
         },
         [&](const DerivedPath::Built & bfd)  {
-            return bfd.drvPath;
+            return pathPartOfReq(*bfd.drvPath);
         },
     }, req.raw());
 }
@@ -1250,23 +1263,21 @@ struct RestrictedStore : public virtual RestrictedStoreConfig, public virtual Lo
         next->buildPaths(paths, buildMode);
 
         for (auto & path : paths) {
-            auto p =  std::get_if<DerivedPath::Built>(&path);
+            auto p = std::get_if<DerivedPath::Built>(&path);
             if (!p) continue;
             auto & bfd = *p;
-            auto drv = readDerivation(bfd.drvPath);
+            auto drv = readDerivation(resolveDerivedPath(*next, *bfd.drvPath));
             auto drvHashes = staticOutputHashes(*this, drv);
-            auto outputs = next->queryDerivationOutputMap(bfd.drvPath);
-            for (auto & [outputName, outputPath] : outputs)
-                if (wantOutput(outputName, bfd.outputs)) {
-                    newPaths.insert(outputPath);
-                    if (settings.isExperimentalFeatureEnabled("ca-derivations")) {
-                        auto thisRealisation = next->queryRealisation(
-                            DrvOutput{drvHashes.at(outputName), outputName}
-                        );
-                        assert(thisRealisation);
-                        newRealisations.insert(*thisRealisation);
-                    }
+            for (auto & [outputName, output] : resolveDerivedPath(*next, bfd)) {
+                newPaths.insert(output);
+                if (settings.isExperimentalFeatureEnabled("ca-derivations")) {
+                    auto thisRealisation = next->queryRealisation(
+                        DrvOutput{drvHashes.at(outputName), outputName}
+                    );
+                    assert(thisRealisation);
+                    newRealisations.insert(*thisRealisation);
                 }
+            }
         }
 
         StorePathSet closure;

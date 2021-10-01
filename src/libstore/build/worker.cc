@@ -110,7 +110,11 @@ GoalPtr Worker::makeGoal(const DerivedPath & req, BuildMode buildMode)
 {
     return std::visit(overloaded {
         [&](const DerivedPath::Built & bfd) -> GoalPtr {
-            return makeDerivationGoal(bfd.drvPath, bfd.outputs, buildMode);
+            if (auto bop = std::get_if<DerivedPath::Opaque>(&*bfd.drvPath))
+                return makeDerivationGoal(bop->path, bfd.outputs, buildMode);
+            else
+                // TODO
+                assert(false);
         },
         [&](const DerivedPath::Opaque & bo) -> GoalPtr {
             return makePathSubstitutionGoal(bo.path, buildMode == bmRepair ? Repair : NoRepair);
@@ -248,7 +252,7 @@ void Worker::run(const Goals & _topGoals)
     for (auto & i : _topGoals) {
         topGoals.insert(i);
         if (auto goal = dynamic_cast<DerivationGoal *>(i.get())) {
-            topPaths.push_back(DerivedPath::Built{goal->drvPath, goal->wantedOutputs});
+            topPaths.push_back(DerivedPath::Built{staticDrvReq(goal->drvPath), goal->wantedOutputs});
         } else if (auto goal = dynamic_cast<PathSubstitutionGoal *>(i.get())) {
             topPaths.push_back(DerivedPath::Opaque{goal->storePath});
         }
