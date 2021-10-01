@@ -45,7 +45,7 @@ void EvalState::realiseContext(const PathSet & context)
         if (!store->isValidPath(ctx))
             throw InvalidPathError(store->printStorePath(ctx));
         if (!outputName.empty() && ctx.isDerivation()) {
-            drvs.push_back({ctx, {outputName}});
+            drvs.push_back({staticDrvReq(ctx), {outputName}});
         }
     }
 
@@ -54,7 +54,7 @@ void EvalState::realiseContext(const PathSet & context)
     if (!evalSettings.enableImportFromDerivation)
         throw Error(
             "cannot build '%1%' during evaluation because the option 'allow-import-from-derivation' is disabled",
-            store->printStorePath(drvs.begin()->drvPath));
+            drvs.begin()->to_string(*store));
 
     /* For performance, prefetch all substitute info. */
     StorePathSet willBuild, willSubstitute, unknown;
@@ -67,17 +67,10 @@ void EvalState::realiseContext(const PathSet & context)
 
     /* Add the output of this derivations to the allowed
        paths. */
-    if (allowedPaths) {
-        for (auto & [drvPath, outputs] : drvs) {
-            auto outputPaths = store->queryDerivationOutputMap(drvPath);
-            for (auto & outputName : outputs) {
-                if (outputPaths.count(outputName) == 0)
-                    throw Error("derivation '%s' does not have an output named '%s'",
-                            store->printStorePath(drvPath), outputName);
-                allowedPaths->insert(store->printStorePath(outputPaths.at(outputName)));
-            }
-        }
-    }
+    if (allowedPaths)
+        for (auto & drv : drvs)
+            for (auto & [_, output] : resolveDerivedPath(*store, drv))
+                allowedPaths->insert(store->printStorePath(output));
 }
 
 /* Add and attribute to the given attribute map from the output name to

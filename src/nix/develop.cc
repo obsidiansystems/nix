@@ -219,7 +219,7 @@ static StorePath getDerivationEnvironment(ref<Store> store, ref<Store> evalStore
     auto shellDrvPath = writeDerivation(*evalStore, drv);
 
     /* Build the derivation. */
-    store->buildPaths({DerivedPath::Built{shellDrvPath}}, bmNormal, evalStore);
+    store->buildPaths({DerivedPath::Built{staticDrvReq(shellDrvPath)}}, bmNormal, evalStore);
 
     for (auto & [_0, optPath] : evalStore->queryPartialDerivationOutputMap(shellDrvPath)) {
         assert(optPath);
