@@ -98,7 +98,7 @@ static void mkOutputString(EvalState & state, Value & v,
                we build the floating CA derivation */
             /* FIXME: we need to depend on the basic derivation, not
                derivation */
-            : downstreamPlaceholder(*state.store, drvPath, o.first),
+            : DownstreamPlaceholder { drvPath, o.first }.render(),
         {"!" + o.first + "!" + state.store->printStorePath(drvPath)});
 }
 
@@ -1075,7 +1075,7 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
                 if (j.isDerivation()) {
                     Derivation jDrv = state.store->readDerivation(j);
                     if(jDrv.type() != DerivationType::CAFloating)
-                        drv.inputDrvs[j] = jDrv.outputNames();
+                        drv.inputDrvs.map[j] = DerivedPathMap<StringSet>::Node { jDrv.outputNames() };
                 }
             }
         }
@@ -1083,7 +1083,7 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
         /* Handle derivation outputs of the form ‘!<name>!<path>’. */
         else if (path.at(0) == '!') {
             std::pair<string, string> ctx = decodeContext(path);
-            drv.inputDrvs[state.store->parseStorePath(ctx.first)].insert(ctx.second);
+            drv.inputDrvs.map[state.store->parseStorePath(ctx.first)].value.insert(ctx.second);
         }
 
         /* Otherwise it's a source file. */
@@ -1171,29 +1171,30 @@ static void prim_derivationStrict(EvalState & state, const Pos & pos, Value * * 
         // hash per output.
         auto hashModulo = hashDerivationModulo(*state.store, Derivation(drv), true);
         std::visit(overloaded {
-            [&](Hash & h) {
-                for (auto & i : outputs) {
-                    auto outPath = state.store->makeOutputPath(i, h, drvName);
-                    drv.env[i] = state.store->printStorePath(outPath);
-                    drv.outputs.insert_or_assign(i,
-                        DerivationOutput {
-                            .output = DerivationOutputInputAddressed {
-                                .path = std::move(outPath),
-                            },
-                        });
-                }
+            [&](DrvHash & drvHash) {
+                auto & h = drvHash.hash;
+                if (drvHash.isDeferred)
+                    for (auto & i : outputs) {
+                        drv.outputs.insert_or_assign(i,
+                            DerivationOutput {
+                                .output = DerivationOutputDeferred{},
+                            });
+                    }
+                else
+                    for (auto & i : outputs) {
+                        auto outPath = state.store->makeOutputPath(i, h, drvName);
+                        drv.env[i] = state.store->printStorePath(outPath);
+                        drv.outputs.insert_or_assign(i,
+                            DerivationOutput {
+                                .output = DerivationOutputInputAddressed {
+                                    .path = std::move(outPath),
+                                },
+                            });
+                    }
             },
             [&](CaOutputHashes &) {
                 // Shouldn't happen as the toplevel derivation is not CA.
                 assert(false);
-            },
-            [&](DeferredHash &) {
-                for (auto & i : outputs) {
-                    drv.outputs.insert_or_assign(i,
-                        DerivationOutput {
-                            .output = DerivationOutputDeferred{},
-                        });
-                }
             },
         },
         hashModulo);

@@ -32,6 +32,22 @@ struct InstallableDerivedPath : Installable
     }
 };
 
+static std::variant<DownstreamPlaceholder, StorePath> makePlaceHolder(const SingleBuiltPath & req)
+{
+    return std::visit(overloaded {
+        [&](const SingleBuiltPath::Opaque & bo) -> std::variant<DownstreamPlaceholder, StorePath> {
+            return bo.path;
+        },
+        [&](const SingleBuiltPath::Built & bfd) -> std::variant<DownstreamPlaceholder, StorePath> {
+            return std::visit(
+                [&](auto && child) {
+                    return DownstreamPlaceholder { child, bfd.outputs.first };
+                }, 
+                makePlaceHolder(*bfd.drvPath));
+        },
+    }, req.raw());
+}
+
 /**
  * Return the rewrites that are needed to resolve a string whose context is
  * included in `dependencies`
@@ -40,12 +56,17 @@ StringPairs resolveRewrites(Store & store, const BuiltPaths dependencies)
 {
     StringPairs res;
     for (auto & dep : dependencies)
-        if (auto drvDep = std::get_if<BuiltPathBuilt>(&dep))
-            for (auto & [ outputName, outputPath ] : drvDep->outputs)
+        if (auto drvDep = std::get_if<BuiltPathBuilt>(&dep)) {
+        	auto deeper = makePlaceHolder(*drvDep->drvPath);
+        	for (auto & [ outputName, outputPath ] : drvDep->outputs)
                 res.emplace(
-                    downstreamPlaceholder(store, drvDep->drvPath->outPath(), outputName),
-                    store.printStorePath(outputPath)
-                );
+            		std::visit(
+            		    [&](const auto & child) {
+            		        return DownstreamPlaceholder { child, outputName };
+            		    }, 
+            		    deeper).render(),
+                    store.printStorePath(outputPath));
+        }
     return res;
 }
 

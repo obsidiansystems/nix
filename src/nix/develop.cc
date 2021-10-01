@@ -207,7 +207,9 @@ static StorePath getDerivationEnvironment(ref<Store> store, ref<Store> evalStore
             output.second = { .output = DerivationOutputInputAddressed { .path = StorePath::dummy } };
             drv.env[output.first] = "";
         }
-        Hash h = std::get<0>(hashDerivationModulo(*evalStore, drv, true));
+        DrvHash h0 = std::get<0>(hashDerivationModulo(*evalStore, drv, true));
+        assert(!h0.isDeferred);
+        Hash & h = h0.hash;
 
         for (auto & output : drv.outputs) {
             auto outPath = store->makeOutputPath(output.first, h, drv.name);
