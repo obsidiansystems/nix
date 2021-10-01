@@ -44,7 +44,8 @@ nix_tests = \
   recursive.sh \
   describe-stores.sh \
   flakes.sh \
-  text-hashed-output.sh \
+  dyn-drv/text-hashed-output.sh \
+  dyn-drv/build-built-drv.sh \
   build.sh \
   build-explicit-output.sh \
   compute-levels.sh \
