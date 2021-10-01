@@ -57,7 +57,7 @@ struct CmdBuild : InstallablesCommand, MixDryRun, MixJSON, MixProfile
             dryRun ? Realise::Derivation : Realise::Outputs,
             installables, buildMode);
 
-        if (json) logger->cout("%s", derivedPathsWithHintsToJSON(buildables, store).dump());
+        if (json) logger->cout("%s", derivedPathsWithHintsToJSON(buildables, *store).dump());
 
         if (dryRun) return;
 
