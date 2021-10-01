@@ -1,6 +1,7 @@
 #include "machines.hh"
 #include "worker.hh"
 #include "substitution-goal.hh"
+#include "outer-derivation-goal.hh"
 #include "derivation-goal.hh"
 #include "local-store.hh"
 
@@ -16,7 +17,7 @@ void Store::buildPaths(const std::vector<DerivedPath> & reqs, BuildMode buildMod
 
     worker.run(goals);
 
-    StorePathSet failed;
+    StringSet failed;
     std::optional<Error> ex;
     for (auto & i : goals) {
         if (i->ex) {
@@ -26,8 +27,10 @@ void Store::buildPaths(const std::vector<DerivedPath> & reqs, BuildMode buildMod
                 ex = i->ex;
         }
         if (i->exitCode != Goal::ecSuccess) {
-            if (auto i2 = dynamic_cast<DerivationGoal *>(i.get())) failed.insert(i2->drvPath);
-            else if (auto i2 = dynamic_cast<PathSubstitutionGoal *>(i.get())) failed.insert(i2->storePath);
+            if (auto i2 = dynamic_cast<OuterDerivationGoal *>(i.get()))
+                failed.insert(i2->drvReq->to_string(*this));
+            else if (auto i2 = dynamic_cast<PathSubstitutionGoal *>(i.get()))
+                failed.insert(printStorePath(i2->storePath));
         }
     }
 
@@ -36,7 +39,7 @@ void Store::buildPaths(const std::vector<DerivedPath> & reqs, BuildMode buildMod
         throw *ex;
     } else if (!failed.empty()) {
         if (ex) logError(ex->info());
-        throw Error(worker.exitStatus(), "build of %s failed", showPaths(failed));
+        throw Error(worker.exitStatus(), "build of %s failed", concatStringsSep(", ", quoteStrings(failed)));
     }
 }
 
@@ -115,7 +118,7 @@ void LocalStore::repairPath(const StorePath & path)
         auto info = queryPathInfo(path);
         if (info->deriver && isValidPath(*info->deriver)) {
             goals.clear();
-            goals.insert(worker.makeGoal(BuildableReqFromDrv { staticDrv(*info->deriver) }, bmRepair));
+            goals.insert(worker.makeGoal(DerivedPath::Built { staticDrvReq(*info->deriver) }, bmRepair));
             worker.run(goals);
         } else
             throw Error(worker.exitStatus(), "cannot repair path '%s'", printStorePath(path));
