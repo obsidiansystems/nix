@@ -46,6 +46,7 @@ nix_tests = \
   flakes.sh \
   text-hashed-output.sh \
   build.sh \
+  build-explicit-output.sh \
   compute-levels.sh \
   repl.sh \
   ca/build.sh \
