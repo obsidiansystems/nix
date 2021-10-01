@@ -285,7 +285,7 @@ connected:
         // 1. It’s not needed
         // 2. Changing the `inputSrcs` set changes the associated output ids,
         //  which break CA derivations
-        if (!drv.inputDrvs.empty())
+        if (!drv.inputDrvs.map.empty())
             drv.inputSrcs = store->parseStorePathSet(inputs);
 
         auto result = sshStore->buildDerivation(*drvPath, drv);
