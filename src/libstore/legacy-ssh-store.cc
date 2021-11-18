@@ -16,7 +16,12 @@ struct LegacySSHStore : public Store
     const Setting<int> maxConnections{this, 1, "max-connections", "maximum number of concurrent SSH connections"};
     const Setting<Path> sshKey{this, "", "ssh-key", "path to an SSH private key"};
     const Setting<bool> compress{this, false, "compress", "whether to compress the connection"};
-    const Setting<Path> remoteProgram{this, "nix-store", "remote-program", "path to the nix-store executable on the remote system"};
+    const Setting<Path> remoteProgram{
+        this,
+        getEnv("_NIX_TEST_LEGACY_SSH_REMOTE_PROGRAM", "nix-store"),
+        "remote-program",
+        "path to the nix-store executable on the remote system",
+    };
     const Setting<std::string> remoteStore{this, "", "remote-store", "URI of the store on the remote system"};
 
     // Hack for getting remote build log output.
