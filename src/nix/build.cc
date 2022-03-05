@@ -55,7 +55,7 @@ struct CmdBuild : InstallablesCommand, MixDryRun, MixJSON, MixProfile
         auto buildables = Installable::build(
             getEvalStore(), store,
             dryRun ? Realise::Derivation : Realise::Outputs,
-            installables, buildMode);
+            coreInstallables, buildMode);
 
         if (json) logger->cout("%s", derivedPathsWithHintsToJSON(buildables, store).dump());
 

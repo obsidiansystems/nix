@@ -108,6 +108,18 @@ the Nix store. Here are the recognised types of installables:
   attributes `packages.x86_64-linux.hello`,
   `legacyPackages.x86_64-linux.hello` and `hello`.
 
+* **Nix attributes**: `--file /path/to/nixpkgs hello`
+
+  When the `-f` / `--file` *path* option is given, installables are
+  interpreted as attribute paths referencing a value returned by
+  evaluating the Nix file *path*.
+
+* **Nix expressions**: `--expr '(import <nixpkgs> {}).hello.overrideDerivation (prev: { name = "my-hello"; })'`.
+
+  When the `--expr` option is given, all installables are interpreted
+  as Nix expressions. You may need to specify `--impure` if the
+  expression references impure inputs (such as `<nixpkgs>`).
+
 * **Store paths**: `/nix/store/v5sv61sszx301i0x6xysaqzla09nksnd-hello-2.10`
 
   These are paths inside the Nix store, or symlinks that resolve to a
@@ -129,18 +141,6 @@ the Nix store. Here are the recognised types of installables:
 
   If you want to operate on the store derivation itself, pass the
   `--derivation` flag.
-
-* **Nix attributes**: `--file /path/to/nixpkgs hello`
-
-  When the `-f` / `--file` *path* option is given, installables are
-  interpreted as attribute paths referencing a value returned by
-  evaluating the Nix file *path*.
-
-* **Nix expressions**: `--expr '(import <nixpkgs> {}).hello.overrideDerivation (prev: { name = "my-hello"; })'`.
-
-  When the `--expr` option is given, all installables are interpreted
-  as Nix expressions. You may need to specify `--impure` if the
-  expression references impure inputs (such as `<nixpkgs>`).
 
 For most commands, if no installable is specified, the default is `.`,
 i.e. Nix will operate on the default flake output attribute of the

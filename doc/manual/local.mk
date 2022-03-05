@@ -44,6 +44,8 @@ $(d)/src/SUMMARY.md: $(d)/src/SUMMARY.md.in $(d)/src/command-ref/new-cli
 	$(trace-gen) cat doc/manual/src/SUMMARY.md.in | while IFS= read line; do if [[ $$line = @manpages@ ]]; then cat doc/manual/src/command-ref/new-cli/SUMMARY.md; else echo "$$line"; fi; done > $@.tmp
 	@mv $@.tmp $@
 
+ifeq ($(NIX_FULL), 1)
+
 $(d)/src/command-ref/new-cli: $(d)/nix.json $(d)/generate-manpage.nix $(bindir)/nix
 	@rm -rf $@
 	$(trace-gen) $(nix-eval) --write-to $@ --expr 'import doc/manual/generate-manpage.nix { command = builtins.readFile $<; renderLinks = true; }'
@@ -53,6 +55,8 @@ $(d)/src/command-ref/conf-file.md: $(d)/conf-file.json $(d)/generate-options.nix
 	$(trace-gen) $(nix-eval) --expr 'import doc/manual/generate-options.nix (builtins.fromJSON (builtins.readFile $<))' >> $@.tmp
 	@mv $@.tmp $@
 
+endif
+
 $(d)/nix.json: $(bindir)/nix
 	$(trace-gen) $(dummy-env) $(bindir)/nix __dump-args > $@.tmp
 	@mv $@.tmp $@
@@ -61,11 +65,15 @@ $(d)/conf-file.json: $(bindir)/nix
 	$(trace-gen) $(dummy-env) $(bindir)/nix show-config --json --experimental-features nix-command > $@.tmp
 	@mv $@.tmp $@
 
+ifeq ($(NIX_FULL), 1)
+
 $(d)/src/expressions/builtins.md: $(d)/builtins.json $(d)/generate-builtins.nix $(d)/src/expressions/builtins-prefix.md $(bindir)/nix
 	@cat doc/manual/src/expressions/builtins-prefix.md > $@.tmp
 	$(trace-gen) $(nix-eval) --expr 'import doc/manual/generate-builtins.nix (builtins.fromJSON (builtins.readFile $<))' >> $@.tmp
 	@cat doc/manual/src/expressions/builtins-suffix.md >> $@.tmp
 	@mv $@.tmp $@
+
+endif
 
 $(d)/builtins.json: $(bindir)/nix
 	$(trace-gen) $(dummy-env) NIX_PATH=nix/corepkgs=corepkgs $(bindir)/nix __dump-builtins > $@.tmp

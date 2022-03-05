@@ -1,3 +1,5 @@
+NIX_FULL ?= 1
+
 makefiles = \
   mk/precompiled-headers.mk \
   local.mk \
@@ -5,10 +7,8 @@ makefiles = \
   src/libutil/tests/local.mk \
   src/libstore/local.mk \
   src/libstore/tests/local.mk \
-  src/libfetchers/local.mk \
   src/libmain/local.mk \
-  src/libexpr/local.mk \
-  src/libcmd/local.mk \
+  src/libstore-cmd/local.mk \
   src/nix/local.mk \
   src/resolve-system-dependencies/local.mk \
   scripts/local.mk \
@@ -21,6 +21,13 @@ makefiles = \
   doc/manual/local.mk \
   tests/local.mk \
   tests/plugins/local.mk
+
+ifeq ($(NIX_FULL), 1)
+makefiles += \
+  src/libfetchers/local.mk \
+  src/libexpr/local.mk \
+  src/libcmd/local.mk
+endif
 
 -include Makefile.config
 

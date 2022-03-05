@@ -1,7 +1,7 @@
 // FIXME: integrate this with nix path-info?
 // FIXME: rename to 'nix store show-derivation' or 'nix debug show-derivation'?
 
-#include "command.hh"
+#include "store-command.hh"
 #include "common-args.hh"
 #include "store-api.hh"
 #include "archive.hh"
@@ -10,7 +10,7 @@
 
 using namespace nix;
 
-struct CmdShowDerivation : InstallablesCommand
+struct CmdShowDerivation : CoreInstallablesCommand
 {
     bool recursive = false;
 
@@ -40,7 +40,7 @@ struct CmdShowDerivation : InstallablesCommand
 
     void run(ref<Store> store) override
     {
-        auto drvPaths = Installable::toDerivations(store, installables, true);
+        auto drvPaths = CoreInstallable::toDerivations(store, coreInstallables, true);
 
         if (recursive) {
             StorePathSet closure;

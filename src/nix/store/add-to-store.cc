@@ -1,4 +1,4 @@
-#include "command.hh"
+#include "store-command.hh"
 #include "common-args.hh"
 #include "store-api.hh"
 #include "archive.hh"

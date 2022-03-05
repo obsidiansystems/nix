@@ -108,7 +108,7 @@ App UnresolvedApp::resolve(ref<Store> evalStore, ref<Store> store)
 {
     auto res = unresolved;
 
-    std::vector<std::shared_ptr<Installable>> installableContext;
+    std::vector<std::shared_ptr<CoreInstallable>> installableContext;
 
     for (auto & ctxElt : unresolved.context)
         installableContext.push_back(

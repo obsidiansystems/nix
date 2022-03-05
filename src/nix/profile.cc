@@ -62,7 +62,7 @@ struct ProfileElement
         return std::tuple(describe(), storePaths) < std::tuple(other.describe(), other.storePaths);
     }
 
-    void updateStorePaths(ref<Store> evalStore, ref<Store> store, Installable & installable)
+    void updateStorePaths(ref<Store> evalStore, ref<Store> store, CoreInstallable & installable)
     {
         // FIXME: respect meta.outputsToInstall
         storePaths.clear();
@@ -253,7 +253,7 @@ struct CmdProfileInstall : InstallablesCommand, MixDefaultProfile
     {
         ProfileManifest manifest(*getEvalState(), *profile);
 
-        auto builtPaths = Installable::build(getEvalStore(), store, Realise::Outputs, installables, bmNormal);
+        auto builtPaths = CoreInstallable::build(getEvalStore(), store, Realise::Outputs, coreInstallables, bmNormal);
 
         for (auto & installable : installables) {
             ProfileElement element;
@@ -400,7 +400,7 @@ struct CmdProfileUpgrade : virtual SourceExprCommand, MixDefaultProfile, MixProf
 
         auto matchers = getMatchers(store);
 
-        std::vector<std::shared_ptr<Installable>> installables;
+        std::vector<std::shared_ptr<CoreInstallable>> installables;
         std::vector<size_t> indices;
 
         auto upgradedCount = 0;
@@ -456,7 +456,7 @@ struct CmdProfileUpgrade : virtual SourceExprCommand, MixDefaultProfile, MixProf
             warn ("Use 'nix profile list' to see the current profile.");
         }
 
-        auto builtPaths = Installable::build(getEvalStore(), store, Realise::Outputs, installables, bmNormal);
+        auto builtPaths = CoreInstallable::build(getEvalStore(), store, Realise::Outputs, installables, bmNormal);
 
         for (size_t i = 0; i < installables.size(); ++i) {
             auto & installable = installables.at(i);
