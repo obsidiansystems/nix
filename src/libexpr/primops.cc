@@ -37,7 +37,7 @@ namespace nix {
 InvalidPathError::InvalidPathError(const Path & path) :
     EvalError("path '%s' is not valid", path), path(path) {}
 
-StringMap EvalState::realiseContext(const PathSet & context, const Pos &pos, const string & reason)
+StringMap EvalState::realiseContext(const PathSet & context, const Pos &pos, const std::string & reason)
 {
     std::vector<DerivedPath::Built> drvs;
     StringMap res;
@@ -99,7 +99,7 @@ struct RealisePathFlags {
     bool checkForPureEval = true;
 };
 
-static Path realisePath(EvalState & state, const Pos & pos, Value & v, const string & reason, const RealisePathFlags flags = {})
+static Path realisePath(EvalState & state, const Pos & pos, Value & v, const std::string & reason, const RealisePathFlags flags = {})
 {
     PathSet context;
 
