@@ -25,11 +25,11 @@ static void fixupInput(Input & input)
     input.getType();
     input.getRef();
     if (input.getRev())
-        input.immutable = true;
+        input.locked = true;
     input.getRevCount();
     input.getLastModified();
     if (input.getNarHash())
-        input.immutable = true;
+        input.locked = true;
 }
 
 Input Input::fromURL(const ParsedURL & url)
@@ -66,7 +66,7 @@ Input Input::fromAttrs(Attrs && attrs)
 ParsedURL Input::toURL() const
 {
     if (!scheme)
-        throw Error("cannot show unsupported input '%s'", attrsToJson(attrs));
+        throw Error("cannot show unsupported input '%s'", attrsToJSON(attrs));
     return scheme->toURL(*this);
 }
 
@@ -111,7 +111,7 @@ bool Input::contains(const Input & other) const
 std::pair<Tree, Input> Input::fetch(ref<Store> store) const
 {
     if (!scheme)
-        throw Error("cannot fetch unsupported input '%s'", attrsToJson(toAttrs()));
+        throw Error("cannot fetch unsupported input '%s'", attrsToJSON(toAttrs()));
 
     /* The tree may already be in the Nix store, or it could be
        substituted (which is often faster than fetching from the
@@ -127,18 +127,31 @@ std::pair<Tree, Input> Input::fetch(ref<Store> store) const
             debug("using substituted/cached input '%s' in '%s'",
                 to_string(), store->printStorePath(storePath));
 
-            auto actualPath = store->toRealPath(storePath);
-
-            return {fetchers::Tree(std::move(actualPath), std::move(storePathDesc)), *this};
+            return {
+                Tree {
+                    .actualPath = store->toRealPath(storePath),
+                    .storePath = std::move(storePathDesc),
+                },
+                *this,
+            };
         } catch (Error & e) {
             debug("substitution of input '%s' failed: %s", to_string(), e.what());
         }
     }
 
-    auto [tree, input] = scheme->fetch(store, *this);
+    auto [storePath, input] = [&]() -> std::pair<StorePathDescriptor, Input> {
+        try {
+            return scheme->fetch(store, *this);
+        } catch (Error & e) {
+            e.addTrace({}, "while fetching the input '%s'", to_string());
+            throw;
+        }
+    }();
 
-    if (tree.actualPath == "")
-        tree.actualPath = store->toRealPath(store->makeFixedOutputPathFromCA(tree.storePath));
+    Tree tree {
+        .actualPath = store->toRealPath(store->makeFixedOutputPathFromCA(storePath)),
+        .storePath = storePath,
+    };
 
     auto narHash = store->queryPathInfo(tree.storePath)->narHash;
     input.attrs.insert_or_assign("narHash", narHash.to_string(SRI, true));
@@ -161,7 +174,7 @@ std::pair<Tree, Input> Input::fetch(ref<Store> store) const
                 input.to_string(), *prevRevCount);
     }
 
-    input.immutable = true;
+    input.locked = true;
 
     assert(input.hasAllInfo());
 
@@ -196,13 +209,18 @@ void Input::markChangedFile(
     return scheme->markChangedFile(*this, file, commitMsg);
 }
 
+std::string Input::getName() const
+{
+    return maybeGetStrAttr(attrs, "name").value_or("source");
+}
+
 StorePathDescriptor Input::computeStorePath(Store & store) const
 {
     auto narHash = getNarHash();
     if (!narHash)
-        throw Error("cannot compute store path for mutable input '%s'", to_string());
+        throw Error("cannot compute store path for unlocked input '%s'", to_string());
     return StorePathDescriptor {
-        "source",
+        getName(),
         FixedOutputInfo {
             {
                 .method = FileIngestionMethod::Recursive,
@@ -238,9 +256,18 @@ std::optional<std::string> Input::getRef() const
 
 std::optional<Hash> Input::getRev() const
 {
-    if (auto s = maybeGetStrAttr(attrs, "rev"))
-        return Hash::parseAny(*s, htSHA1);
-    return {};
+    std::optional<Hash> hash = {};
+
+    if (auto s = maybeGetStrAttr(attrs, "rev")) {
+        try {
+            hash = Hash::parseAnyPrefixed(*s);
+        } catch (BadHash &e) {
+            // Default to sha1 for backwards compatibility with existing flakes
+            hash = Hash::parseAny(*s, htSHA1);
+        }
+    }
+
+    return hash;
 }
 
 std::optional<uint64_t> Input::getRevCount() const
@@ -259,7 +286,7 @@ std::optional<time_t> Input::getLastModified() const
 
 ParsedURL InputScheme::toURL(const Input & input)
 {
-    throw Error("don't know how to convert input '%s' to a URL", attrsToJson(input.attrs));
+    throw Error("don't know how to convert input '%s' to a URL", attrsToJSON(input.attrs));
 }
 
 Input InputScheme::applyOverrides(

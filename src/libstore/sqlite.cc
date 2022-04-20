@@ -1,4 +1,5 @@
 #include "sqlite.hh"
+#include "globals.hh"
 #include "util.hh"
 
 #include <sqlite3.h>
@@ -27,8 +28,12 @@ namespace nix {
 
 SQLite::SQLite(const Path & path, bool create)
 {
+    // useSQLiteWAL also indicates what virtual file system we need.  Using
+    // `unix-dotfile` is needed on NFS file systems and on Windows' Subsystem
+    // for Linux (WSL) where useSQLiteWAL should be false by default.
+    const char *vfs = settings.useSQLiteWAL ? 0 : "unix-dotfile";
     if (sqlite3_open_v2(path.c_str(), &db,
-            SQLITE_OPEN_READWRITE | (create ? SQLITE_OPEN_CREATE : 0), 0) != SQLITE_OK)
+            SQLITE_OPEN_READWRITE | (create ? SQLITE_OPEN_CREATE : 0), vfs) != SQLITE_OK)
         throw Error("cannot open SQLite database '%s'", path);
 
     if (sqlite3_busy_timeout(db, 60 * 60 * 1000) != SQLITE_OK)
@@ -66,7 +71,7 @@ uint64_t SQLite::getLastInsertedRowId()
     return sqlite3_last_insert_rowid(db);
 }
 
-void SQLiteStmt::create(sqlite3 * db, const string & sql)
+void SQLiteStmt::create(sqlite3 * db, const std::string & sql)
 {
     checkInterrupt();
     assert(!stmt);
@@ -147,14 +152,14 @@ void SQLiteStmt::Use::exec()
     int r = step();
     assert(r != SQLITE_ROW);
     if (r != SQLITE_DONE)
-        throwSQLiteError(stmt.db, fmt("executing SQLite statement '%s'", stmt.sql));
+        throwSQLiteError(stmt.db, fmt("executing SQLite statement '%s'", sqlite3_expanded_sql(stmt.stmt)));
 }
 
 bool SQLiteStmt::Use::next()
 {
     int r = step();
     if (r != SQLITE_DONE && r != SQLITE_ROW)
-        throwSQLiteError(stmt.db, fmt("executing SQLite query '%s'", stmt.sql));
+        throwSQLiteError(stmt.db, fmt("executing SQLite query '%s'", sqlite3_expanded_sql(stmt.stmt)));
     return r == SQLITE_ROW;
 }
 
@@ -210,8 +215,7 @@ void handleSQLiteBusy(const SQLiteBusy & e)
     if (now > lastWarned + 10) {
         lastWarned = now;
         logWarning({
-            .name = "Sqlite busy",
-            .hint = hintfmt(e.what())
+            .msg = hintfmt(e.what())
         });
     }
 
