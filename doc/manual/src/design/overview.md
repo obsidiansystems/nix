@@ -2,14 +2,21 @@
 
 Nix consists of layers that operate fairly independently.
 
-At the top is the *command line interface*.
+At the top is the *command line interface*, translating from invocations of Nix executables to interactions with the underlying layers.
 
-Below that is the Nix *expression language*, in which packages and configurations are written.
+Below that is the *Nix language*, a [purely functional programming](https://en.m.wikipedia.org/wiki/Purely_functional_programming) language.
+It is used to compose expressions which ultimately evaluate to self-contained *build steps*, used to derive *build results* from referenced *build inputs*.
 
-The command line and expression language are what users interact with most.
+::: {.note}
+The Nix language itself does not have a notion of *packages* or *configurations*.
+As far as we are concerned here, the inputs and results of a derivation are just data.
+In practice this amounts to a set of files in a file system.
+:::
 
-Below that is the *store layer*, Nix' machinery to represent tracked files, dependencies, and fully elaborated build plans.
-It is also used for executing those build plans.
-The store layer may not be as visible, but this is the heart of Nix.
+The command line and Nix language are what users interact with most.
 
-This chapter describes Nix starting with that bottom store layer, then working its way up until it reaches the more user-facing interfaces described in the rest of the manual."
+Underlying everything is the *Nix store*, a mechanism to keep track of build plans, data, and references between them.
+It can also execute *build instructions*, captured in the build plans, to produce new data.
+
+This chapter describes Nix starting at the bottom with the store layer, then working its way up to the user-facing components described in the rest of the manual.
+
