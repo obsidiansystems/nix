@@ -1,14 +1,19 @@
 # Reference scanning
 
-In most cases, Nix can automatically come up with the references that store objects ought to have, saving the user from doing additional bookkeeping.
+As discussed in a previous section, a store object is made up of file system objects and references to other store objects.
+
+Suppose we are trying to create a new store object that *ought* to have references, but we only have plain file system data.
+For example, imagine the file system data is a "shared library" (so, dll, dylib) that depends on other shared libraries, and those other shared libraries are already inside other store objects.
+How might we do this?
+
+One way would be to have the user manually write down this information.
+Another way would be to teach Nix to parse those files' headers and convert the "domain specific" dependency information within them.
+Both of these are a huge amount of work, both initially and as ongoing maintenance, and therefore not very attractive options.
+
+Nix instead opts to merely scan the file for store paths without making any attempt to parse it.
+This "simple, stupid" approach actually works quite well most of the time, and imposes very little burden on the end user.
 
 ## Why it works
-
-This might be surprising to users coming from elsewhere!
-Traditional build systems do not track dependencies between build artifacts, as the problem appears very challenging since file formats are numerous.
-It would seem either there would need to be a way to teach the build system how to parse arbitrary formats, or the build system would need to track references via manual annotations the user must write and, worse, keep up to date.
-I
-On of the best insights in the creation of Nix was how cut this Gordian knot.
 
 Store objects are, as previously mentioned, mounted at `<store-dir>/<hash>-<name>` when they are exposed to the file system.
 This is the textual form of a [store path](./paths.md).
