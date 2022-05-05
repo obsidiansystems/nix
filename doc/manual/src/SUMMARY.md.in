@@ -20,6 +20,7 @@
     - [Store Object](architecture/store/objects.md)
     - [Store Path](architecture/store/paths.md)
     - [Nix Archive](architecture/store/nar.md)
+    - [Reference Scanning](architecture/store/reference-scanning.md)
     - [Content-Addressing Store Objects](architecture/store/object-ca.md)
     - [Derivation](architecture/store/drvs/drvs.md)
       - [Input-Addressing](architecture/store/drvs/ia.md)
