@@ -6,7 +6,7 @@ Suppose we are trying to create a new store object that *ought* to have referenc
 For example, imagine the file system data is a "shared library" (so, dll, dylib) that depends on other shared libraries, and those other shared libraries are already inside other store objects.
 How might we do this?
 
-One way would be to have the user manually write down this information.
+One way would be to have the Nix user manually write down this information.
 Another way would be to teach Nix to parse those files' headers and convert the "domain specific" dependency information within them.
 Both of these are a huge amount of work, both initially and as ongoing maintenance, and therefore not very attractive options.
 
@@ -27,7 +27,7 @@ The result is that just scanning for hashes works quite well!
 ## How it works
 
 Hashes are scanned for, not entire store paths.
-Thus, nix would look for, e.g.,
+Thus, Nix would look for, e.g.,
 ```
 b6gvzjyb2pg0kjfwrjmg1vfhh54ad73z
 ```
@@ -38,7 +38,7 @@ not
 
 ## When it happens
 
-Scanning happens when store paths are created that could refer to other store paths.
+Scanning happens when store objects are created that could refer to other store paths.
 When source code is added, references are prohibited by fiat, and thus no scanning is needed.
 Build results can refer to other objects, so scanning does happen at the end of a build.
 
