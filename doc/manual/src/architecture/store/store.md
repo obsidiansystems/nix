@@ -1,6 +1,6 @@
 # Store
 
-A Nix store is a collection of [store objects](objects.md) with associated operations.
+A Nix store is a collection of [store objects](objects.md) which refer to one another.
 
 These store objects can hold arbitrary data, and Nix makes no distinction if they are used as build inputs, build results, or build plans.
 
@@ -8,18 +8,19 @@ A Nix store allows adding, retrieving, and deleting store objects.
 It can perform builds, that is, transform build inputs using instructions from the build plans into build outputs.
 It also keeps track of *references* between data and can therefore garbage-collect unused store objects.
 
-There exist different types of stores, which all follow this model.
-Examples:
-- store on the local file system
-- remote store accessible via SSH
-- binary cache store accessible via HTTP
+## Two models, abstract and concrete
 
-Every store with a file system representation has a *store directory*, which contains that store’s objects accessible through [store paths](paths.md).
-The store directory defaults to `/nix/store`, but is in principle arbitrary.
+The Nix store layer is the heart of Nix, the cornerstone of its design.
+It comes from two basic insights: a vision for build systems in the abstract based on functional programming, and an application of the vision to conventional software for conventional operating system.
+We could just present the combination of those two in the form of the current design of the Nix store, but we believe there is value introducing them separately.
+This still describes how Nix works, so this section still serves as a spec, but it also demonstrates with Nix's authors believe is a good way to think* about Nix.
+If one tries to learn the concrete specifics before learning the abstract model, the following text might come across as a wall of details without sufficient motivation.
+Conversely, if one learns the abstract model first, many of the concrete specifics will make more sense as miscellaneous details placed in the "slots" where the abstract model expects.
+The hope is that makes the material far less daunting, and helps it make sense in the mind of the reader.
 
 ## A [Rosetta stone](https://en.m.wikipedia.org/wiki/Rosetta_Stone) for build system terminology
 
-The Nix store's design is comparable to other build systems.
+Nix is far from the other project to try to envision build systems abstractly, and indeed the design of the Nix store is comparable to other work.
 Usage of terms is, for historic reasons, not entirely consistent within the Nix ecosystem, and still subject to slow change.
 
 The following translation table points out similarities and equivalent terms, to help clarify their meaning and inform consistent use in the future.
