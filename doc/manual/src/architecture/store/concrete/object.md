@@ -1,4 +1,4 @@
-giot st# Store Object
+# Store Object
 
 A concrete store object is the pair of
 
@@ -30,7 +30,10 @@ Every file system object is one of the following:
 
 ```idris
 data FileSystemObject
-  = File { isExecutable : Bool, contents : Bytes }
+  = File {
+      isExecutable : Bool,
+      contents     : Bytes,
+    }
   | Directory { entries : Map FileName FileSystemObject }
   | SymLink { target : Path }
 ```

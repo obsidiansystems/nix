@@ -6,10 +6,10 @@ An abstract store object in the abstract is a black box that can reference other
 In pseudo-code:
 
 ```idris
-data AbstractStoreObject
-data AbstractStoreObjectRef
+data StoreObject
+data StoreObjectRef
 
-getReferences : AbstractStoreObject -> Set AbstractStoreObjectRef
+getReferences : StoreObject -> Set StoreObjectRef
 ```
 
 References must not "dangle": in whatever context the object with the reference exists, the object being pointed to must also exists.
