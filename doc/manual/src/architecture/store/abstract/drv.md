@@ -1,4 +1,4 @@
-# Abstract Derivations and derived references
+# Abstract Derivation and Derived Reference
 
 Abstract derivations and derived references are a mutually recursive concepts.
 

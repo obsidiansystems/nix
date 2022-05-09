@@ -4,6 +4,8 @@ The concrete model reconciles this abstract vision with the reality of Unix as i
 Store objects own file system data, reference can be encoded as file system paths, and build steps run arbitrary processes.
 As none of these three Unix abstractions are inherently "functional" per the properties above, it is up to Nix to enforce those properties.
 
+## One interface, many implementations
+
 There exists different types of stores, which all follow this model.
 Examples:
 - store on the local file system
