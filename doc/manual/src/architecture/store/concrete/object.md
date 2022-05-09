@@ -1,9 +1,10 @@
 # Store Object
 
-A concrete store object is the pair of
+Concrete Store objects comes in a few variations of Nix, but the basic model of a store object is the triple of
 
   - a [file system object](#file-system-object)
   - a set of [references](#references) to store objects.
+  - a name
 
 While the abstract model allows references and other data to be intermingled, the concrete model strictly separates them in this way.
 
@@ -13,11 +14,16 @@ data StoreObjectRef
 record StoreObject where
   root       : FileSystemObject
   references : Set StoreObjectRef
+  name       : String
 
 getReferences so = so.references
 ```
 
 We call a store object's outermost file system object the *root*.
+
+The string name is subject to this condition (taken from an error message in the implementation):
+
+> names are alphanumeric and can include the symbols +-._?= and must not begin with a period.
 
 ## File system object {#file-system-object}
 
@@ -51,3 +57,6 @@ The references independence from the file system reflects the fact that Unix has
 
 - Hard links are only permitted to files to trivially avoid cycles (since files do not have children/outgoing links.)
   Local stores allow hard links as a space optimization (which a safe one since store objects are immutable) but has no semantic content.
+
+Exactly what form the references take depends on the type of store object.
+We will provide more details in the following sections, leaving "store path reference" abstract for now.
