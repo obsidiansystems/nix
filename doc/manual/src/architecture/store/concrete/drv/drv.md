@@ -1,4 +1,4 @@
-# Derivation
+# Derivation and Derived Path
 
 Derivations are recipes to create store objects.
 
