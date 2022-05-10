@@ -42,6 +42,11 @@ It may seem superfluous that multiple outputs can be returned, when a single sto
 It is indeed superfluous in the abstract, but makes sense for concrete Nix for reasons that will be given in the second half of this chapter on the concrete Nix store.
 :::
 
+Built steps are "atomic" in the sense that Nix doesn't care about any intermediate result between "success, produced all output" and "failed, produced no outputs".
+Caching build plans at the granularity of individual build steps is *immensely* important, and the *raison d'être* of any build system.
+Caching at any finer granularity by contrast is explicitly out of scope.
+If you want finer-grained caching, break out your build plan into finer-grained derivations and outputs!
+
 ### Abstract Derived References
 
 Derived references are a generalization of store object references to allow referring to existing or yet-to-be-built store objects.
