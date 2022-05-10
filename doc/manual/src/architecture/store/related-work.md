@@ -30,16 +30,18 @@ c.f. John Shutt's modern fexprs, when the syntax can "leak".
 This is close to Git's model, but with one crucial difference:
 Git puts the "permission" info within the directory map's values instead of making it part of the file (blob, in it's parlance) object.
 
-    data GitObject
-      = Blob ByteString
-      | Tree (Map FileName (Persission, FSO))
+```idris
+data GitObject
+  = Blob ByteString
+  | Tree (Map FileName (Persission, FSO))
 
-    data Persission
-      = Directory -- IFF paired with tree
-      -- Iff paired with blob, one of:
-      | RegFile
-      | ExecutableFile
-      | Symlink
+data Persission
+  = Directory -- IFF paired with tree
+  -- Iff paired with blob, one of:
+  | RegFile
+  | ExecutableFile
+  | Symlink
+```
 
 So long as the root object is a directory, the representations are isomorphic.
 There is no "wiggle room" the git way since whenever the permission info wouldn't matter (e.g. the child object being mapped to is a directory), the permission info must be a sentinel value.
@@ -51,10 +53,10 @@ Git's model matches Unix tradition, but Nix's model is more natural.
 
 ## Machine models
 
-TODO
-Derivations as store objects via drv files makes Nix a "Von Neumann" archicture.
-Can also imagine a "Harvard" archicture where derivations are stored separately?
+Derivations as store objects via drv files makes Nix a "Von Neumann" architecture.
+Can also imagine a "Harvard" architecture where derivations are stored separately?
 Can we in general imagine N heaps for N different sorts of objects?
+See note in the section on [abstract derivations and derived paths](./abstract/drv.md).
 
 TODO
 Also, leaning on the notion of "builtin builders" more, having multiple different sorts of user-defined builders too.
