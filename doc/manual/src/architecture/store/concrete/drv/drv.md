@@ -67,6 +67,10 @@ Most outputs are named `drv.name + '-' + outputName`.
 However, an output named "out" is just has name `drv.name`.
 This is to allow derivations with a single output to avoid a superfluous `-<outputName>` in their single output's name when no disambiguation is needed.
 
+### Placeholders
+
+TODO
+
 ### Referencing
 
 Derivations are always referred to by the store path of the store object they are encoded to.
