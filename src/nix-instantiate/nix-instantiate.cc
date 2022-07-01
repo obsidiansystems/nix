@@ -158,6 +158,7 @@ static int main_nix_instantiate(int argc, char * * argv)
 
         auto state = std::make_unique<EvalState>(myArgs.searchPath, evalStore, store);
         state->repair = repair;
+        std::cout << "Printing stuff out check it";
 
         Bindings & autoArgs = *myArgs.getAutoArgs(*state);
 
