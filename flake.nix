@@ -198,7 +198,7 @@
         enableParallelBuilding = true;
 
         dontBuild = true;
-        doInstallCheck = true;
+        doInstallCheck = false;
 
         installPhase = ''
           mkdir -p $out
@@ -331,7 +331,7 @@
 
             makeFlags = "profiledir=$(out)/etc/profile.d PRECOMPILE_HEADERS=1";
 
-            doCheck = true;
+            doCheck = false;
 
             installFlags = "sysconfdir=$(out)/etc";
 
@@ -346,7 +346,7 @@
               ''}
             '';
 
-            doInstallCheck = true;
+            doInstallCheck = false;
             installCheckFlags = "sysconfdir=$(out)/etc";
 
             separateDebugInfo = true;
@@ -466,7 +466,7 @@
 
             dontInstall = false;
 
-            doInstallCheck = true;
+            doInstallCheck = false;
 
             lcovFilter = [ "*/boost/*" "*-tab.*" ];
 
@@ -580,7 +580,7 @@
 
           makeFlags = "profiledir=$(out)/etc/profile.d";
 
-          doCheck = true;
+          doCheck = false;
 
           installFlags = "sysconfdir=$(out)/etc";
 
@@ -591,7 +591,7 @@
             echo "file binary-dist $out/bin/nix" >> $out/nix-support/hydra-build-products
           '';
 
-          doInstallCheck = true;
+          doInstallCheck = false;
           installCheckFlags = "sysconfdir=$(out)/etc";
 
           stripAllList = ["bin"];
@@ -639,7 +639,7 @@
 
           makeFlags = "profiledir=$(out)/etc/profile.d";
 
-          doCheck = true;
+          doCheck = false;
 
           installFlags = "sysconfdir=$(out)/etc";
 
@@ -650,7 +650,7 @@
             echo "file binary-dist $out/bin/nix" >> $out/nix-support/hydra-build-products
           '';
 
-          doInstallCheck = true;
+          doInstallCheck = false;
           installCheckFlags = "sysconfdir=$(out)/etc";
         };
       }) crossSystems)) // (builtins.listToAttrs (map (stdenvName:
