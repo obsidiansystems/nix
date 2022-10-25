@@ -74,11 +74,10 @@ static RegisterStoreImplementation<UDSRemoteStore, UDSRemoteStoreConfig> regUDSR
 
 struct UDSNoFSRemoteStoreConfig : virtual RemoteStoreConfig
 {
-    UDSNoFSRemoteStoreConfig(const Store::Params & params)
-        : StoreConfig(params)
-        , RemoteStoreConfig(params)
-    {
-    }
+    using RemoteStoreConfig::RemoteStoreConfig;
+
+    const PathSetting rootDir{(StoreConfig*) this, true, "",
+        "root", "directory prefixed to all other paths"};
 
     const std::string name() override { return "Local Daemon Store (remote fs)"; }
 };
@@ -124,6 +123,13 @@ private:
     // FIXME extend daemon protocol, move implementation to RemoteStore
     std::optional<std::string> getBuildLog(const StorePath & path) override
     { unsupported("getBuildLog"); }
+
+    Path toRealPath(const Path & storePath) override
+    {
+        if (rootDir == "") { unsupported("queryAllValidPaths"); }
+        // return getRealStoreDir() + "/" + std::string(storePath, storeDir.size() + 1);
+        return (std::string) rootDir + "/" + std::string(storePath, storeDir.size() + 1);
+    }
 
     ref<RemoteStore::Connection> openConnection() override
     {
