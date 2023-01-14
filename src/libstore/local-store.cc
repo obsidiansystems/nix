@@ -1206,7 +1206,7 @@ void LocalStore::registerValidPaths(const ValidPathInfos & infos)
 
         for (auto & [_, i] : infos) {
             auto referrer = queryValidPathId(*state, i.path);
-            for (auto & j : i.referencesPossiblyToSelf())
+            for (auto & j : i.referencesIterable())
                 state->stmts->AddReference.use()(referrer)(queryValidPathId(*state, j)).exec();
         }
 

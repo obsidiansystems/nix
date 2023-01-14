@@ -2774,12 +2774,12 @@ void LocalDerivationGoal::checkOutputs(const std::map<std::string, ValidPathInfo
                 auto i = outputsByPath.find(worker.store.printStorePath(path));
                 if (i != outputsByPath.end()) {
                     closureSize += i->second.narSize;
-                    for (auto & ref : i->second.referencesPossiblyToSelf())
+                    for (auto & ref : i->second.referencesIterable())
                         pathsLeft.push(ref);
                 } else {
                     auto info = worker.store.queryPathInfo(path);
                     closureSize += info->narSize;
-                    for (auto & ref : info->referencesPossiblyToSelf())
+                    for (auto & ref : info->referencesIterable())
                         pathsLeft.push(ref);
                 }
             }

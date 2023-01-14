@@ -336,7 +336,7 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
         logger->startWork();
         StorePathSet paths;
         if (op == wopQueryReferences)
-            for (auto & i : store->queryPathInfo(path)->referencesPossiblyToSelf())
+            for (auto & i : store->queryPathInfo(path)->referencesIterable())
                 paths.insert(i);
         else if (op == wopQueryReferrers)
             store->queryReferrers(path, paths);

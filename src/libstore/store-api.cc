@@ -815,7 +815,7 @@ std::string Store::makeValidityRegistration(const StorePathSet & paths,
 
         s += (format("%1%\n") % info->references.size()).str();
 
-        for (auto & j : info->referencesPossiblyToSelf())
+        for (auto & j : info->referencesIterable())
             s += printStorePath(j) + "\n";
     }
 
@@ -877,7 +877,7 @@ json Store::pathInfoToJSON(const StorePathSet & storePaths,
 
             {
                 auto& jsonRefs = (jsonPath["references"] = json::array());
-                for (auto & ref : info->referencesPossiblyToSelf())
+                for (auto & ref : info->referencesIterable())
                     jsonRefs.emplace_back(printStorePath(ref));
             }
 
@@ -1310,7 +1310,7 @@ bool ValidPathInfo::checkSignature(const Store & store, const PublicKeys & publi
 Strings ValidPathInfo::shortRefs() const
 {
     Strings refs;
-    for (auto & r : referencesPossiblyToSelf())
+    for (auto & r : referencesIterable())
         refs.push_back(std::string(r.to_string()));
     return refs;
 }

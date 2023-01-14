@@ -1,5 +1,6 @@
 #pragma once
 
+#include "comparator.hh"
 #include "crypto.hh"
 #include "path.hh"
 #include "hash.hh"
@@ -87,6 +88,10 @@ struct ValidPathInfo
     void insertReferencePossiblyToSelf(StorePath && ref);
     void setReferencesPossiblyToSelf(StorePathSet && refs);
 
+    struct ReferencesIterable;
+
+    ReferencesIterable referencesIterable() const;
+
     static const size_t maxSigs = std::numeric_limits<size_t>::max();
 
     /* Return the number of signatures on this .narinfo that were
@@ -117,4 +122,29 @@ struct ValidPathInfo
 
 typedef std::map<StorePath, ValidPathInfo> ValidPathInfos;
 
+struct ValidPathInfo::ReferencesIterable {
+    const ValidPathInfo & info;
+
+    class const_iterator {
+        const StorePath & self;
+        StoreReferences::const_iterator iter;
+
+        typedef const StorePath reference;
+
+        const_iterator(const StorePath & self, StoreReferences::const_iterator iter)
+            : self(self), iter(iter)
+        { }
+
+    public:
+        reference & operator *() const;
+        void operator ++();
+
+        GENERATE_EQUAL(const_iterator, &me->self, me->iter);
+        GENERATE_NEQ  (const_iterator, &me->self, me->iter);
+
+        friend ReferencesIterable;
+    };
+    const_iterator begin() const;
+    const_iterator end() const;
+};
 }

@@ -18,6 +18,44 @@ void ValidPathInfo::setReferencesPossiblyToSelf(StorePathSet && refs)
     return references.setPossiblyToSelf(path, std::move(refs));
 }
 
+
+ValidPathInfo::ReferencesIterable ValidPathInfo::referencesIterable() const
+{
+    return ReferencesIterable {
+        .info = *this,
+    };
+}
+
+ValidPathInfo::ReferencesIterable::const_iterator ValidPathInfo::ReferencesIterable::begin() const
+{
+    return const_iterator {
+        info.path,
+        info.references.begin(),
+    };
+}
+
+ValidPathInfo::ReferencesIterable::const_iterator ValidPathInfo::ReferencesIterable::end() const
+{
+    return const_iterator {
+        info.path,
+        info.references.end(),
+    };
+}
+
+const StorePath &
+ValidPathInfo::ReferencesIterable::const_iterator::operator *() const
+{
+    auto * p = *iter;
+    return p ? *p : self;
+}
+
+void
+ValidPathInfo::ReferencesIterable::const_iterator::operator ++()
+{
+    ++iter;
+}
+
+
 ValidPathInfo ValidPathInfo::read(Source & source, const Store & store, unsigned int format)
 {
     return read(source, store, format, store.parseStorePath(readString(source)));

@@ -344,7 +344,7 @@ static void opQuery(Strings opFlags, Strings opArgs)
                 for (auto & j : ps) {
                     if (query == qRequisites) store->computeFSClosure(j, paths, false, includeOutputs);
                     else if (query == qReferences) {
-                        for (auto & p : store->queryPathInfo(j)->referencesPossiblyToSelf())
+                        for (auto & p : store->queryPathInfo(j)->referencesIterable())
                             paths.insert(p);
                     }
                     else if (query == qReferrers) {

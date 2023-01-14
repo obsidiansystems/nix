@@ -22,6 +22,11 @@ struct References
     void setPossiblyToSelf(const Ref & self, std::set<Ref> && refs);
 
     GENERATE_CMP(References<Ref>, me->others, me->self);
+
+    class const_iterator;
+
+    const_iterator begin() const;
+    const_iterator end() const;
 };
 
 template<typename Ref>
@@ -63,6 +68,77 @@ void References<Ref>::setPossiblyToSelf(const Ref & selfRef, std::set<Ref> && re
     }
 
     others = refs;
+}
+
+template<typename Ref>
+class References<Ref>::const_iterator {
+    enum struct Which { Self, Others };
+    Which which;
+    const bool & self;
+    typename std::set<Ref>::const_iterator others;
+
+    const_iterator(Which which, const bool & self, typename std::set<Ref>::const_iterator others)
+        : which(which), self(self), others(others)
+    { }
+
+public:
+    typedef const Ref * reference;
+
+    reference operator *() const;
+    void operator ++();
+
+    GENERATE_EQUAL(const_iterator, me->which, &me->self, me->others);
+    GENERATE_NEQ  (const_iterator, me->which, &me->self, me->others);
+
+    friend References<Ref>;
+};
+
+template<typename Ref>
+typename References<Ref>::const_iterator References<Ref>::begin() const
+{
+    return const_iterator {
+        const_iterator::Which::Self,
+        self,
+        others.begin(),
+    };
+}
+
+template<typename Ref>
+typename References<Ref>::const_iterator References<Ref>::end() const
+{
+    return const_iterator {
+        const_iterator::Which::Others,
+        self,
+        others.end(),
+    };
+}
+
+template<typename Ref>
+typename References<Ref>::const_iterator::reference References<Ref>::const_iterator::operator *() const
+{
+    switch (which) {
+    case Which::Self:
+        return nullptr;
+    case Which::Others:
+        return &*others;
+    default:
+        abort();
+    }
+}
+
+template<typename Ref>
+void References<Ref>::const_iterator::operator ++()
+{
+    switch (which) {
+    case Which::Self:
+        which = Which::Others;
+        break;
+    case Which::Others:
+        others++;
+        break;
+    default:
+        abort();
+    }
 }
 
 }
