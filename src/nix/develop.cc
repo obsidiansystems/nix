@@ -218,10 +218,10 @@ static StorePath getDerivationEnvironment(ref<Store> store, ref<Store> evalStore
             output.second = DerivationOutput::Deferred { };
             drv.env[output.first] = "";
         }
-        auto hashesModulo = hashDerivationModulo(*evalStore, drv, true);
+        auto h0 = hashDerivationModulo(*evalStore, drv, true);
+        const Hash & h = h0.requireNoFixedNonDeferred();
 
         for (auto & output : drv.outputs) {
-            Hash h = hashesModulo.hashes.at(output.first);
             auto outPath = store->makeOutputPath(output.first, h, drv.name);
             output.second = DerivationOutput::InputAddressed {
                 .path = outPath,

@@ -1359,31 +1359,34 @@ drvName, Bindings * attrs, Value & v)
                 DerivationOutput::Deferred { });
         }
 
-        auto hashModulo = hashDerivationModulo(*state.store, Derivation(drv), true);
-        switch (hashModulo.kind) {
-        case DrvHash::Kind::Regular:
-            for (auto & i : outputs) {
-                auto h = get(hashModulo.hashes, i);
-                if (!h)
-                    throw AssertionError({
-                        .msg = hintfmt("derivation produced no hash for output '%s'", i),
-                        .errPos = state.positions[noPos],
-                    });
-                auto outPath = state.store->makeOutputPath(i, *h, drvName);
-                drv.env[i] = state.store->printStorePath(outPath);
-                drv.outputs.insert_or_assign(
-                    i,
-                    DerivationOutput::InputAddressed {
-                        .path = std::move(outPath),
-                    });
-            }
-            break;
-            ;
-        case DrvHash::Kind::Deferred:
-            for (auto & i : outputs) {
-                drv.outputs.insert_or_assign(i, DerivationOutput::Deferred {});
-            }
-        }
+        // Regular, non-CA derivation should always return a single hash and not
+        // hash per output.
+        auto hashModulo = hashDerivationModulo(*state.store, drv, true);
+        std::visit(overloaded {
+            [&](const DrvHashModulo::Drv & drvHash) {
+                auto & h = drvHash.hash;
+                switch (drvHash.kind) {
+                case DrvHashModulo::Drv::Kind::Deferred:
+                    /* Outputs already deferred, nothing to do */
+                    break;
+                case DrvHashModulo::Drv::Kind::Regular:
+                    for (auto & [outputName, output] : drv.outputs) {
+                        auto outPath = state.store->makeOutputPath(outputName, h, drvName);
+                        drv.env[outputName] = state.store->printStorePath(outPath);
+                        output = DerivationOutput::InputAddressed {
+                            .path = std::move(outPath),
+                        };
+                    }
+                    break;
+                }
+            },
+            [&](const DrvHashModulo::CaOutputs &) {
+                // Shouldn't happen as the toplevel derivation is not CA.
+                assert(false);
+            },
+        },
+        hashModulo.raw);
+
     }
 
     /* Write the resulting term into the Nix store directory. */

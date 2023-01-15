@@ -407,41 +407,62 @@ bool isDerivation(std::string_view fileName);
  */
 std::string outputPathName(std::string_view drvName, std::string_view outputName);
 
-
-/**
- * The hashes modulo of a derivation.
- *
- * Each output is given a hash, although in practice only the content-addressed
- * derivations (fixed-output or not) will have a different hash for each
- * output.
- */
-struct DrvHash {
+struct DrvHashModulo {
     /**
-     * Map from output names to hashes
+     * Regular normalized derivation hash, and whether it was deferred
+     * (because an ancestor derivation is a floating content addressed
+     * derivation).
      */
-    std::map<std::string, Hash> hashes;
+    struct Drv {
+        Hash hash;
 
-    enum struct Kind : bool {
-        /**
-         * Statically determined derivations.
-         * This hash will be directly used to compute the output paths
-         */
-        Regular,
+        enum struct Kind : bool {
+            /**
+             * Statically determined derivations.
+             * This hash will be directly used to compute the output paths
+             */
+            Regular,
+
+            /**
+             * Floating-output derivations (and their reverse dependencies).
+             */
+            Deferred,
+        };
 
         /**
-         * Floating-output derivations (and their reverse dependencies).
+         * The kind of derivation this is, simplified for just "derivation hash
+         * modulo" purposes.
          */
-        Deferred,
+        Kind kind;
+
+        GENERATE_CMP(Drv, me->hash, me->kind);
     };
 
     /**
-     * The kind of derivation this is, simplified for just "derivation hash
-     * modulo" purposes.
+     * Known CA drv's output hashes, current just for fixed-output
+     * derivations whose output hashes are always known since they are
+     * fixed up-front.
      */
-    Kind kind;
+    typedef std::map<std::string, Hash> CaOutputs;
+
+    typedef std::variant<
+        Drv,
+        CaOutputs
+    > Raw;
+
+    Raw raw;
+
+    GENERATE_CMP(DrvHashModulo, me->raw);
+
+    MAKE_WRAPPER_CONSTRUCTOR(DrvHashModulo);
+
+    /* Get hash, throwing if it is per-output CA hashes or a
+       deferred Drv hash.
+     */
+    const Hash & requireNoFixedNonDeferred() const;
 };
 
-void operator |= (DrvHash::Kind & self, const DrvHash::Kind & other) noexcept;
+void operator |= (DrvHashModulo::Drv::Kind & self, const DrvHashModulo::Drv::Kind & other) noexcept;
 
 /**
  * Returns hashes with the details of fixed-output subderivations
@@ -467,7 +488,7 @@ void operator |= (DrvHash::Kind & self, const DrvHash::Kind & other) noexcept;
  * ATerm, after subderivations have been likewise expunged from that
  * derivation.
  */
-DrvHash hashDerivationModulo(Store & store, const Derivation & drv, bool maskOutputs);
+DrvHashModulo hashDerivationModulo(Store & store, const Derivation & drv, bool maskOutputs);
 
 /**
  * Return a map associating each output to a hash that uniquely identifies its
@@ -480,7 +501,7 @@ std::map<std::string, Hash> staticOutputHashes(Store & store, const Derivation &
 /**
  * Memoisation of hashDerivationModulo().
  */
-typedef std::map<StorePath, DrvHash> DrvHashes;
+typedef std::map<StorePath, DrvHashModulo> DrvHashes;
 
 // FIXME: global, though at least thread-safe.
 extern Sync<DrvHashes> drvHashes;
