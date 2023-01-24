@@ -30,4 +30,17 @@ namespace nix {
 
 template struct DerivedPathMap<std::weak_ptr<CreateDerivationAndRealiseGoal>>;
 
-}
+GENERATE_CMP_EXT(
+    template<>,
+    DerivedPathMap<std::set<std::string>>::ChildNode,
+    me->value,
+    me->childMap);
+
+GENERATE_CMP_EXT(
+    template<>,
+    DerivedPathMap<std::set<std::string>>,
+    me->map);
+
+template struct DerivedPathMap<std::set<std::string>>;
+
+};

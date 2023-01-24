@@ -41,6 +41,8 @@ struct DerivedPathMap {
          * The map of the root node.
          */
         Map childMap;
+
+        DECLARE_CMP(ChildNode);
     };
 
     /**
@@ -53,6 +55,8 @@ struct DerivedPathMap {
      */
     Map map;
 
+    DECLARE_CMP(DerivedPathMap);
+
     /**
      * Find the node for `k`, creating it if needed.
      *
@@ -62,5 +66,15 @@ struct DerivedPathMap {
      */
     ChildNode & ensureSlot(const SingleDerivedPath & k);
 };
+
+
+DECLARE_CMP_EXT(
+    template<>,
+    DerivedPathMap<std::set<std::string>>::,
+    DerivedPathMap<std::set<std::string>>);
+DECLARE_CMP_EXT(
+    template<>,
+    DerivedPathMap<std::set<std::string>>::ChildNode::,
+    DerivedPathMap<std::set<std::string>>::ChildNode);
 
 }

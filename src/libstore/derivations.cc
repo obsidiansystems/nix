@@ -136,7 +136,7 @@ StorePath writeDerivation(Store & store,
     const Derivation & drv, RepairFlag repair, bool readOnly)
 {
     auto references = drv.inputSrcs;
-    for (auto & i : drv.inputDrvs)
+    for (auto & i : drv.inputDrvs.map)
         references.insert(i.first);
     /* Note that the outputs of a derivation are *not* references
        (that can be missing (of course) and should not necessarily be
@@ -267,6 +267,28 @@ static DerivationOutput parseDerivationOutput(const Store & store, std::istrings
 }
 
 
+static DerivedPathMap<StringSet>::ChildNode parseDerivedPathMapNode(const Store & store, std::istringstream & str)
+{
+    DerivedPathMap<StringSet>::ChildNode node;
+    node.value = parseStrings(str, false);
+    char c = str.get();
+    switch (c) {
+    case ')':
+        return node;
+    case ',':
+        expect(str, "[");
+        while (!endOfList(str)) {
+            expect(str, "(");
+            auto outputName = parseString(str);
+            expect(str, ",[");
+            node.childMap.insert_or_assign(outputName, parseDerivedPathMapNode(store, str));
+        }
+        expect(str, ")");
+    }
+    return node;
+}
+
+
 Derivation parseDerivation(const Store & store, std::string && s, std::string_view name)
 {
     Derivation drv;
@@ -288,8 +310,7 @@ Derivation parseDerivation(const Store & store, std::string && s, std::string_vi
         expect(str, "(");
         Path drvPath = parsePath(str);
         expect(str, ",[");
-        drv.inputDrvs.insert_or_assign(store.parseStorePath(drvPath), parseStrings(str, false));
-        expect(str, ")");
+        drv.inputDrvs.map.insert_or_assign(store.parseStorePath(drvPath), parseDerivedPathMapNode(store, str));
     }
 
     expect(str, ",["); drv.inputSrcs = store.parseStorePathSet(parseStrings(str, true));
@@ -376,8 +397,24 @@ static void printUnquotedStrings(std::string & res, ForwardIterator i, ForwardIt
 }
 
 
+static void unparseDerivedPathMapNode(const Store & store, std::string & s, const DerivedPathMap<StringSet>::ChildNode & node)
+{
+    s += ','; printUnquotedStrings(s, node.value.begin(), node.value.end());
+    if (node.childMap.empty()) return;
+    s += ",[";
+    bool first = true;
+    for (auto & [outputName, childNode] : node.childMap) {
+        if (first) first = false; else s += ',';
+        s += '('; printUnquotedString(s, outputName);
+        unparseDerivedPathMapNode(store, s, childNode);
+        s += ')';
+    }
+    s += "]";
+}
+
+
 std::string Derivation::unparse(const Store & store, bool maskOutputs,
-    std::map<std::string, StringSet> * actualInputs) const
+    DerivedPathMap<StringSet>::ChildNode::Map * actualInputs) const
 {
     std::string s;
     s.reserve(65536);
@@ -421,17 +458,17 @@ std::string Derivation::unparse(const Store & store, bool maskOutputs,
     s += "],[";
     first = true;
     if (actualInputs) {
-        for (auto & i : *actualInputs) {
+        for (auto & [drvHashModulo, childMap] : *actualInputs) {
             if (first) first = false; else s += ',';
-            s += '('; printUnquotedString(s, i.first);
-            s += ','; printUnquotedStrings(s, i.second.begin(), i.second.end());
+            s += '('; printUnquotedString(s, drvHashModulo);
+            unparseDerivedPathMapNode(store, s, childMap);
             s += ')';
         }
     } else {
-        for (auto & i : inputDrvs) {
+        for (auto & [drvPath, childMap] : inputDrvs.map) {
             if (first) first = false; else s += ',';
-            s += '('; printUnquotedString(s, store.printStorePath(i.first));
-            s += ','; printUnquotedStrings(s, i.second.begin(), i.second.end());
+            s += '('; printUnquotedString(s, store.printStorePath(drvPath));
+            unparseDerivedPathMapNode(store, s, childMap);
             s += ')';
         }
     }
@@ -654,28 +691,29 @@ DrvHashModulo hashDerivationModulo(Store & store, const Derivation & drv, bool m
 
     /* For other derivations, replace the inputs paths with recursive
        calls to this function. */
-    std::map<std::string, StringSet> inputs2;
-    for (auto & [drvPath, inputOutputs0] : drv.inputDrvs) {
+    DerivedPathMap<StringSet>::ChildNode::Map inputs2;
+    for (auto & [drvPath, node0] : drv.inputDrvs.map) {
         // Avoid lambda capture restriction with standard / Clang
-        auto & inputOutputs = inputOutputs0;
+        auto & node = node0;
         const auto & res = pathDerivationModulo(store, drvPath);
         std::visit(overloaded {
             // Regular non-CA derivation, replace derivation
             [&](const DrvHashModulo::Drv & drvHash) {
                 kind |= drvHash.kind;
-                inputs2.insert_or_assign(drvHash.hash.to_string(Base16, false), inputOutputs);
+                inputs2.insert_or_assign(drvHash.hash.to_string(Base16, false), node);
             },
             // CA derivation's output hashes
             [&](const DrvHashModulo::CaOutputs & outputHashes) {
-                std::set<std::string> justOut = { "out" };
-                for (auto & outputName : inputOutputs) {
+                if (!node.childMap.empty())
+                    throw Error("Output of fixed output derivation cannot currently be treated as derivation");
+                for (auto & outputName : node.value) {
                     /* Put each one in with a single "out" output.. */
-                    const auto h = get(outputHashes, outputName);
+                    const auto * h = get(outputHashes, outputName);
                     if (!h)
                         throw Error("no hash for output '%s' of derivation '%s'", outputName, drv.name);
                     inputs2.insert_or_assign(
                         h->to_string(Base16, false),
-                        justOut);
+                        DerivedPathMap<StringSet>::ChildNode { { "out" } });
                 }
             },
         }, res.raw);
@@ -837,6 +875,8 @@ std::string hashPlaceholder(const std::string_view outputName)
 
 static void rewriteDerivation(Store & store, BasicDerivation & drv, const StringMap & rewrites)
 {
+    debug("Rewriting the derivation");
+
     for (auto & rewrite : rewrites) {
         debug("rewriting %s as %s", rewrite.first, rewrite.second);
     }
@@ -882,12 +922,68 @@ std::optional<BasicDerivation> Derivation::tryResolve(Store & store) const
 {
     std::map<std::pair<StorePath, std::string>, StorePath> inputDrvOutputs;
 
-    for (auto & input : inputDrvs)
-        for (auto & [outputName, outputPath] : store.queryPartialDerivationOutputMap(input.first))
-            if (outputPath)
-                inputDrvOutputs.insert_or_assign({input.first, outputName}, *outputPath);
+    std::function<void(const StorePath &, const DerivedPathMap<StringSet>::ChildNode &)> accum;
+    accum = [&](auto & inputDrv, auto & node) {
+        for (auto & [outputName, outputPath] : store.queryPartialDerivationOutputMap(inputDrv)) {
+            if (outputPath) {
+                inputDrvOutputs.insert_or_assign({inputDrv, outputName}, *outputPath);
+                if (auto p = get(node.childMap, outputName))
+                    accum(*outputPath, *p);
+            }
+        }
+    };
+
+    for (auto & [inputDrv, node] : inputDrvs.map)
+        accum(inputDrv, node);
 
     return tryResolve(store, inputDrvOutputs);
+}
+
+static bool tryResolveInput(
+    Store & store, StorePathSet & inputSrcs, StringMap & inputRewrites,
+    const DownstreamPlaceholder * placeholderOpt,
+    const StorePath & inputDrv, const DerivedPathMap<StringSet>::ChildNode & inputNode,
+    const std::map<std::pair<StorePath, std::string>, StorePath> & inputDrvOutputs)
+{
+    auto getOutput = [&](const std::string & outputName) {
+        auto * actualPathOpt = get(inputDrvOutputs, { inputDrv, outputName });
+        if (!actualPathOpt)
+            warn("output %s of input %s missing, aborting the resolving",
+                outputName,
+                store.printStorePath(inputDrv)
+            );
+        return actualPathOpt;
+    };
+
+    auto getPlaceholder = [&](const std::string & outputName) {
+        return placeholderOpt
+            ? DownstreamPlaceholder::unknownDerivation(*placeholderOpt, outputName)
+            : DownstreamPlaceholder::unknownCaOutput(inputDrv, outputName);
+    };
+
+    for (auto & outputName : inputNode.value) {
+        auto actualPathOpt = getOutput(outputName);
+        if (!actualPathOpt) return false;
+        auto actualPath = *actualPathOpt;
+        if (experimentalFeatureSettings.isEnabled(Xp::CaDerivations)) {
+            inputRewrites.emplace(
+                getPlaceholder(outputName).render(),
+                store.printStorePath(actualPath));
+        }
+        inputSrcs.insert(std::move(actualPath));
+    }
+
+    for (auto & [outputName, childNode] : inputNode.childMap) {
+        auto actualPathOpt = getOutput(outputName);
+        if (!actualPathOpt) return false;
+        auto actualPath = *actualPathOpt;
+        auto nextPlaceholder = getPlaceholder(outputName);
+        if (!tryResolveInput(store, inputSrcs, inputRewrites,
+            &nextPlaceholder, actualPath, childNode,
+            inputDrvOutputs))
+            return false;
+    }
+    return true;
 }
 
 std::optional<BasicDerivation> Derivation::tryResolve(
@@ -899,23 +995,10 @@ std::optional<BasicDerivation> Derivation::tryResolve(
     // Input paths that we'll want to rewrite in the derivation
     StringMap inputRewrites;
 
-    for (auto & [inputDrv, inputOutputs] : inputDrvs) {
-        for (auto & outputName : inputOutputs) {
-            if (auto actualPath = get(inputDrvOutputs, { inputDrv, outputName })) {
-                if (experimentalFeatureSettings.isEnabled(Xp::CaDerivations)) {
-                    inputRewrites.emplace(
-                        DownstreamPlaceholder::unknownCaOutput(inputDrv, outputName).render(),
-                        store.printStorePath(*actualPath));
-                }
-                resolved.inputSrcs.insert(*actualPath);
-            } else {
-                warn("output '%s' of input '%s' missing, aborting the resolving",
-                    outputName,
-                    store.printStorePath(inputDrv));
-                return {};
-            }
-        }
-    }
+    for (auto & [inputDrv, inputNode] : inputDrvs.map)
+        if (!tryResolveInput(store, resolved.inputSrcs, inputRewrites,
+            nullptr, inputDrv, inputNode, inputDrvOutputs))
+            return std::nullopt;
 
     rewriteDerivation(store, resolved, inputRewrites);
 
@@ -1101,10 +1184,25 @@ nlohmann::json Derivation::toJSON(const Store & store) const
     }
 
     {
-        auto& inputDrvsObj = res["inputDrvs"];
-        inputDrvsObj = nlohmann::json ::object();
-        for (auto & input : inputDrvs)
-            inputDrvsObj[store.printStorePath(input.first)] = input.second;
+        std::function<nlohmann::json(const DerivedPathMap<StringSet>::ChildNode &)> doInput;
+        doInput = [&](const auto & inputNode) {
+            auto value = nlohmann::json::object();
+            value["outputs"] = inputNode.value;
+            {
+                auto next = nlohmann::json::object();
+                for (auto & [outputId, childNode] : inputNode.childMap)
+                    next[outputId] = doInput(childNode);
+                value["deeper"] = std::move(next);
+            }
+            return value;
+        };
+        {
+            auto& inputDrvsObj = res["inputDrvs"];
+            inputDrvsObj = nlohmann::json::object();
+            for (auto & [inputDrv, inputNode] : inputDrvs.map) {
+                inputDrvsObj[store.printStorePath(inputDrv)] = doInput(inputNode);
+            }
+        }
     }
 
     res["system"] = platform;
@@ -1150,12 +1248,19 @@ Derivation Derivation::fromJSON(
     }
 
     try {
+        std::function<DerivedPathMap<StringSet>::ChildNode(const nlohmann::json &)> doInput;
+        doInput = [&](const auto & json) {
+            DerivedPathMap<StringSet>::ChildNode node;
+            node.value = static_cast<const StringSet &>(
+                ensureType(valueAt(json, "outputs"), value_t::array));
+            for (auto & [outputId, childNode] : ensureType(valueAt(json, "deeper"), value_t::object).items())
+                node.childMap[outputId] = doInput(childNode);
+            return node;
+        };
         auto & inputDrvsObj = ensureType(valueAt(json, "inputDrvs"), value_t::object);
-        for (auto & [inputDrvPath, inputOutputs] : inputDrvsObj.items()) {
-            ensureType(inputOutputs, value_t::array);
-            res.inputDrvs[store.parseStorePath(inputDrvPath)] =
-                static_cast<const StringSet &>(inputOutputs);
-        }
+        for (auto & [inputDrvPath, inputOutputs] : inputDrvsObj.items())
+            res.inputDrvs.map[store.parseStorePath(inputDrvPath)] =
+                doInput(inputOutputs);
     } catch (Error & e) {
         e.addTrace({}, "while reading key 'inputDrvs'");
         throw;

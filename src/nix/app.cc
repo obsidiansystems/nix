@@ -11,6 +11,25 @@
 
 namespace nix {
 
+static std::variant<StorePath, DownstreamPlaceholder> makePlaceHolder(const SingleBuiltPath & req)
+{
+    return std::visit(overloaded {
+        [&](const SingleBuiltPath::Opaque & bo) -> std::variant<StorePath, DownstreamPlaceholder> {
+            return bo.path;
+        },
+        [&](const SingleBuiltPath::Built & bfd) -> std::variant<StorePath, DownstreamPlaceholder> {
+            return std::visit(overloaded {
+                [&](const StorePath & child) {
+                    return DownstreamPlaceholder::unknownCaOutput(child, bfd.output.first);
+                },
+                [&](const DownstreamPlaceholder & child) {
+                    return DownstreamPlaceholder::unknownDerivation(child, bfd.output.first);
+                },
+            }, makePlaceHolder(*bfd.drvPath));
+        },
+    }, req.raw());
+}
+
 /**
  * Return the rewrites that are needed to resolve a string whose context is
  * included in `dependencies`.
@@ -20,15 +39,26 @@ StringPairs resolveRewrites(
     const std::vector<BuiltPathWithResult> & dependencies)
 {
     StringPairs res;
-    for (auto & dep : dependencies)
-        if (auto drvDep = std::get_if<BuiltPathBuilt>(&dep.path))
-            if (experimentalFeatureSettings.isEnabled(Xp::CaDerivations))
-                for (auto & [ outputName, outputPath ] : drvDep->outputs)
+    if (experimentalFeatureSettings.isEnabled(Xp::CaDerivations)) {
+        for (auto & dep : dependencies) {
+            if (auto drvDep = std::get_if<BuiltPathBuilt>(&dep.path)) {
+                auto deeper = makePlaceHolder(*drvDep->drvPath);
+                for (auto & [ outputName_, outputPath ] : drvDep->outputs) {
+                    auto & outputName = outputName_;
                     res.emplace(
-                        DownstreamPlaceholder::unknownCaOutput(
-                            drvDep->drvPath->outPath(), outputName).render(),
-                        store.printStorePath(outputPath)
-                    );
+                        std::visit(overloaded {
+                            [&](const StorePath & child) {
+                                return DownstreamPlaceholder::unknownCaOutput(child, outputName);
+                            },
+                            [&](const DownstreamPlaceholder & child) {
+                                return DownstreamPlaceholder::unknownDerivation(child, outputName);
+                            },
+                        }, deeper).render(),
+                        store.printStorePath(outputPath));
+                }
+            }
+        }
+    }
     return res;
 }
 

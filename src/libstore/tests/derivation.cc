@@ -167,10 +167,13 @@ TEST_JSON(simple,
         "/nix/store/c015dhfh5l0lp6wxyvdn7bmwhbbr6hr9-dep1"
       ],
       "inputDrvs": {
-        "/nix/store/c015dhfh5l0lp6wxyvdn7bmwhbbr6hr9-dep2.drv": [
-          "cat",
-          "dog"
-        ]
+        "/nix/store/c015dhfh5l0lp6wxyvdn7bmwhbbr6hr9-dep2.drv": {
+          "deeper": {},
+          "outputs": [
+            "cat",
+            "dog"
+          ]
+        }
       },
       "system": "wasm-sel4",
       "builder": "foo",
@@ -190,13 +193,17 @@ TEST_JSON(simple,
             store->parseStorePath("/nix/store/c015dhfh5l0lp6wxyvdn7bmwhbbr6hr9-dep1"),
         };
         drv.inputDrvs = {
-            {
-                store->parseStorePath("/nix/store/c015dhfh5l0lp6wxyvdn7bmwhbbr6hr9-dep2.drv"),
+            .map = {
                 {
-                    "cat",
-                    "dog",
+                    store->parseStorePath("/nix/store/c015dhfh5l0lp6wxyvdn7bmwhbbr6hr9-dep2.drv"),
+                    {
+                        .value = {
+                            "cat",
+                            "dog",
+                        },
+                    },
                 },
-            }
+            },
         };
         drv.platform = "wasm-sel4";
         drv.builder = "foo";

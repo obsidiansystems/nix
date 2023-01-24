@@ -6,7 +6,7 @@
 #include "hash.hh"
 #include "content-address.hh"
 #include "repair-flag.hh"
-#include "derived-path.hh"
+#include "derived-path-map.hh"
 #include "sync.hh"
 #include "comparator.hh"
 #include "variant-wrapper.hh"
@@ -323,13 +323,13 @@ struct Derivation : BasicDerivation
     /**
      * inputs that are sub-derivations
      */
-    DerivationInputs inputDrvs;
+    DerivedPathMap<StringSet> inputDrvs;
 
     /**
      * Print a derivation.
      */
     std::string unparse(const Store & store, bool maskOutputs,
-        std::map<std::string, StringSet> * actualInputs = nullptr) const;
+        DerivedPathMap<StringSet>::ChildNode::Map * actualInputs = nullptr) const;
 
     /**
      * Return the underlying basic derivation but with these changes:
@@ -497,6 +497,7 @@ DrvHashModulo hashDerivationModulo(Store & store, const Derivation & drv, bool m
  * \todo What is the Hash in this map?
  */
 std::map<std::string, Hash> staticOutputHashes(Store & store, const Derivation & drv);
+std::map<std::string, DrvHashModulo::Drv> staticOutputHashesWithDeferral(Store & store, const Derivation & drv);
 
 /**
  * Memoisation of hashDerivationModulo().
