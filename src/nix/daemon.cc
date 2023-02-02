@@ -208,8 +208,7 @@ static void authConnection(FdSource & from, FdSink & to)
     }
 
     // Handle the connection.
-    processConnection(openUncachedStore(), from, to, trusted, NotRecursive, [&](Store & store) {
-    });
+    processConnection(openUncachedStore(), from, to, trusted, NotRecursive);
 }
 
 
@@ -345,7 +344,7 @@ static void runDaemon(bool stdio, bool auth)
             if (auth)
                 authConnection(from, to);
             else
-                processConnection(openUncachedStore(), from, to, Trusted, NotRecursive, [&](Store & _) {});
+                processConnection(openUncachedStore(), from, to, Trusted, NotRecursive);
         }
     } else
         daemonLoop();
