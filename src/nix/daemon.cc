@@ -78,7 +78,7 @@ static void setSigChldAction(bool autoReap)
 }
 
 
-bool matchUser(const string & user, const string & group, const Strings & users)
+bool matchUser(const std::string & user, const std::string & group, const Strings & users)
 {
     if (find(users.begin(), users.end(), "*") != users.end())
         return true;
@@ -87,12 +87,12 @@ bool matchUser(const string & user, const string & group, const Strings & users)
         return true;
 
     for (auto & i : users)
-        if (string(i, 0, 1) == "@") {
-            if (group == string(i, 1)) return true;
+        if (i.substr(0, 1) == "@") {
+            if (group == i.substr(1)) return true;
             struct group * gr = getgrnam(i.c_str() + 1);
             if (!gr) continue;
             for (char * * mem = gr->gr_mem; *mem; mem++)
-                if (user == string(*mem)) return true;
+                if (user == std::string(*mem)) return true;
         }
 
     return false;
@@ -203,14 +203,12 @@ static void authConnection(FdSource & from, FdSink & to)
 
     // For debugging, stuff the pid into argv[1].
     if (peer.pid && savedArgv[1]) {
-        string processName = std::to_string(*peer.pid);
+        std::string processName = std::to_string(*peer.pid);
         strncpy(savedArgv[1], processName.c_str(), strlen(savedArgv[1]));
     }
 
     // Handle the connection.
     processConnection(openUncachedStore(), from, to, trusted, NotRecursive, [&](Store & store) {
-        if (peer.uid)
-            store.createUser(user, *peer.uid);
     });
 }
 
@@ -219,9 +217,6 @@ static void daemonLoop()
 {
     if (chdir("/") == -1)
         throw SysError("cannot change current directory");
-
-    // Get rid of children automatically; don't let them become zombies.
-    setSigChldAction(true);
 
     std::vector<AutoCloseFD> listeningSockets;
 
@@ -248,6 +243,9 @@ static void daemonLoop()
     std::vector<struct pollfd> fds;
     for (auto & i : listeningSockets)
         fds.push_back({.fd = i.get(), .events = POLLIN});
+
+    //  Get rid of children automatically; don't let them become zombies.
+    setSigChldAction(true);
 
     // Loop accepting connections.
     while (1) {
@@ -302,7 +300,7 @@ static void daemonLoop()
         } catch (Interrupted & e) {
             return;
         } catch (Error & error) {
-            ErrorInfo ei = error.info();
+            auto ei = error.info();
             // FIXME: add to trace?
             ei.msg = hintfmt("error processing connection: %1%", ei.msg.str());
             logError(ei);

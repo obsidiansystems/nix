@@ -54,8 +54,44 @@ void StoreCommand::run()
     run(getStore());
 }
 
+CopyCommand::CopyCommand()
+{
+    addFlag({
+        .longName = "from",
+        .description = "URL of the source Nix store.",
+        .labels = {"store-uri"},
+        .handler = {&srcUri},
+    });
+
+    addFlag({
+        .longName = "to",
+        .description = "URL of the destination Nix store.",
+        .labels = {"store-uri"},
+        .handler = {&dstUri},
+    });
+}
+
+ref<Store> CopyCommand::createStore()
+{
+    return srcUri.empty() ? StoreCommand::createStore() : openStore(srcUri);
+}
+
+ref<Store> CopyCommand::getDstStore()
+{
+    if (srcUri.empty() && dstUri.empty())
+        throw UsageError("you must pass '--from' and/or '--to'");
+
+    return dstUri.empty() ? openStore() : openStore(dstUri);
+}
+
 EvalCommand::EvalCommand()
 {
+    addFlag({
+        .longName = "debugger",
+        .description = "Start an interactive environment if evaluation fails.",
+        .category = MixEvalArgs::category,
+        .handler = {&startReplOnEvalErrors, true},
+    });
 }
 
 EvalCommand::~EvalCommand()
@@ -73,8 +109,21 @@ ref<Store> EvalCommand::getEvalStore()
 
 ref<EvalState> EvalCommand::getEvalState()
 {
-    if (!evalState)
-        evalState = std::make_shared<EvalState>(searchPath, getEvalStore(), getStore());
+    if (!evalState) {
+        evalState =
+            #if HAVE_BOEHMGC
+            std::allocate_shared<EvalState>(traceable_allocator<EvalState>(),
+                searchPath, getEvalStore(), getStore())
+            #else
+            std::make_shared<EvalState>(
+                searchPath, getEvalStore(), getStore())
+            #endif
+            ;
+
+        if (startReplOnEvalErrors) {
+            evalState->debugRepl = &runRepl;
+        };
+    }
     return ref<EvalState>(evalState);
 }
 
@@ -115,12 +164,12 @@ void BuiltPathsCommand::run(ref<Store> store)
         for (auto & p : store->queryAllValidPaths())
             paths.push_back(BuiltPath::Opaque{p});
     } else {
-        paths = toBuiltPaths(getEvalStore(), store, realiseMode, operateOn, installables);
+        paths = Installable::toBuiltPaths(getEvalStore(), store, realiseMode, operateOn, installables);
         if (recursive) {
             // XXX: This only computes the store path closure, ignoring
             // intermediate realisations
             StorePathSet pathsRoots, pathsClosure;
-            for (auto & root: paths) {
+            for (auto & root : paths) {
                 auto rootFromThis = root.outPaths();
                 pathsRoots.insert(rootFromThis.begin(), rootFromThis.end());
             }
@@ -138,17 +187,20 @@ StorePathsCommand::StorePathsCommand(bool recursive)
 {
 }
 
-void StorePathsCommand::run(ref<Store> store, BuiltPaths paths)
+void StorePathsCommand::run(ref<Store> store, BuiltPaths && paths)
 {
-    StorePaths storePaths;
-    for (auto& builtPath : paths)
-        for (auto& p : builtPath.outPaths())
-            storePaths.push_back(p);
+    StorePathSet storePaths;
+    for (auto & builtPath : paths)
+        for (auto & p : builtPath.outPaths())
+            storePaths.insert(p);
 
-    run(store, std::move(storePaths));
+    auto sorted = store->topoSortPaths(storePaths);
+    std::reverse(sorted.begin(), sorted.end());
+
+    run(store, std::move(sorted));
 }
 
-void StorePathCommand::run(ref<Store> store, std::vector<StorePath> storePaths)
+void StorePathCommand::run(ref<Store> store, std::vector<StorePath> && storePaths)
 {
     if (storePaths.size() != 1)
         throw UsageError("this command requires exactly one store path");
@@ -156,16 +208,17 @@ void StorePathCommand::run(ref<Store> store, std::vector<StorePath> storePaths)
     run(store, *storePaths.begin());
 }
 
-Strings editorFor(const Pos & pos)
+Strings editorFor(const Path & file, uint32_t line)
 {
     auto editor = getEnv("EDITOR").value_or("cat");
     auto args = tokenizeString<Strings>(editor);
-    if (pos.line > 0 && (
+    if (line > 0 && (
         editor.find("emacs") != std::string::npos ||
         editor.find("nano") != std::string::npos ||
-        editor.find("vim") != std::string::npos))
-        args.push_back(fmt("+%d", pos.line));
-    args.push_back(pos.file);
+        editor.find("vim") != std::string::npos ||
+        editor.find("kak") != std::string::npos))
+        args.push_back(fmt("+%d", line));
+    args.push_back(file);
     return args;
 }
 
@@ -173,7 +226,7 @@ MixProfile::MixProfile()
 {
     addFlag({
         .longName = "profile",
-        .description = "The profile to update.",
+        .description = "The profile to operate on.",
         .labels = {"path"},
         .handler = {&profile},
         .completer = completePath
@@ -200,10 +253,10 @@ void MixProfile::updateProfile(const BuiltPaths & buildables)
 
     for (auto & buildable : buildables) {
         std::visit(overloaded {
-            [&](BuiltPath::Opaque bo) {
+            [&](const BuiltPath::Opaque & bo) {
                 result.push_back(bo.path);
             },
-            [&](BuiltPath::Built bfd) {
+            [&](const BuiltPath::Built & bfd) {
                 for (auto & output : bfd.outputs) {
                     result.push_back(output.second);
                 }
