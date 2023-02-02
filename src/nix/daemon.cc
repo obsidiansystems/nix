@@ -99,13 +99,17 @@ bool matchUser(const std::string & user, const std::string & group, const String
 }
 
 
+struct TcpAddr {
+    std::string ip;
+    std::string port;
+};
+
 struct PeerInfo
 {
     std::optional<pid_t> pid;
     std::optional<uid_t> uid;
     std::optional<gid_t> gid;
-    std::optional<std::string> ip;
-    std::optional<std::string> port;
+    std::optional<TcpAddr> tcpAddr;
 };
 
 
@@ -145,8 +149,10 @@ static PeerInfo getPeerInfo(int fd)
         char host[1024];
         char serv[128];
         if (getnameinfo((sockaddr *) &addr, addrlen, host, sizeof(host), serv, sizeof(serv), NI_NUMERICHOST | NI_NUMERICSERV) == 0) {
-            peer.ip = std::string(host);
-            peer.port = std::string(serv);
+            peer.tcpAddr = {
+                .ip = std::string(host),
+                .port = std::string(serv),
+            };
         }
     }
 
@@ -194,8 +200,8 @@ static void authConnection(FdSource & from, FdSink & to)
 
     printInfo(
         "accepted connection from %s%s",
-        peer.ip
-        ? fmt("%s:%s", *peer.ip, *peer.port)
+        peer.tcpAddr
+        ? fmt("%s:%s", peer.tcpAddr->ip, peer.tcpAddr->port)
         : peer.pid && peer.uid
         ? fmt("pid %s, user %s", std::to_string(*peer.pid), user)
         : "<unknown>",
