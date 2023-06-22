@@ -98,6 +98,7 @@ void BuildInterposeStore::buildPaths(const std::vector<DerivedPath> & reqs, Buil
     auto conn(connections->get());
     conn->to << "Build interposer";
     worker_proto::write(*this, conn->to, reqs);
+    conn->to.flush();
     auto res = readNum<bool>(conn->from);
     if (!res) {
         std::string msg;
