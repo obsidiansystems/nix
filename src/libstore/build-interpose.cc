@@ -6,7 +6,11 @@ namespace nix {
 
 struct BuildInterposeStoreConfig : virtual LocalStoreConfig
 {
-    using LocalStoreConfig::LocalStoreConfig;
+    BuildInterposeStoreConfig(const Store::Params & params)
+        : StoreConfig(params)
+        , LocalFSStoreConfig(params)
+        , LocalStoreConfig(params)
+    { }
 
     const Setting<int> maxConnections{(StoreConfig*) this, 1,
             "max-connections", "maximum number of concurrent connections to the build daemon"};
