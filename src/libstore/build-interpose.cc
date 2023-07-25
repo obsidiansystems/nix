@@ -82,7 +82,7 @@ BuildInterposeStore::BuildInterposeStore(
             nix::connect(socket.get(), buildInterposeSocket);
             return make_ref<Connection>(std::move(socket));
         },
-        [this](const ref<Connection> & r) {
+        [](const ref<Connection> & r) {
             return
                 r->to.good()
                 && r->from.good();
