@@ -942,6 +942,13 @@ void removeTempRoots();
 
 
 /**
+ * Attempt to recursively replace derivation outputs with produced paths as
+ * much as possible, but where the derivation resolution doesn't exists, leave
+ * as-is.
+ */
+SingleDerivedPath tryResolveDerivedPath(Store &, const SingleDerivedPath &, Store * evalStore = nullptr);
+
+/**
  * Resolve the derived path completely, failing if any derivation output
  * is unknown.
  */

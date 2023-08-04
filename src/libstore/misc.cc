@@ -414,6 +414,44 @@ OutputPathMap resolveDerivedPath(Store & store, const DerivedPath::Built & bfd, 
 }
 
 
+SingleDerivedPath tryResolveDerivedPath(Store & store, const SingleDerivedPath & req, Store * evalStore_)
+{
+    auto & evalStore = evalStore_ ? *evalStore_ : store;
+
+    return std::visit(overloaded {
+        [&](const SingleDerivedPath::Opaque &) -> SingleDerivedPath {
+            return req;
+        },
+        [&](const SingleDerivedPath::Built & bfd0) -> SingleDerivedPath {
+            SingleDerivedPath::Built bfd {
+                make_ref<SingleDerivedPath>(tryResolveDerivedPath(store, *bfd0.drvPath, evalStore_)),
+                bfd0.output,
+            };
+            return std::visit(overloaded {
+                [&](const SingleDerivedPath::Opaque & bo) -> SingleDerivedPath {
+                    auto & drvPath = bo.path;
+                    auto outputPaths = evalStore.queryPartialDerivationOutputMap(drvPath, evalStore_);
+                    if (outputPaths.count(bfd.output) == 0)
+                        throw Error("derivation '%s' does not have an output named '%s'",
+                            bfd0.drvPath->to_string(store), bfd.output);
+                    auto & optPath = outputPaths.at(bfd.output);
+                    if (optPath)
+                        // Can resolve this step
+                        return DerivedPath::Opaque { *optPath };
+                    else
+                        // Can't resolve this step
+                        return bfd;
+                },
+                [&](const SingleDerivedPath::Built & _) -> SingleDerivedPath {
+                    // Can't resolve previous step, and thus all future steps.
+                    return bfd;
+                },
+            }, bfd.drvPath->raw());
+        },
+    }, req.raw());
+}
+
+
 StorePath resolveDerivedPath(Store & store, const SingleDerivedPath & req, Store * evalStore_)
 {
     auto & evalStore = evalStore_ ? *evalStore_ : store;
