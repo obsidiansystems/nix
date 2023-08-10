@@ -27,8 +27,6 @@ struct BuildInterposeUDSStore : virtual BuildInterposeUDSStoreConfig, virtual UD
 {
     static std::set<std::string> uriSchemes() { return {"build-interpose-unix"}; }
 
-    using UDSRemoteStore::UDSRemoteStore;
-
     struct InterposeConnection;
 
     ref<Pool<InterposeConnection>> interposeConnections;
@@ -89,7 +87,7 @@ BuildInterposeUDSStore::BuildInterposeUDSStore(
             nix::connect(socket.get(), buildInterposeSocket);
             return make_ref<InterposeConnection>(std::move(socket));
         },
-        [this](const ref<InterposeConnection> & r) {
+        [](const ref<InterposeConnection> & r) {
             return
                 r->to.good()
                 && r->from.good();
