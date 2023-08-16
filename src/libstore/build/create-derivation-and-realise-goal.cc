@@ -94,11 +94,10 @@ void CreateDerivationAndRealiseGoal::getDerivation()
         if (buildMode != bmNormal) return std::nullopt;
 
         auto drvPath = StorePath::dummy;
-        try {
-            drvPath = resolveDerivedPath(worker.store, *drvReq);
-        } catch (MissingRealisation) {
-            return std::nullopt;
-        }
+        auto drvReq2 = tryResolveDerivedPath(worker.store, *drvReq);
+        auto drvPathP = std::get_if<DerivedPath::Opaque>(&drvReq2);
+        if (!drvPathP) return std::nullopt;
+        auto & drvPath = drvPathP->path;
         return worker.evalStore.isValidPath(drvPath) || worker.store.isValidPath(drvPath)
             ? std::optional { drvPath }
             : std::nullopt;
