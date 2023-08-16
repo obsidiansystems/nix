@@ -721,7 +721,14 @@ StorePathSet Installable::toDerivations(
                         : throw Error("argument '%s' did not evaluate to a derivation", i->what()));
                 },
                 [&](const DerivedPath::Built & bfd) {
-                    drvPaths.insert(resolveDerivedPath(*store, *bfd.drvPath));
+                    drvPaths.insert(std::visit(overloaded {
+                        [&](const SingleDerivedPath::Opaque o) -> StorePath {
+                            return o.path;
+                        },
+                        [&](const SingleDerivedPath::Built b) -> StorePath {
+                            throw Error("argument '%s' did not evaluate to output of dynamic derivation '%s' which is not yet built.", i->what(), b.to_string(*store));
+                        },
+                    }, tryResolveDerivedPath(*store, *bfd.drvPath).raw()));
                 },
             }, b.path.raw());
 
