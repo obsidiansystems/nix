@@ -6,7 +6,7 @@
 #include "worker-protocol.hh"
 #include "worker-protocol-impl.hh"
 #include "derived-path.hh"
-#include "tests/libstore.hh"
+#include "test/libstore.hh"
 
 namespace nix {
 
