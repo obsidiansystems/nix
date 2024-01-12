@@ -404,7 +404,7 @@ void mainWrapped(int argc, char * * argv)
                 auto b = nlohmann::json::object();
                 if (!builtin.value->isPrimOp()) continue;
                 auto primOp = builtin.value->primOp;
-                if (!primOp->doc) continue;
+                if (primOp->doc == "") continue;
                 b["arity"] = primOp->arity;
                 b["args"] = primOp->args;
                 b["doc"] = trim(stripIndentation(primOp->doc));

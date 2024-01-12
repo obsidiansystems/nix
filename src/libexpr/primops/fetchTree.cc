@@ -9,6 +9,11 @@
 #include "url.hh"
 #include "value-to-json.hh"
 
+#if HAVE_LOWDOWN
+# include "markdown.hh"
+# include "terminal.hh"
+#endif
+
 #include <ctime>
 #include <iomanip>
 #include <regex>
@@ -186,7 +191,7 @@ static void prim_fetchTree(EvalState & state, const PosIdx pos, Value * * args, 
 static RegisterPrimOp primop_fetchTree({
     .name = "fetchTree",
     .args = {"input"},
-    .doc = R"(
+    .doc = stripIndentation(R"(
       Fetch a file system tree or a plain file using one of the supported backends and return an attribute set with:
 
       - the resulting fixed-output [store path](@docroot@/glossary.md#gloss-store-path)
@@ -226,6 +231,133 @@ static RegisterPrimOp primop_fetchTree({
       <!-- TODO: It would be soooo much more predictable to work with (and
       document) if `fetchTree` was a curried call with the first paramter for
       `type` or an attribute like `builtins.fetchTree.git`! -->
+
+    )") + []() -> std::string {
+#if HAVE_LOWDOWN
+        struct lowdown_opts opts {
+            .type = LOWDOWN_TERM,
+            .maxdepth = SIZE_MAX,
+            .cols = SIZE_MAX,
+            .hmargin = 0,
+            .vmargin = 0,
+            .feat = LOWDOWN_COMMONMARK | LOWDOWN_FENCED | LOWDOWN_DEFLIST | LOWDOWN_TABLES,
+            //.oflags = LOWDOWN_TERM_NOLINK,
+        };
+
+        auto doc = LowdownUniquePtr<struct lowdown_doc> {
+            lowdown_doc_new(&opts),
+        };
+        assert(doc);
+
+        auto makeNode = [](enum lowdown_rndrt type) {
+            LowdownUniquePtr<struct lowdown_node> node {
+                (struct lowdown_node *) calloc(1, sizeof(struct lowdown_node))
+            };
+            assert(node);
+            node->type = type;
+            TAILQ_INIT(&node->children);
+            return node;
+        };
+
+        auto makeBuf = []{
+            return LowdownUniquePtr<struct lowdown_buf> {
+                lowdown_buf_new(16384),
+            };
+        };
+
+        auto setParent = [](struct lowdown_node & parent, struct lowdown_node & child) {
+            TAILQ_INSERT_TAIL(&parent.children, &child, entries);
+            ++parent.rndr_list.items;
+            child.parent = &parent;
+        };
+
+        auto createBuffer = [](std::string_view str) -> struct lowdown_buf {
+            auto size = str.size();
+            auto * data = (char *) malloc(size);
+            assert(data);
+            memcpy(data, str.data(), size);
+            data[size] = '\0';
+            return {
+                .data = data,
+                .size = size,
+                .maxsize = size + 1,
+                .unit = 0,
+                .buffer_free = (int) true,
+            };
+        };
+
+        auto root = makeNode(LOWDOWN_ROOT);
+        auto & schemes = *makeNode(LOWDOWN_LIST).release();
+        setParent(*root, schemes);
+        schemes.rndr_list.flags = (enum hlist_fl) 0;
+
+        for (const auto & [schemeName, scheme] : fetchers::getAllInputSchemes()) {
+            auto & s = *makeNode(LOWDOWN_LISTITEM).release();
+            setParent(schemes, s);
+            s.rndr_listitem.flags = HLIST_FL_BLOCK;
+            {
+                auto & name_p = *makeNode(LOWDOWN_PARAGRAPH).release();
+                setParent(s, name_p);
+                auto & name = *makeNode(LOWDOWN_NORMAL_TEXT).release();
+                setParent(name_p, name);
+                name.rndr_normal_text.text = createBuffer(schemeName);
+            }
+            {
+                auto & desc_p = *makeNode(LOWDOWN_PARAGRAPH).release();
+                setParent(s, desc_p);
+                auto markdown = scheme->schemeDescription();
+                size_t maxn = 0;
+                auto * desc = lowdown_doc_parse(&*doc, &maxn, markdown.data(), markdown.size(), nullptr);
+                assert(desc);
+                setParent(desc_p, *desc);
+            }
+            auto & attrs = *makeNode(LOWDOWN_LIST).release();
+            setParent(s, attrs);
+            schemes.rndr_list.flags = (enum hlist_fl) 0;
+            for (const auto & [attrName, attribute] : scheme->allowedAttrs()) {
+                auto & a = *makeNode(LOWDOWN_LISTITEM).release();
+                setParent(attrs, a);
+                a.rndr_listitem.flags = HLIST_FL_BLOCK;
+                {
+                    auto & name_p = *makeNode(LOWDOWN_PARAGRAPH).release();
+                    setParent(a, name_p);
+                    auto & name = *makeNode(LOWDOWN_NORMAL_TEXT).release();
+                    setParent(name_p, name);
+                    std::string header = attrName
+                        + " (" + attribute.type
+                        + ", " + (attribute.required ? "required" : "optional")
+                        + ")";
+                    name.rndr_normal_text.text = createBuffer(std::string_view(header));
+                }
+                {
+                    auto & doc_p = *makeNode(LOWDOWN_PARAGRAPH).release();
+                    setParent(s, doc_p);
+                    auto * markdown = attribute.doc;
+                    size_t maxn = 0;
+                    auto * doc_s = lowdown_doc_parse(&*doc, &maxn, markdown, strlen(markdown), nullptr);
+                    assert(doc_s);
+                    setParent(doc_p, *doc_s);
+                }
+            }
+        }
+
+        auto renderer = LowdownUniquePtr<struct lowdown_term> {
+            (struct lowdown_term *) lowdown_term_new(&opts),
+        };
+        assert(renderer);
+
+        auto buf = makeBuf();
+        assert(buf);
+
+        int rndr_res = lowdown_term_rndr(&*buf, &*renderer, &*root);
+        assert(rndr_res);
+
+        return filterANSIEscapes(std::string { buf->data, buf->size }, true);
+#else
+        return {};
+#endif
+    }()
+    + stripIndentation(R"(
 
       The following input types are still subject to change:
 
@@ -271,7 +403,7 @@ static RegisterPrimOp primop_fetchTree({
       >   ```nix
       >   builtins.fetchTree "github:NixOS/nixpkgs/ae2e6b3958682513d28f7d633734571fb18285dd"
       >   ```
-    )",
+    )"),
     .fun = prim_fetchTree,
     .experimentalFeature = Xp::FetchTree,
 });
