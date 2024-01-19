@@ -121,15 +121,22 @@ ifeq ($(HAVE_LIBCPUID), 1)
 endif
 
 ifeq ($(ENABLE_BUILD), yes)
-  nix_tests += test-libstoreconsumer.sh
+  nix_tests += \
+    ssh-handshake.sh \
+    test-libstoreconsumer.sh
 
   ifeq ($(BUILD_SHARED_LIBS), 1)
     nix_tests += plugins.sh
   endif
 endif
 
+$(d)/ssh-handshake.sh.test $(d)/ssh-handshake.sh.test-debug: \
+  $(buildprefix)$(d)/mock-daemon/mock-daemon \
+  $(buildprefix)$(d)/snoop-socket/snoop-socket
+
 $(d)/test-libstoreconsumer.sh.test $(d)/test-libstoreconsumer.sh.test-debug: \
   $(buildprefix)$(d)/test-libstoreconsumer/test-libstoreconsumer
+
 $(d)/plugins.sh.test $(d)/plugins.sh.test-debug: \
   $(buildprefix)$(d)/plugins/libplugintest.$(SO_EXT)
 
