@@ -62,7 +62,7 @@ VERSIONED_CHARACTERIZATION_TEST(
             .hash = hashString(HashAlgorithm::SHA1, "blob blob..."),
         },
         ContentAddress {
-            .method = FileIngestionMethod::Recursive,
+            .method = FileIngestionMethod::NixArchive,
             .hash = hashString(HashAlgorithm::SHA256, "(...)"),
         },
     }))
@@ -510,7 +510,7 @@ VERSIONED_CHARACTERIZATION_TEST(
                 *LibStoreTest::store,
                 "foo",
                 FixedOutputInfo {
-                    .method = FileIngestionMethod::Recursive,
+                    .method = FileIngestionMethod::NixArchive,
                     .hash = hashString(HashAlgorithm::SHA256, "(...)"),
                     .references = {
                         .others = {

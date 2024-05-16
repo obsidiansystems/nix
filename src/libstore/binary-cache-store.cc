@@ -321,7 +321,7 @@ StorePath BinaryCacheStore::addToStoreFromDump(
         if (static_cast<FileIngestionMethod>(dumpMethod) == hashMethod.getFileIngestionMethod())
             caHash = hashString(HashAlgorithm::SHA256, dump2.s);
         switch (dumpMethod) {
-        case FileSerialisationMethod::Recursive:
+        case FileSerialisationMethod::NixArchive:
             // The dump is already NAR in this case, just use it.
             nar = dump2.s;
             break;
@@ -338,7 +338,7 @@ StorePath BinaryCacheStore::addToStoreFromDump(
     } else {
         // Otherwise, we have to do th same hashing as NAR so our single
         // hash will suffice for both purposes.
-        if (dumpMethod != FileSerialisationMethod::Recursive || hashAlgo != HashAlgorithm::SHA256)
+        if (dumpMethod != FileSerialisationMethod::NixArchive || hashAlgo != HashAlgorithm::SHA256)
             unsupported("addToStoreFromDump");
     }
     StringSource narDump { nar };

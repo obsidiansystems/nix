@@ -196,7 +196,7 @@ static void opAddFixed(Strings opFlags, Strings opArgs)
     auto method = FileIngestionMethod::Flat;
 
     for (auto & i : opFlags)
-        if (i == "--recursive") method = FileIngestionMethod::Recursive;
+        if (i == "--recursive") method = FileIngestionMethod::NixArchive;
         else throw UsageError("unknown flag '%1%'", i);
 
     if (opArgs.empty())
@@ -222,7 +222,7 @@ static void opPrintFixedPath(Strings opFlags, Strings opArgs)
     auto method = FileIngestionMethod::Flat;
 
     for (auto i : opFlags)
-        if (i == "--recursive") method = FileIngestionMethod::Recursive;
+        if (i == "--recursive") method = FileIngestionMethod::NixArchive;
         else throw UsageError("unknown flag '%1%'", i);
 
     if (opArgs.size() != 3)
@@ -562,7 +562,7 @@ static void registerValidity(bool reregister, bool hashGiven, bool canonicalise)
             if (!hashGiven) {
                 HashResult hash = hashPath(
                     {store->getFSAccessor(false), CanonPath { store->printStorePath(info->path) }},
-                    FileSerialisationMethod::Recursive, HashAlgorithm::SHA256);
+                    FileSerialisationMethod::NixArchive, HashAlgorithm::SHA256);
                 info->narHash = hash.first;
                 info->narSize = hash.second;
             }

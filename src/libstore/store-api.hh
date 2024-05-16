@@ -440,7 +440,7 @@ public:
     virtual StorePath addToStore(
         std::string_view name,
         const SourcePath & path,
-        ContentAddressMethod method = FileIngestionMethod::Recursive,
+        ContentAddressMethod method = FileIngestionMethod::NixArchive,
         HashAlgorithm hashAlgo = HashAlgorithm::SHA256,
         const StorePathSet & references = StorePathSet(),
         PathFilter & filter = defaultPathFilter,
@@ -454,7 +454,7 @@ public:
     ValidPathInfo addToStoreSlow(
         std::string_view name,
         const SourcePath & path,
-        ContentAddressMethod method = FileIngestionMethod::Recursive,
+        ContentAddressMethod method = FileIngestionMethod::NixArchive,
         HashAlgorithm hashAlgo = HashAlgorithm::SHA256,
         const StorePathSet & references = StorePathSet(),
         std::optional<Hash> expectedCAHash = {});
@@ -469,7 +469,7 @@ public:
      *
      * @param dumpMethod What serialisation format is `dump`, i.e. how
      * to deserialize it. Must either match hashMethod or be
-     * `FileSerialisationMethod::Recursive`.
+     * `FileSerialisationMethod::NixArchive`.
      *
      * @param hashMethod How content addressing? Need not match be the
      * same as `dumpMethod`.
@@ -479,8 +479,8 @@ public:
     virtual StorePath addToStoreFromDump(
         Source & dump,
         std::string_view name,
-        FileSerialisationMethod dumpMethod = FileSerialisationMethod::Recursive,
-        ContentAddressMethod hashMethod = FileIngestionMethod::Recursive,
+        FileSerialisationMethod dumpMethod = FileSerialisationMethod::NixArchive,
+        ContentAddressMethod hashMethod = FileIngestionMethod::NixArchive,
         HashAlgorithm hashAlgo = HashAlgorithm::SHA256,
         const StorePathSet & references = StorePathSet(),
         RepairFlag repair = NoRepair) = 0;
