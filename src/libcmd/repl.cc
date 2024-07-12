@@ -1,7 +1,6 @@
 #include <iostream>
 #include <cstdlib>
 #include <cstring>
-#include <climits>
 
 #include "repl-interacter.hh"
 #include "repl.hh"
@@ -10,8 +9,6 @@
 #include "shared.hh"
 #include "config-global.hh"
 #include "eval.hh"
-#include "eval-cache.hh"
-#include "eval-inline.hh"
 #include "eval-settings.hh"
 #include "attr-path.hh"
 #include "signals.hh"
@@ -29,6 +26,7 @@
 #include "markdown.hh"
 #include "local-fs-store.hh"
 #include "print.hh"
+#include "ref.hh"
 
 #if HAVE_BOEHMGC
 #define GC_INCLUDE_NEW
@@ -690,14 +688,14 @@ void NixRepl::loadFlake(const std::string & flakeRefS)
     if (flakeRefS.empty())
         throw Error("cannot use ':load-flake' without a path specified. (Use '.' for the current working directory.)");
 
-    auto flakeRef = parseFlakeRef(flakeRefS, absPath("."), true);
+    auto flakeRef = parseFlakeRef(fetchSettings, flakeRefS, absPath("."), true);
     if (evalSettings.pureEval && !flakeRef.input.isLocked())
         throw Error("cannot use ':load-flake' on locked flake reference '%s' (use --impure to override)", flakeRefS);
 
     Value v;
 
     flake::callFlake(*state,
-        flake::lockFlake(*state, flakeRef,
+        flake::lockFlake(flakeSettings, *state, flakeRef,
             flake::LockFlags {
                 .updateLockFile = false,
                 .useRegistries = !evalSettings.pureEval,

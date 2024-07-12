@@ -3,21 +3,21 @@
 
 #include "attr-set.hh"
 #include "eval-error.hh"
-#include "eval-gc.hh"
 #include "types.hh"
 #include "value.hh"
 #include "nixexpr.hh"
 #include "symbol-table.hh"
 #include "config.hh"
 #include "experimental-features.hh"
+#include "position.hh"
+#include "pos-table.hh"
 #include "source-accessor.hh"
 #include "search-path.hh"
 #include "repl-exit-status.hh"
+#include "ref.hh"
 
 #include <map>
 #include <optional>
-#include <unordered_map>
-#include <mutex>
 #include <functional>
 
 namespace nix {
@@ -30,6 +30,7 @@ namespace nix {
 constexpr size_t maxPrimOpArity = 8;
 
 class Store;
+namespace fetchers { struct Settings; }
 struct EvalSettings;
 class EvalState;
 class StorePath;
@@ -45,7 +46,7 @@ namespace eval_cache {
 /**
  * Function that implements a primop.
  */
-typedef void (* PrimOpFun) (EvalState & state, const PosIdx pos, Value * * args, Value & v);
+using PrimOpFun = void(EvalState & state, const PosIdx pos, Value * * args, Value & v);
 
 /**
  * Info about a primitive operation, and its implementation
@@ -86,7 +87,7 @@ struct PrimOp
     /**
      * Implementation of the primop.
      */
-    std::function<std::remove_pointer<PrimOpFun>::type> fun;
+    std::function<PrimOpFun> fun;
 
     /**
      * Optional experimental for this to be gated on.
@@ -164,6 +165,7 @@ struct DebugTrace {
 class EvalState : public std::enable_shared_from_this<EvalState>
 {
 public:
+    const fetchers::Settings & fetchSettings;
     const EvalSettings & settings;
     SymbolTable symbols;
     PosTable positions;
@@ -359,6 +361,7 @@ public:
     EvalState(
         const LookupPath & _lookupPath,
         ref<Store> store,
+        const fetchers::Settings & fetchSettings,
         const EvalSettings & settings,
         std::shared_ptr<Store> buildStore = nullptr);
     ~EvalState();

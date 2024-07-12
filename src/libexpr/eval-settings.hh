@@ -3,6 +3,7 @@
 
 #include "config.hh"
 #include "source-path.hh"
+#include "ref.hh"
 
 namespace nix {
 

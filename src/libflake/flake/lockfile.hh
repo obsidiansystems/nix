@@ -53,7 +53,9 @@ struct LockedNode : Node
         : lockedRef(lockedRef), originalRef(originalRef), isFlake(isFlake), parentPath(parentPath), patchFiles(std::move(patchFiles))
     { }
 
-    LockedNode(const nlohmann::json & json);
+    LockedNode(
+        const fetchers::Settings & fetchSettings,
+        const nlohmann::json & json);
 };
 
 struct LockFile
@@ -61,7 +63,9 @@ struct LockFile
     ref<Node> root = make_ref<Node>();
 
     LockFile() {};
-    LockFile(std::string_view contents, std::string_view path);
+    LockFile(
+        const fetchers::Settings & fetchSettings,
+        std::string_view contents, std::string_view path);
 
     typedef std::map<ref<const Node>, std::string> KeyMap;
 
