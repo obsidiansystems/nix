@@ -2,13 +2,12 @@
 
 namespace nix {
 
-const extern ExperimentalFeatureSettings experimentalFeatureSettingsDefaults = {
-    {
-        .experimentalFeatures = {
-            .value = {}
+const extern ExperimentalFeatureSettings experimentalFeatureSettingsDefaults = {{
+    .experimentalFeatures =
+        {
+            .value = {},
         },
-    }
-};
+}};
 
 ExperimentalFeatureSettings experimentalFeatureSettings = experimentalFeatureSettingsDefaults;
 
@@ -31,7 +30,8 @@ bool ExperimentalFeatureSettings::isEnabled(const std::optional<ExperimentalFeat
 
 void ExperimentalFeatureSettings::require(const std::optional<ExperimentalFeature> & feature) const
 {
-    if (feature) require(*feature);
+    if (feature)
+        require(*feature);
 }
 
 };
