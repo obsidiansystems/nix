@@ -99,8 +99,6 @@ typedef std::map<StorePath, std::optional<ContentAddress>> StorePathCAMap;
 
 struct StoreConfig : public StoreDirConfig
 {
-    using Params = StoreReference::Params;
-
     using StoreDirConfig::StoreDirConfig;
 
     StoreConfig() = delete;
