@@ -4,7 +4,7 @@
 #include "hash.hh"
 #include "content-address.hh"
 #include "store-reference.hh"
-#include "config-abstract.hh"
+#include "config-parse.hh"
 #include "globals.hh"
 
 #include <map>
@@ -22,20 +22,22 @@ MakeError(BadStorePathName, BadStorePath);
 template<template<typename> class F>
 struct StoreDirConfigT
 {
-    F<Path> storeDir;
+    F<Path> _storeDir;
 };
 
-extern const StoreDirConfigT<JustValue> storeDirConfigDefaults;
+extern const StoreDirConfigT<config::JustValue> storeDirConfigDefaults;
 
-extern const StoreDirConfigT<SettingInfo> storeDirConfigDescriptions;
+extern const StoreDirConfigT<config::SettingInfo> storeDirConfigDescriptions;
 
-StoreDirConfigT<JustValue> parseStoreDirConfig(const StoreReference::Params &);
+StoreDirConfigT<config::JustValue> parseStoreDirConfig(const StoreReference::Params &);
 
-struct StoreDirConfig : StoreDirConfigT<JustValue>
+struct StoreDirConfig : StoreDirConfigT<config::JustValue>
 {
     StoreDirConfig(const StoreReference::Params & params);
 
     virtual ~StoreDirConfig() = default;
+
+    const Path & storeDir = _storeDir.value;
 
     // pure methods
 

@@ -1,7 +1,7 @@
 #pragma once
 ///@type
 
-namespace nix {
+namespace nix::config {
 
 template<typename T>
 struct JustValue
@@ -20,13 +20,6 @@ struct JustValue
     {
         return value;
     }
-};
-
-template<typename T>
-struct SettingInfo
-{
-    std::string name;
-    std::string description;
 };
 
 }
