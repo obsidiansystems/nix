@@ -18,37 +18,38 @@ struct StoreFactory
      * The `authorityPath` parameter is `<authority>/<path>`, or really
      * whatever comes after `<scheme>://` and before `?<query-params>`.
      */
-    std::function<std::shared_ptr<Store>(
-        std::string_view scheme, std::string_view authorityPath, const Store::Params & params)>
-        create;
-    std::function<std::shared_ptr<StoreConfig>()> getConfig;
+    std::function<std::shared_ptr<StoreConfig>(
+        std::string_view scheme, std::string_view authorityPath, const StoreReference::Params & params)>
+        parseConfig;
+    const StoreConfigDescription & configSchema;
 };
 
 struct Implementations
 {
     static std::vector<StoreFactory> * registered;
 
-    template<typename T, typename TConfig>
+    template<typename T>
     static void add()
     {
         if (!registered)
             registered = new std::vector<StoreFactory>();
         StoreFactory factory{
-            .uriSchemes = TConfig::uriSchemes(),
-            .create = ([](auto scheme, auto uri, auto & params) -> std::shared_ptr<Store> {
-                return std::make_shared<T>(scheme, uri, params);
+            .uriSchemes = T::Config::uriSchemes(),
+            .parseConfig = ([](auto scheme, auto uri, auto & params) -> std::shared_ptr<StoreConfig> {
+                return std::make_shared<typename T::Config>(scheme, uri, params);
             }),
-            .getConfig = ([]() -> std::shared_ptr<StoreConfig> { return std::make_shared<TConfig>(StringMap({})); })};
+            .configSchema = T::Config::schema,
+        };
         registered->push_back(factory);
     }
 };
 
-template<typename T, typename TConfig>
+template<typename T>
 struct RegisterStoreImplementation
 {
     RegisterStoreImplementation()
     {
-        Implementations::add<T, TConfig>();
+        Implementations::add<T>();
     }
 };
 

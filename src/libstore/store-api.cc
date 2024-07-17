@@ -197,7 +197,7 @@ const StoreConfigT<config::JustValue> storeConfigDefaults = {
     .systemFeatures = { .value = StoreConfig::getDefaultSystemFeatures() },
 };
 
-const StoreConfigT<config::SettingInfo> storeConfigDescriptions = {
+decltype(StoreConfig::schema) StoreConfig::schema = {{
     .pathInfoCacheSize = {
         .name = "path-info-cache-size",
         .description = "Size of the in-memory store path metadata cache.",
@@ -236,12 +236,12 @@ const StoreConfigT<config::SettingInfo> storeConfigDescriptions = {
         // unsuitable to be rendered in the documentation.
         .documentDefault = false,
     },
-};
+}};
 
 StoreConfigT<config::JustValue> parseStoreConfig(const StoreReference::Params & params)
 {
     constexpr auto & defaults = storeConfigDefaults;
-    constexpr auto & descriptions = storeConfigDescriptions;
+    constexpr auto & descriptions = StoreConfig::schema;
 
     return {
         CONFIG_ROW(pathInfoCacheSize),
@@ -497,8 +497,8 @@ StringSet StoreConfig::getDefaultSystemFeatures()
     return res;
 }
 
-Store::Store(const StoreReference::Params & params)
-    : StoreConfig(params)
+Store::Store(const Store::Config & config)
+    : Store::Config(config)
     , state({(size_t) pathInfoCacheSize})
 {
     assertLibStoreInitialized();

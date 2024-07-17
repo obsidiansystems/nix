@@ -1,12 +1,22 @@
 #include "store-api.hh"
+#include "store-registration.hh"
 #include "callback.hh"
 
 namespace nix {
 
+struct DummyStoreConfigDescription : virtual Store::Config::Description
+{
+    DummyStoreConfigDescription() : StoreConfigDescription{Store::Config::schema} {}
+};
+
 struct DummyStoreConfig : virtual StoreConfig {
     using StoreConfig::StoreConfig;
 
-    DummyStoreConfig(std::string_view scheme, std::string_view authority, const Params & params)
+    using Description = DummyStoreConfigDescription;
+
+    static const Description schema;
+
+    DummyStoreConfig(std::string_view scheme, std::string_view authority, const StoreReference::Params & params)
         : StoreConfig(params)
     {
         if (!authority.empty())
@@ -25,18 +35,20 @@ struct DummyStoreConfig : virtual StoreConfig {
     static std::set<std::string> uriSchemes() {
         return {"dummy"};
     }
+
+    std::shared_ptr<Store> open() override;
 };
+
+decltype(DummyStoreConfig::schema) DummyStoreConfig::schema{};
 
 struct DummyStore : public virtual DummyStoreConfig, public virtual Store
 {
-    DummyStore(std::string_view scheme, std::string_view authority, const Params & params)
-        : StoreConfig(params)
-        , DummyStoreConfig(scheme, authority, params)
-        , Store(params)
-    { }
+    using Config = DummyStoreConfig;
 
-    DummyStore(const Params & params)
-        : DummyStore("dummy", "", params)
+    DummyStore(const DummyStoreConfig & config)
+        : StoreConfig(config)
+        , DummyStoreConfig(config)
+        , Store(config)
     { }
 
     std::string getUri() override
@@ -86,6 +98,11 @@ struct DummyStore : public virtual DummyStoreConfig, public virtual Store
     { unsupported("getFSAccessor"); }
 };
 
-static RegisterStoreImplementation<DummyStore, DummyStoreConfig> regDummyStore;
+std::shared_ptr<Store> DummyStoreConfig::open()
+{
+    return std::make_shared<DummyStore>(*this);
+}
+
+static RegisterStoreImplementation<DummyStore> regDummyStore;
 
 }

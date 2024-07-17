@@ -112,15 +112,21 @@ struct StoreConfigT
 
 extern const StoreConfigT<config::JustValue> storeConfigDefaults;
 
-extern const StoreConfigT<config::SettingInfo> storeConfigDescriptions;
-
 StoreConfigT<config::JustValue> parseStoreConfig(const StoreReference::Params &);
+
+struct StoreConfigDescription : StoreConfigT<config::SettingInfo>, StoreDirConfigT<config::SettingInfo>
+{
+};
 
 struct StoreConfig : StoreConfigT<config::JustValue>, StoreDirConfig
 {
     using StoreDirConfig::StoreDirConfig;
 
     StoreConfig() = delete;
+
+    using Description = StoreConfigDescription;
+
+    static const Description schema;
 
     static StringSet getDefaultSystemFeatures();
 
@@ -147,10 +153,20 @@ struct StoreConfig : StoreConfigT<config::JustValue>, StoreDirConfig
     {
         return std::nullopt;
     }
+
+    /**
+     * Open a store of the type corresponding to this configuration
+     * type.
+     */
+    virtual std::shared_ptr<Store> open() = 0;
 };
 
 class Store : public std::enable_shared_from_this<Store>, public virtual StoreConfig
 {
+public:
+
+    using Config = StoreConfig;
+
 protected:
 
     struct PathInfoCacheValue {
@@ -189,7 +205,7 @@ protected:
 
     std::shared_ptr<NarInfoDiskCache> diskCache;
 
-    Store(const StoreReference::Params & params);
+    Store(const Store::Config & config);
 
 public:
     /**
