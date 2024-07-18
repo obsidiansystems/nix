@@ -207,8 +207,9 @@ protected:
     }
 };
 
-std::shared_ptr<Store> HttpBinaryCacheStore::Config::openStore() const {
-    return std::make_shared<HttpBinaryCacheStore>(*this);
+ref<Store> HttpBinaryCacheStore::Config::openStore() const
+{
+    return make_ref<HttpBinaryCacheStore>(*this);
 }
 
 static RegisterStoreImplementation<HttpBinaryCacheStore> regHttpBinaryCacheStore;

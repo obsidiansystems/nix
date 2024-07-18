@@ -22,7 +22,7 @@ struct LocalBinaryCacheStoreConfig : virtual BinaryCacheStoreConfig
 
     std::string doc() override;
 
-    std::shared_ptr<Store> openStore() const override;
+    ref<Store> openStore() const override;
 };
 
 }

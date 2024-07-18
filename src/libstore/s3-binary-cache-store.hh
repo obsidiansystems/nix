@@ -53,6 +53,8 @@ struct S3BinaryCacheStoreConfig :
     }
 
     std::string doc() override;
+
+    ref<Store> openStore() const override;
 };
 
 struct S3BinaryCacheStore : virtual BinaryCacheStore
