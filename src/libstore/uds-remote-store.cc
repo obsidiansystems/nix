@@ -1,6 +1,7 @@
 #include "uds-remote-store.hh"
 #include "unix-domain-socket.hh"
 #include "worker-protocol.hh"
+#include "store-registration.hh"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -20,13 +21,13 @@ namespace nix {
 UDSRemoteStoreConfig::UDSRemoteStoreConfig(
     std::string_view scheme,
     std::string_view authority,
-    const Params & params)
+    const StoreReference::Params & params)
     : StoreConfig(params)
     , LocalFSStoreConfig(params)
     , RemoteStoreConfig(params)
     , path{authority.empty() ? settings.nixDaemonSocketFile : authority}
 {
-    if (scheme != UDSRemoteStoreConfig::scheme) {
+    if (uriSchemes().count(std::string{scheme}) == 0) {
         throw UsageError("Scheme must be 'unix'");
     }
 }
@@ -40,23 +41,14 @@ std::string UDSRemoteStoreConfig::doc()
 }
 
 
-// A bit gross that we now pass empty string but this is knowing that
-// empty string will later default to the same nixDaemonSocketFile. Why
-// don't we just wire it all through? I believe there are cases where it
-// will live reload so we want to continue to account for that.
-UDSRemoteStore::UDSRemoteStore(const Params & params)
-    : UDSRemoteStore(scheme, "", params)
-{}
-
-
-UDSRemoteStore::UDSRemoteStore(std::string_view scheme, std::string_view authority, const Params & params)
-    : StoreConfig(params)
-    , LocalFSStoreConfig(params)
-    , RemoteStoreConfig(params)
-    , UDSRemoteStoreConfig(scheme, authority, params)
-    , Store(params)
-    , LocalFSStore(params)
-    , RemoteStore(params)
+UDSRemoteStore::UDSRemoteStore(const Config & config)
+    : Store::Config{config}
+    , LocalFSStore::Config{config}
+    , RemoteStore::Config{config}
+    , UDSRemoteStore::Config{config}
+    , Store(static_cast<const Store::Config &>(*this))
+    , LocalFSStore(static_cast<const LocalFSStore::Config &>(*this))
+    , RemoteStore(static_cast<const RemoteStore::Config &>(*this))
 {
 }
 
@@ -69,7 +61,7 @@ std::string UDSRemoteStore::getUri()
           //
           // unix:// with no path also works. Change what we return?
           "daemon"
-        : std::string(scheme) + "://" + path;
+        : std::string(*uriSchemes().begin()) + "://" + path;
 }
 
 
@@ -106,6 +98,6 @@ void UDSRemoteStore::addIndirectRoot(const Path & path)
 }
 
 
-static RegisterStoreImplementation<UDSRemoteStore, UDSRemoteStoreConfig> regUDSRemoteStore;
+static RegisterStoreImplementation<UDSRemoteStore> regUDSRemoteStore;
 
 }

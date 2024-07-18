@@ -8,13 +8,17 @@
 namespace nix {
 
 struct UDSRemoteStoreConfig :
-    virtual LocalFSStoreConfig,
-    virtual RemoteStoreConfig
+    virtual LocalFSStore::Config,
+    virtual RemoteStore::Config
 {
-    // TODO(fzakaria): Delete this constructor once moved over to the factory pattern
-    // outlined in https://github.com/NixOS/nix/issues/10766
-    using LocalFSStoreConfig::LocalFSStoreConfig;
-    using RemoteStoreConfig::RemoteStoreConfig;
+    struct Descriptions :
+        virtual LocalFSStore::Config::Descriptions,
+        virtual RemoteStore::Config::Descriptions
+    {
+        Descriptions();
+    };
+
+    static const Descriptions descriptions;
 
     /**
      * @param authority is the socket path.
@@ -22,7 +26,7 @@ struct UDSRemoteStoreConfig :
     UDSRemoteStoreConfig(
         std::string_view scheme,
         std::string_view authority,
-        const Params & params);
+        const StoreReference::Params & params);
 
     const std::string name() override { return "Local Daemon Store"; }
 
@@ -36,12 +40,10 @@ struct UDSRemoteStoreConfig :
      */
     Path path;
 
-private:
-    static constexpr char const * scheme = "unix";
-
-public:
     static std::set<std::string> uriSchemes()
-    { return {scheme}; }
+    { return {"unix"}; }
+
+    ref<Store> openStore() const override;
 };
 
 struct UDSRemoteStore :
@@ -49,7 +51,9 @@ struct UDSRemoteStore :
     virtual IndirectRootStore,
     virtual RemoteStore
 {
-    UDSRemoteStore(const UDSRemoteStoreConfig &);
+    using Config = UDSRemoteStoreConfig;
+
+    UDSRemoteStore(const Config &);
 
     std::string getUri() override;
 
