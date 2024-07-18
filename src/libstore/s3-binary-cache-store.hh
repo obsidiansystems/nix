@@ -21,14 +21,11 @@ struct S3BinaryCacheStoreConfigT
     const F<uint64_t> bufferSize;
 };
 
-struct S3BinaryCacheStoreConfig :
-    virtual BinaryCacheStoreConfig,
-    S3BinaryCacheStoreConfigT<config::JustValue>
+struct S3BinaryCacheStoreConfig : virtual BinaryCacheStoreConfig, S3BinaryCacheStoreConfigT<config::JustValue>
 {
-    struct Descriptions :
-        virtual Store::Config::Descriptions,
-        virtual BinaryCacheStore::Config::Descriptions,
-        S3BinaryCacheStoreConfigT<config::SettingInfo>
+    struct Descriptions : virtual Store::Config::Descriptions,
+                          virtual BinaryCacheStore::Config::Descriptions,
+                          S3BinaryCacheStoreConfigT<config::SettingInfo>
     {
         Descriptions();
     };

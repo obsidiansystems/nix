@@ -9,38 +9,50 @@
 
 namespace nix {
 
-struct LegacySSHStoreConfig : virtual CommonSSHStoreConfig
+template<template<typename> class F>
+struct LegacySSHStoreConfigT
 {
-    using CommonSSHStoreConfig::CommonSSHStoreConfig;
+    const F<Strings> remoteProgram;
+    const F<int> maxConnections;
+};
+
+struct LegacySSHStoreConfig :
+    virtual CommonSSHStoreConfig,
+    LegacySSHStoreConfigT<config::JustValue>
+{
+    struct Descriptions :
+        virtual CommonSSHStoreConfig::Descriptions,
+        LegacySSHStoreConfigT<config::SettingInfo>
+    {
+        Descriptions();
+    };
+
+    static const Descriptions descriptions;
+
+    static LegacySSHStoreConfigT<config::JustValue> defaults;
+    /**
+     * Hack for getting remote build log output. Intentionally not a
+     * documented user-visible setting.
+     */
+    Descriptor logFD = INVALID_DESCRIPTOR;
 
     LegacySSHStoreConfig(
         std::string_view scheme,
         std::string_view authority,
-        const Params & params);
-
-    const Setting<Strings> remoteProgram{this, {"nix-store"}, "remote-program",
-        "Path to the `nix-store` executable on the remote machine."};
-
-    const Setting<int> maxConnections{this, 1, "max-connections",
-        "Maximum number of concurrent SSH connections."};
+        const StoreReference::Params & params);
 
     const std::string name() override { return "SSH Store"; }
 
     static std::set<std::string> uriSchemes() { return {"ssh"}; }
 
     std::string doc() override;
+
+    ref<Store> openStore() const override;
 };
 
 struct LegacySSHStore : public virtual LegacySSHStoreConfig, public virtual Store
 {
-#ifndef _WIN32
-    // Hack for getting remote build log output.
-    // Intentionally not in `LegacySSHStoreConfig` so that it doesn't appear in
-    // the documentation
-    const Setting<int> logFD{this, INVALID_DESCRIPTOR, "log-fd", "file descriptor to which SSH's stderr is connected"};
-#else
-    Descriptor logFD = INVALID_DESCRIPTOR;
-#endif
+    using Config = LegacySSHStoreConfig;
 
     struct Connection;
 
@@ -48,10 +60,7 @@ struct LegacySSHStore : public virtual LegacySSHStoreConfig, public virtual Stor
 
     SSHMaster master;
 
-    LegacySSHStore(
-        std::string_view scheme,
-        std::string_view host,
-        const Params & params);
+    LegacySSHStore(const Config &);
 
     ref<Connection> openConnection();
 

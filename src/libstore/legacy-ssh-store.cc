@@ -12,17 +12,54 @@
 #include "ssh.hh"
 #include "derivations.hh"
 #include "callback.hh"
+#include "config-parse-impl.hh"
+#include "store-registration.hh"
 
 namespace nix {
 
-LegacySSHStoreConfig::LegacySSHStoreConfig(
+LegacySSHStore::Config::Descriptions::Descriptions()
+    : Store::Config::Descriptions{Store::Config::descriptions}
+    , CommonSSHStoreConfig::Descriptions{CommonSSHStoreConfig::descriptions}
+    , LegacySSHStoreConfigT<config::SettingInfo>{
+        .remoteProgram{
+            .name = "remote-program",
+            .description = "Path to the `nix-store` executable on the remote machine.",
+        },
+        .maxConnections{
+            .name = "max-connections",
+            .description = "Maximum number of concurrent SSH connections.",
+        },
+    }
+{}
+
+
+const LegacySSHStore::Config::Descriptions LegacySSHStore::Config::descriptions{};
+
+
+decltype(LegacySSHStore::Config::defaults) LegacySSHStore::Config::defaults = {
+    .remoteProgram = {{"nix-store"}},
+    .maxConnections = {1},
+};
+
+
+LegacySSHStore::Config::LegacySSHStoreConfig(
     std::string_view scheme,
     std::string_view authority,
-    const Params & params)
-    : StoreConfig(params)
+    const StoreReference::Params & params)
+    : Store::Config(params)
     , CommonSSHStoreConfig(scheme, authority, params)
+    , LegacySSHStoreConfigT<config::JustValue>{
+        CONFIG_ROW(remoteProgram),
+        CONFIG_ROW(maxConnections),
+    }
 {
+#ifndef _WIN32
+    if (auto * p = get(params, "log-fd")) {
+        logFD = p->get<decltype(logFD)>();
+    }
+#endif
 }
+
 
 std::string LegacySSHStoreConfig::doc()
 {
@@ -38,14 +75,11 @@ struct LegacySSHStore::Connection : public ServeProto::BasicClientConnection
     bool good = true;
 };
 
-LegacySSHStore::LegacySSHStore(
-    std::string_view scheme,
-    std::string_view host,
-    const Params & params)
-    : StoreConfig(params)
-    , CommonSSHStoreConfig(scheme, host, params)
-    , LegacySSHStoreConfig(scheme, host, params)
-    , Store(params)
+LegacySSHStore::LegacySSHStore(const Config & config)
+    : Store::Config(config)
+    , CommonSSHStoreConfig(config)
+    , LegacySSHStore::Config(config)
+    , Store(static_cast<const Store::Config &>(*this))
     , connections(make_ref<Pool<Connection>>(
         std::max(1, (int) maxConnections),
         [this]() { return openConnection(); },
@@ -317,6 +351,6 @@ std::optional<TrustedFlag> isTrustedClient()
 }
 
 
-static RegisterStoreImplementation<LegacySSHStore, LegacySSHStoreConfig> regLegacySSHStore;
+static RegisterStoreImplementation<LegacySSHStore> regLegacySSHStore;
 
 }
