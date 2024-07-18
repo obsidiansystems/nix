@@ -89,8 +89,8 @@ LocalStore::Config::Descriptions::Descriptions()
 const LocalStore::Config::Descriptions LocalStore::Config::descriptions{};
 
 decltype(LocalStore::Config::defaults) LocalStore::Config::defaults = {
-    .requireSigs = {.value = settings.requireSigs },
-    .readOnly = {.value = false },
+    .requireSigs = {settings.requireSigs},
+    .readOnly = {false},
 };
 
 LocalStore::Config::LocalStoreConfig(

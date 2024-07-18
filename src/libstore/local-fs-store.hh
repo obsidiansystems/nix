@@ -11,11 +11,8 @@ template<template<typename> class F>
 struct LocalFSStoreConfigT
 {
     const F<std::optional<Path>> rootDir;
-
     const F<Path> stateDir;
-
     const F<Path> logDir;
-
     const F<Path> realStoreDir;
 };
 

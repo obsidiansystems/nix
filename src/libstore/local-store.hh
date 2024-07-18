@@ -38,7 +38,6 @@ template<template<typename> class F>
 struct LocalStoreConfigT
 {
     const F<bool> requireSigs;
-
     const F<bool> readOnly;
 };
 

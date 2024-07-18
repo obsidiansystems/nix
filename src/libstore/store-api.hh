@@ -100,13 +100,9 @@ template<template<typename> class F>
 struct StoreConfigT
 {
     const F<int> pathInfoCacheSize;
-
     const F<bool> isTrusted;
-
     F<int> priority;
-
     F<bool> wantMassQuery;
-
     F<StringSet> systemFeatures;
 };
 

@@ -239,11 +239,11 @@ const Store::Config::Descriptions Store::Config::descriptions{};
 
 
 decltype(Store::Config::defaults) Store::Config::defaults = {
-    .pathInfoCacheSize = { .value = 65536 },
-    .isTrusted = { .value = false },
-    .priority = { .value = 0 },
-    .wantMassQuery = { .value = false },
-    .systemFeatures = { .value = Store::Config::getDefaultSystemFeatures() },
+    .pathInfoCacheSize = {65536},
+    .isTrusted = {false},
+    .priority = {0},
+    .wantMassQuery = {false},
+    .systemFeatures = {Store::Config::getDefaultSystemFeatures()},
 };
 
 

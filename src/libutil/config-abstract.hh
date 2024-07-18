@@ -12,13 +12,25 @@ struct JustValue
     {
         return value;
     }
+
     operator T &()
     {
         return value;
     }
+
     const T & get() const
     {
         return value;
+    }
+
+    bool operator==(auto && v2) const
+    {
+        return value == v2;
+    }
+
+    bool operator!=(auto && v2) const
+    {
+        return value != v2;
     }
 };
 
