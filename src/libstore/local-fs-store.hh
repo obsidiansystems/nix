@@ -10,13 +10,13 @@ namespace nix {
 template<template<typename> class F>
 struct LocalFSStoreConfigT
 {
-    F<std::optional<Path>> rootDir;
+    const F<std::optional<Path>> rootDir;
 
-    F<Path> stateDir;
+    const F<Path> stateDir;
 
-    F<Path> logDir;
+    const F<Path> logDir;
 
-    F<Path> realStoreDir;
+    const F<Path> realStoreDir;
 };
 
 struct LocalFSStoreConfig :

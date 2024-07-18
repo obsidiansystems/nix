@@ -22,7 +22,7 @@ MakeError(BadStorePathName, BadStorePath);
 template<template<typename> class F>
 struct StoreDirConfigT
 {
-    F<Path> _storeDir;
+    const F<Path> _storeDir;
 };
 
 struct StoreDirConfig : StoreDirConfigT<config::JustValue>

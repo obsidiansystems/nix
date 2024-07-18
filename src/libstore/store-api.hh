@@ -99,9 +99,9 @@ typedef std::map<StorePath, std::optional<ContentAddress>> StorePathCAMap;
 template<template<typename> class F>
 struct StoreConfigT
 {
-    F<int> pathInfoCacheSize;
+    const F<int> pathInfoCacheSize;
 
-    F<bool> isTrusted;
+    const F<bool> isTrusted;
 
     F<int> priority;
 
