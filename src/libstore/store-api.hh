@@ -115,8 +115,6 @@ struct StoreConfig :
     StoreDirConfig,
     StoreConfigT<config::JustValue>
 {
-    StoreConfig(const StoreReference::Params &);
-
     struct Descriptions :
         StoreDirConfig::Descriptions,
         StoreConfigT<config::SettingInfo>
@@ -128,9 +126,11 @@ struct StoreConfig :
 
     static const Descriptions descriptions;
 
-    static StringSet getDefaultSystemFeatures();
+    StoreConfig(const StoreReference::Params &);
 
     virtual ~StoreConfig() { }
+
+    static StringSet getDefaultSystemFeatures();
 
     /**
      * The name of this type of store.
@@ -158,7 +158,7 @@ struct StoreConfig :
      * Open a store of the type corresponding to this configuration
      * type.
      */
-    virtual std::shared_ptr<Store> open() = 0;
+    virtual std::shared_ptr<Store> openStore() = 0;
 };
 
 class Store : public std::enable_shared_from_this<Store>, public virtual StoreConfig
@@ -208,11 +208,6 @@ protected:
     Store(const Store::Config & config);
 
 public:
-    /**
-     * Perform any necessary effectful operation to make the store up and
-     * running
-     */
-    virtual void init() {};
 
     virtual ~Store() { }
 

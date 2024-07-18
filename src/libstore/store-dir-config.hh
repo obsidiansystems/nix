@@ -27,13 +27,13 @@ struct StoreDirConfigT
 
 struct StoreDirConfig : StoreDirConfigT<config::JustValue>
 {
-    StoreDirConfig(const StoreReference::Params & params);
-
     static const StoreDirConfigT<config::JustValue> defaults;
 
     using Descriptions = StoreDirConfigT<config::SettingInfo>;
 
     static const Descriptions descriptions;
+
+    StoreDirConfig(const StoreReference::Params & params);
 
     virtual ~StoreDirConfig() = default;
 

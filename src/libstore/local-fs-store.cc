@@ -85,7 +85,8 @@ LocalFSStore::Config::LocalFSStoreConfig(PathView rootDir, const StoreReference:
 }
 
 LocalFSStore::LocalFSStore(const Config & config)
-    : Store(config)
+    : LocalFSStore::Config{config}
+    , Store{static_cast<const Store::Config &>(*this)}
 {
 }
 

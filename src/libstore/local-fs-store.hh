@@ -23,17 +23,6 @@ struct LocalFSStoreConfig :
     virtual Store::Config,
     LocalFSStoreConfigT<config::JustValue>
 {
-    LocalFSStoreConfig(const StoreReference::Params &);
-
-    /**
-     * Used to override the `root` settings. Can't be done via modifying
-     * `params` reliably because this parameter is unused except for
-     * passing to base class constructors.
-     *
-     * @todo Make this less error-prone with new store settings system.
-     */
-    LocalFSStoreConfig(PathView path, const StoreReference::Params & params);
-
     struct Descriptions :
         virtual Store::Config::Descriptions,
         LocalFSStoreConfigT<config::SettingInfo>
@@ -49,6 +38,17 @@ struct LocalFSStoreConfig :
     static LocalFSStoreConfigT<config::JustValue> defaults(
         const Store::Config &,
         const std::optional<Path> rootDir);
+
+    LocalFSStoreConfig(const StoreReference::Params &);
+
+    /**
+     * Used to override the `root` settings. Can't be done via modifying
+     * `params` reliably because this parameter is unused except for
+     * passing to base class constructors.
+     *
+     * @todo Make this less error-prone with new store settings system.
+     */
+    LocalFSStoreConfig(PathView path, const StoreReference::Params & params);
 };
 
 struct LocalFSStore :

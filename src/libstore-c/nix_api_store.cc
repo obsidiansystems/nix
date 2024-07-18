@@ -5,6 +5,7 @@
 
 #include "path.hh"
 #include "store-api.hh"
+#include "store-open.hh"
 #include "build-result.hh"
 
 #include "globals.hh"

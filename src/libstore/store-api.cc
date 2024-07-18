@@ -189,7 +189,7 @@ std::pair<StorePath, Hash> StoreDirConfig::computeStorePath(
 }
 
 
-StoreConfig::Descriptions::Descriptions()
+Store::Config::Descriptions::Descriptions()
     : StoreDirConfig::Descriptions{StoreDirConfig::descriptions}
     , StoreConfigT<config::SettingInfo>{
         .pathInfoCacheSize = {
@@ -235,19 +235,19 @@ StoreConfig::Descriptions::Descriptions()
 }
 
 
-const StoreConfig::Descriptions StoreConfig::descriptions{};
+const Store::Config::Descriptions Store::Config::descriptions{};
 
 
-decltype(StoreConfig::defaults) StoreConfig::defaults = {
+decltype(Store::Config::defaults) Store::Config::defaults = {
     .pathInfoCacheSize = { .value = 65536 },
     .isTrusted = { .value = false },
     .priority = { .value = 0 },
     .wantMassQuery = { .value = false },
-    .systemFeatures = { .value = StoreConfig::getDefaultSystemFeatures() },
+    .systemFeatures = { .value = Store::Config::getDefaultSystemFeatures() },
 };
 
 
-StoreConfig::StoreConfig(const StoreReference::Params & params)
+Store::Config::StoreConfig(const StoreReference::Params & params)
     : StoreDirConfig{params}
     , StoreConfigT<config::JustValue>{
         CONFIG_ROW(pathInfoCacheSize),
@@ -491,7 +491,7 @@ ValidPathInfo Store::addToStoreSlow(
     return info;
 }
 
-StringSet StoreConfig::getDefaultSystemFeatures()
+StringSet Store::Config::getDefaultSystemFeatures()
 {
     auto res = settings.systemFeatures.get();
 

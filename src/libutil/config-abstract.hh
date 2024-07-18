@@ -23,7 +23,7 @@ struct JustValue
 };
 
 template<typename T>
-auto operator <<(auto str, const JustValue<T> & opt)
+auto && operator <<(auto && str, const JustValue<T> & opt)
 {
     return str << opt.get();
 }
