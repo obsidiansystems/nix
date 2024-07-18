@@ -25,15 +25,15 @@ struct StoreDirConfigT
     F<Path> _storeDir;
 };
 
-extern const StoreDirConfigT<config::JustValue> storeDirConfigDefaults;
-
-extern const StoreDirConfigT<config::SettingInfo> storeDirConfigDescriptions;
-
-StoreDirConfigT<config::JustValue> parseStoreDirConfig(const StoreReference::Params &);
-
 struct StoreDirConfig : StoreDirConfigT<config::JustValue>
 {
     StoreDirConfig(const StoreReference::Params & params);
+
+    static const StoreDirConfigT<config::JustValue> defaults;
+
+    using Descriptions = StoreDirConfigT<config::SettingInfo>;
+
+    static const Descriptions descriptions;
 
     virtual ~StoreDirConfig() = default;
 

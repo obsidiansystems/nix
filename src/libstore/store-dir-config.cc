@@ -4,11 +4,7 @@
 
 namespace nix {
 
-const StoreDirConfigT<config::JustValue> storeDirConfigDefaults = {
-    ._storeDir = {.value = settings.nixStore},
-};
-
-const StoreDirConfigT<config::SettingInfo> storeDirConfigDescriptions = {
+const StoreDirConfigT<config::SettingInfo> StoreDirConfig::descriptions = {
     ._storeDir =
         {
             .name = "store",
@@ -20,18 +16,14 @@ const StoreDirConfigT<config::SettingInfo> storeDirConfigDescriptions = {
         },
 };
 
-StoreDirConfigT<config::JustValue> parseStoreDirConfig(const StoreReference::Params & params)
-{
-    constexpr auto & defaults = storeDirConfigDefaults;
-    constexpr auto & descriptions = storeDirConfigDescriptions;
-
-    return {
-        CONFIG_ROW(_storeDir),
-    };
-}
+const StoreDirConfigT<config::JustValue> StoreDirConfig::defaults = {
+    ._storeDir = {.value = settings.nixStore},
+};
 
 StoreDirConfig::StoreDirConfig(const StoreReference::Params & params)
-    : StoreDirConfigT<config::JustValue>{parseStoreDirConfig(params)}
+    : StoreDirConfigT<config::JustValue>{
+        CONFIG_ROW(_storeDir),
+    }
 {
 }
 

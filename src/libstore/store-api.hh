@@ -110,23 +110,23 @@ struct StoreConfigT
     F<StringSet> systemFeatures;
 };
 
-extern const StoreConfigT<config::JustValue> storeConfigDefaults;
-
 StoreConfigT<config::JustValue> parseStoreConfig(const StoreReference::Params &);
-
-struct StoreConfigDescription : StoreConfigT<config::SettingInfo>, StoreDirConfigT<config::SettingInfo>
+struct StoreConfig :
+    StoreDirConfig,
+    StoreConfigT<config::JustValue>
 {
-};
+    StoreConfig(const StoreReference::Params &);
 
-struct StoreConfig : StoreConfigT<config::JustValue>, StoreDirConfig
-{
-    using StoreDirConfig::StoreDirConfig;
+    struct Descriptions :
+        StoreDirConfig::Descriptions,
+        StoreConfigT<config::SettingInfo>
+    {
+        Descriptions();
+    };
 
-    StoreConfig() = delete;
+    static const StoreConfigT<config::JustValue> defaults;
 
-    using Description = StoreConfigDescription;
-
-    static const Description schema;
+    static const Descriptions descriptions;
 
     static StringSet getDefaultSystemFeatures();
 

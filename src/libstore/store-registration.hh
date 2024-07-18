@@ -21,7 +21,7 @@ struct StoreFactory
     std::function<std::shared_ptr<StoreConfig>(
         std::string_view scheme, std::string_view authorityPath, const StoreReference::Params & params)>
         parseConfig;
-    const StoreConfigDescription & configSchema;
+    const Store::Config::Descriptions & configDescriptions;
 };
 
 struct Implementations
@@ -38,7 +38,7 @@ struct Implementations
             .parseConfig = ([](auto scheme, auto uri, auto & params) -> std::shared_ptr<StoreConfig> {
                 return std::make_shared<typename T::Config>(scheme, uri, params);
             }),
-            .configSchema = T::Config::schema,
+            .configDescriptions = T::Config::descriptions,
         };
         registered->push_back(factory);
     }

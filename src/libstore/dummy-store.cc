@@ -4,20 +4,20 @@
 
 namespace nix {
 
-struct DummyStoreConfigDescription : virtual Store::Config::Description
-{
-    DummyStoreConfigDescription() : StoreConfigDescription{Store::Config::schema} {}
-};
-
 struct DummyStoreConfig : virtual StoreConfig {
     using StoreConfig::StoreConfig;
 
-    using Description = DummyStoreConfigDescription;
+    struct Descriptions : virtual Store::Config::Descriptions
+    {
+        Descriptions()
+            : StoreConfig::Descriptions{Store::Config::descriptions}
+        {}
+    };
 
-    static const Description schema;
+    static const Descriptions descriptions;
 
     DummyStoreConfig(std::string_view scheme, std::string_view authority, const StoreReference::Params & params)
-        : StoreConfig(params)
+        : StoreConfig{params}
     {
         if (!authority.empty())
             throw UsageError("`%s` store URIs must not contain an authority part %s", scheme, authority);
@@ -39,13 +39,15 @@ struct DummyStoreConfig : virtual StoreConfig {
     std::shared_ptr<Store> open() override;
 };
 
-decltype(DummyStoreConfig::schema) DummyStoreConfig::schema{};
+
+const DummyStoreConfig::Descriptions DummyStoreConfig::descriptions{};
+
 
 struct DummyStore : public virtual DummyStoreConfig, public virtual Store
 {
     using Config = DummyStoreConfig;
 
-    DummyStore(const DummyStoreConfig & config)
+    DummyStore(const Config & config)
         : StoreConfig(config)
         , DummyStoreConfig(config)
         , Store(config)
@@ -98,7 +100,7 @@ struct DummyStore : public virtual DummyStoreConfig, public virtual Store
     { unsupported("getFSAccessor"); }
 };
 
-std::shared_ptr<Store> DummyStoreConfig::open()
+std::shared_ptr<Store> DummyStore::Config::open()
 {
     return std::make_shared<DummyStore>(*this);
 }

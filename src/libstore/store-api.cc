@@ -189,7 +189,56 @@ std::pair<StorePath, Hash> StoreDirConfig::computeStorePath(
 }
 
 
-const StoreConfigT<config::JustValue> storeConfigDefaults = {
+StoreConfig::Descriptions::Descriptions()
+    : StoreDirConfig::Descriptions{StoreDirConfig::descriptions}
+    , StoreConfigT<config::SettingInfo>{
+        .pathInfoCacheSize = {
+            .name = "path-info-cache-size",
+            .description = "Size of the in-memory store path metadata cache.",
+        },
+        .isTrusted = {
+            .name = "trusted",
+            .description = R"(
+              Whether paths from this store can be used as substitutes
+              even if they are not signed by a key listed in the
+              [`trusted-public-keys`](@docroot@/command-ref/conf-file.md#conf-trusted-public-keys)
+              setting.
+            )",
+        },
+        .priority = {
+            .name = "priority",
+            .description = R"(
+              Priority of this store when used as a [substituter](@docroot@/command-ref/conf-file.md#conf-substituters).
+              A lower value means a higher priority.
+            )",
+        },
+        .wantMassQuery = {
+            .name = "want-mass-query",
+            .description = R"(
+              Whether this store can be queried efficiently for path validity when used as a [substituter](@docroot@/command-ref/conf-file.md#conf-substituters).
+            )",
+        },
+
+        .systemFeatures = {
+            .name = "system-features",
+            .description = R"(
+              Optional [system features](@docroot@/command-ref/conf-file.md#conf-system-features) available on the system this store uses to build derivations.
+
+              Example: `"kvm"`
+            )",
+            // The default value is CPU- and OS-specific, and thus
+            // unsuitable to be rendered in the documentation.
+            .documentDefault = false,
+        },
+    }
+{
+}
+
+
+const StoreConfig::Descriptions StoreConfig::descriptions{};
+
+
+decltype(StoreConfig::defaults) StoreConfig::defaults = {
     .pathInfoCacheSize = { .value = 65536 },
     .isTrusted = { .value = false },
     .priority = { .value = 0 },
@@ -197,59 +246,17 @@ const StoreConfigT<config::JustValue> storeConfigDefaults = {
     .systemFeatures = { .value = StoreConfig::getDefaultSystemFeatures() },
 };
 
-decltype(StoreConfig::schema) StoreConfig::schema = {{
-    .pathInfoCacheSize = {
-        .name = "path-info-cache-size",
-        .description = "Size of the in-memory store path metadata cache.",
-    },
-    .isTrusted = {
-        .name = "trusted",
-        .description = R"(
-          Whether paths from this store can be used as substitutes
-          even if they are not signed by a key listed in the
-          [`trusted-public-keys`](@docroot@/command-ref/conf-file.md#conf-trusted-public-keys)
-          setting.
-        )",
-    },
-    .priority = {
-        .name = "priority",
-        .description = R"(
-          Priority of this store when used as a [substituter](@docroot@/command-ref/conf-file.md#conf-substituters).
-          A lower value means a higher priority.
-        )",
-    },
-    .wantMassQuery = {
-        .name = "want-mass-query",
-        .description = R"(
-          Whether this store can be queried efficiently for path validity when used as a [substituter](@docroot@/command-ref/conf-file.md#conf-substituters).
-        )",
-    },
 
-    .systemFeatures = {
-        .name = "system-features",
-        .description = R"(
-          Optional [system features](@docroot@/command-ref/conf-file.md#conf-system-features) available on the system this store uses to build derivations.
-
-          Example: `"kvm"`
-        )",
-        // The default value is CPU- and OS-specific, and thus
-        // unsuitable to be rendered in the documentation.
-        .documentDefault = false,
-    },
-}};
-
-StoreConfigT<config::JustValue> parseStoreConfig(const StoreReference::Params & params)
-{
-    constexpr auto & defaults = storeConfigDefaults;
-    constexpr auto & descriptions = StoreConfig::schema;
-
-    return {
+StoreConfig::StoreConfig(const StoreReference::Params & params)
+    : StoreDirConfig{params}
+    , StoreConfigT<config::JustValue>{
         CONFIG_ROW(pathInfoCacheSize),
         CONFIG_ROW(isTrusted),
         CONFIG_ROW(priority),
         CONFIG_ROW(wantMassQuery),
         CONFIG_ROW(systemFeatures),
-    };
+    }
+{
 }
 
 
