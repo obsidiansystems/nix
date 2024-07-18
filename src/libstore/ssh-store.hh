@@ -8,15 +8,26 @@
 
 namespace nix {
 
-struct SSHStoreConfig : virtual RemoteStoreConfig, virtual CommonSSHStoreConfig
+template<template<typename> class F>
+struct SSHStoreConfigT
 {
-    using CommonSSHStoreConfig::CommonSSHStoreConfig;
-    using RemoteStoreConfig::RemoteStoreConfig;
+    const F<Strings> remoteProgram;
+};
 
-    SSHStoreConfig(std::string_view scheme, std::string_view authority, const Params & params);
+struct SSHStoreConfig : virtual RemoteStoreConfig,
+                        virtual CommonSSHStoreConfig,
+                        SSHStoreConfigT<config::JustValue>
+{
+    struct Descriptions : virtual CommonSSHStoreConfig::Descriptions, SSHStoreConfigT<config::SettingInfo>
+    {
+        Descriptions();
+    };
 
-    const Setting<Strings> remoteProgram{
-        this, {"nix-daemon"}, "remote-program", "Path to the `nix-daemon` executable on the remote machine."};
+    static const Descriptions descriptions;
+
+    static SSHStoreConfigT<config::JustValue> defaults;
+
+    SSHStoreConfig(std::string_view scheme, std::string_view authority, const StoreReference::Params & params);
 
     const std::string name() override
     {
@@ -29,16 +40,20 @@ struct SSHStoreConfig : virtual RemoteStoreConfig, virtual CommonSSHStoreConfig
     }
 
     std::string doc() override;
+
+    ref<Store> openStore() const override;
 };
 
-struct MountedSSHStoreConfig : virtual SSHStoreConfig, virtual LocalFSStoreConfig
+struct MountedSSHStoreConfig : virtual SSHStoreConfig, virtual LocalFSStore::Config
 {
-    using LocalFSStoreConfig::LocalFSStoreConfig;
-    using SSHStoreConfig::SSHStoreConfig;
+    struct Descriptions : virtual SSHStoreConfig::Descriptions, virtual LocalFSStore::Config::Descriptions
+    {
+        Descriptions();
+    };
 
-    MountedSSHStoreConfig(StringMap params);
+    static const Descriptions descriptions;
 
-    MountedSSHStoreConfig(std::string_view scheme, std::string_view host, StringMap params);
+    MountedSSHStoreConfig(std::string_view scheme, std::string_view host, const StoreReference::Params & params);
 
     const std::string name() override
     {
@@ -56,6 +71,8 @@ struct MountedSSHStoreConfig : virtual SSHStoreConfig, virtual LocalFSStoreConfi
     {
         return ExperimentalFeature::MountedSSHStore;
     }
+
+    ref<Store> openStore() const override;
 };
 
 }

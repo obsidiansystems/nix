@@ -7,18 +7,44 @@
 #include "worker-protocol-impl.hh"
 #include "pool.hh"
 #include "ssh.hh"
+#include "config-parse-impl.hh"
+#include "store-registration.hh"
 
 namespace nix {
+
+SSHStoreConfig::Descriptions::Descriptions()
+    : Store::Config::Descriptions{Store::Config::descriptions}
+    , CommonSSHStoreConfig::Descriptions{CommonSSHStoreConfig::descriptions}
+    , SSHStoreConfigT<config::SettingInfo>{
+        .remoteProgram{
+            .name = "remote-program",
+            .description = "Path to the `nix-daemon` executable on the remote machine.",
+        },
+    }
+{}
+
+
+const SSHStoreConfig::Descriptions SSHStoreConfig::descriptions{};
+
+
+decltype(SSHStoreConfig::defaults) SSHStoreConfig::defaults = {
+    .remoteProgram = {{"nix-daemon"}},
+};
+
 
 SSHStoreConfig::SSHStoreConfig(
     std::string_view scheme,
     std::string_view authority,
-    const Params & params)
-    : StoreConfig(params)
-    , RemoteStoreConfig(params)
-    , CommonSSHStoreConfig(scheme, authority, params)
+    const StoreReference::Params & params)
+    : Store::Config{params}
+    , RemoteStore::Config{params}
+    , CommonSSHStoreConfig{scheme, authority, params}
+    , SSHStoreConfigT<config::JustValue>{
+        CONFIG_ROW(remoteProgram),
+    }
 {
 }
+
 
 std::string SSHStoreConfig::doc()
 {
@@ -27,20 +53,19 @@ std::string SSHStoreConfig::doc()
       ;
 }
 
-class SSHStore : public virtual SSHStoreConfig, public virtual RemoteStore
+struct SSHStore :
+    public virtual SSHStoreConfig,
+    public virtual RemoteStore
 {
-public:
+    using Config = SSHStoreConfig;
 
-    SSHStore(
-        std::string_view scheme,
-        std::string_view host,
-        const Params & params)
-        : StoreConfig(params)
-        , RemoteStoreConfig(params)
-        , CommonSSHStoreConfig(scheme, host, params)
-        , SSHStoreConfig(scheme, host, params)
-        , Store(params)
-        , RemoteStore(params)
+    SSHStore(const Config & config)
+        : Store::Config{config}
+        , RemoteStore::Config{config}
+        , CommonSSHStoreConfig{config}
+        , SSHStore::Config{config}
+        , Store{static_cast<const Store::Config &>(*this)}
+        , RemoteStore{static_cast<const RemoteStore::Config &>(*this)}
         , master(createSSHMaster(
             // Use SSH master only if using more than 1 connection.
             connections->capacity() > 1))
@@ -88,21 +113,15 @@ protected:
 };
 
 
-MountedSSHStoreConfig::MountedSSHStoreConfig(StringMap params)
-    : StoreConfig(params)
-    , RemoteStoreConfig(params)
-    , CommonSSHStoreConfig(params)
-    , SSHStoreConfig(params)
-    , LocalFSStoreConfig(params)
-{
-}
-
-MountedSSHStoreConfig::MountedSSHStoreConfig(std::string_view scheme, std::string_view host, StringMap params)
-    : StoreConfig(params)
-    , RemoteStoreConfig(params)
-    , CommonSSHStoreConfig(scheme, host, params)
-    , SSHStoreConfig(params)
-    , LocalFSStoreConfig(params)
+MountedSSHStoreConfig::MountedSSHStoreConfig(
+    std::string_view scheme,
+    std::string_view host,
+    const StoreReference::Params & params)
+    : Store::Config{params}
+    , RemoteStore::Config{params}
+    , CommonSSHStoreConfig{scheme, host, params}
+    , SSHStoreConfig{scheme, host, params}
+    , LocalFSStoreConfig{params}
 {
 }
 
@@ -128,24 +147,21 @@ std::string MountedSSHStoreConfig::doc()
  * The difference lies in how they manage GC roots. See addPermRoot
  * below for details.
  */
-class MountedSSHStore : public virtual MountedSSHStoreConfig, public virtual SSHStore, public virtual LocalFSStore
+struct MountedSSHStore : virtual MountedSSHStoreConfig, virtual SSHStore, virtual LocalFSStore
 {
-public:
+    using Config = MountedSSHStoreConfig;
 
-    MountedSSHStore(
-        std::string_view scheme,
-        std::string_view host,
-        const Params & params)
-        : StoreConfig(params)
-        , RemoteStoreConfig(params)
-        , CommonSSHStoreConfig(scheme, host, params)
-        , SSHStoreConfig(params)
-        , LocalFSStoreConfig(params)
-        , MountedSSHStoreConfig(params)
-        , Store(params)
-        , RemoteStore(params)
-        , SSHStore(scheme, host, params)
-        , LocalFSStore(params)
+    MountedSSHStore(const Config & config)
+        : Store::Config{config}
+        , RemoteStore::Config{config}
+        , CommonSSHStoreConfig{config}
+        , SSHStore::Config{config}
+        , LocalFSStore::Config{config}
+        , MountedSSHStore::Config{config}
+        , Store{static_cast<const Store::Config &>(*this)}
+        , RemoteStore{static_cast<const RemoteStore::Config &>(*this)}
+        , SSHStore{static_cast<const SSHStore::Config &>(*this)}
+        , LocalFSStore{static_cast<const LocalFSStore::Config &>(*this)}
     {
         extraRemoteProgramArgs = {
             "--process-ops",
@@ -215,7 +231,7 @@ ref<RemoteStore::Connection> SSHStore::openConnection()
     return conn;
 }
 
-static RegisterStoreImplementation<SSHStore, SSHStoreConfig> regSSHStore;
-static RegisterStoreImplementation<MountedSSHStore, MountedSSHStoreConfig> regMountedSSHStore;
+static RegisterStoreImplementation<SSHStore> regSSHStore;
+static RegisterStoreImplementation<MountedSSHStore> regMountedSSHStore;
 
 }

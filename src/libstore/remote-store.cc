@@ -18,33 +18,50 @@
 #include "callback.hh"
 #include "filetransfer.hh"
 #include "signals.hh"
+#include "config-parse-impl.hh"
 
 #include <nlohmann/json.hpp>
 
 namespace nix {
 
-#if 0
-    const Setting<int> maxConnections{this, 1, "max-connections",
-        "Maximum number of concurrent connections to the Nix daemon."};
+RemoteStore::Config::Descriptions::Descriptions()
+    : Store::Config::Descriptions{Store::Config::descriptions}
+    , RemoteStoreConfigT<config::SettingInfo>{
+        .maxConnections{
+            .name = "max-connections",
+            .description = "Maximum number of concurrent connections to the Nix daemon.",
+        },
+        .maxConnectionAge{
+            .name = "max-connection-age",
+            .description = "Maximum age of a connection before it is closed.",
+        },
+    }
+{}
 
-    const Setting<unsigned int> maxConnectionAge{this,
-        std::numeric_limits<unsigned int>::max(),
-        "max-connection-age",
-        "Maximum age of a connection before it is closed."};
 
-    const Setting<int> maxConnections{this, 1, "max-connections",
-        "Maximum number of concurrent connections to the Nix daemon."};
+const RemoteStore::Config::Descriptions RemoteStore::Config::descriptions{};
 
-    const Setting<unsigned int> maxConnectionAge{this,
-        std::numeric_limits<unsigned int>::max(),
-        "max-connection-age",
-        "Maximum age of a connection before it is closed."};
-#endif
+
+decltype(RemoteStore::Config::defaults) RemoteStore::Config::defaults = {
+    .maxConnections = {1},
+    .maxConnectionAge = {std::numeric_limits<unsigned int>::max()},
+};
+
+
+RemoteStore::Config::RemoteStoreConfig(const StoreReference::Params & params)
+    : Store::Config(params)
+    , RemoteStoreConfigT<config::JustValue>{
+        CONFIG_ROW(maxConnections),
+        CONFIG_ROW(maxConnectionAge),
+    }
+{
+}
+
 
 /* TODO: Separate these store types into different files, give them better names */
-RemoteStore::RemoteStore(const Params & params)
-    : RemoteStoreConfig(params)
-    , Store(params)
+RemoteStore::RemoteStore(const Config & config)
+    : RemoteStore::Config(config)
+    , Store(static_cast<const Store::Config &>(*this))
     , connections(make_ref<Pool<Connection>>(
             std::max(1, (int) maxConnections),
             [this]() {
@@ -134,7 +151,7 @@ void RemoteStore::setOptions(Connection & conn)
        << settings.useSubstitutes;
 
     if (GET_PROTOCOL_MINOR(conn.daemonVersion) >= 12) {
-        std::map<std::string, Config::SettingInfo> overrides;
+        std::map<std::string, nix::Config::SettingInfo> overrides;
         settings.getSettings(overrides, true); // libstore settings
         fileTransferSettings.getSettings(overrides, true);
         overrides.erase(settings.keepFailed.name);

@@ -46,8 +46,8 @@ LegacySSHStore::Config::LegacySSHStoreConfig(
     std::string_view scheme,
     std::string_view authority,
     const StoreReference::Params & params)
-    : Store::Config(params)
-    , CommonSSHStoreConfig(scheme, authority, params)
+    : Store::Config{params}
+    , CommonSSHStoreConfig{scheme, authority, params}
     , LegacySSHStoreConfigT<config::JustValue>{
         CONFIG_ROW(remoteProgram),
         CONFIG_ROW(maxConnections),
@@ -76,10 +76,10 @@ struct LegacySSHStore::Connection : public ServeProto::BasicClientConnection
 };
 
 LegacySSHStore::LegacySSHStore(const Config & config)
-    : Store::Config(config)
-    , CommonSSHStoreConfig(config)
-    , LegacySSHStore::Config(config)
-    , Store(static_cast<const Store::Config &>(*this))
+    : Store::Config{config}
+    , CommonSSHStoreConfig{config}
+    , LegacySSHStore::Config{config}
+    , Store{static_cast<const Store::Config &>(*this)}
     , connections(make_ref<Pool<Connection>>(
         std::max(1, (int) maxConnections),
         [this]() { return openConnection(); },

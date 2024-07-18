@@ -22,7 +22,6 @@ template<template<typename> class F>
 struct RemoteStoreConfigT
 {
     const F<int> maxConnections;
-
     const F<unsigned int> maxConnectionAge;
 };
 
@@ -43,6 +42,8 @@ struct RemoteStoreConfig :
      * The other defaults depend on the choice of `storeDir` and `rootDir`
      */
     static RemoteStoreConfigT<config::JustValue> defaults;
+
+    RemoteStoreConfig(const StoreReference::Params &);
 };
 
 /**
