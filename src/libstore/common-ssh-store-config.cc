@@ -9,28 +9,29 @@ namespace nix {
 CommonSSHStoreConfig::Descriptions::Descriptions()
     : Store::Config::Descriptions{Store::Config::descriptions}
     , CommonSSHStoreConfigT<config::SettingInfo>{
-        .sshKey{
-            .name = "ssh-key",
-            .description = "Path to the SSH private key used to authenticate to the remote machine.",
-        },
-        .sshPublicHostKey = {
-            .name = "base64-ssh-public-host-key",
-            .description = "The public host key of the remote machine.",
-        },
-        .compress = {
-            .name = "compress",
-            .description = "Whether to enable SSH compression.",
-        },
-        .remoteStore{
-            .name = "remote-store",
-            .description = R"(
-              [Store URL](@docroot@/store/types/index.md#store-url-format)
-              to be used on the remote machine. The default is `auto`
-              (i.e. use the Nix daemon or `/nix/store` directly).
+          .sshKey{
+              .name = "ssh-key",
+              .description = "Path to the SSH private key used to authenticate to the remote machine.",
+          },
+          .sshPublicHostKey{
+              .name = "base64-ssh-public-host-key",
+              .description = "The public host key of the remote machine.",
+          },
+          .compress{
+              .name = "compress",
+              .description = "Whether to enable SSH compression.",
+          },
+          .remoteStore{
+              .name = "remote-store",
+              .description = R"(
+                [Store URL](@docroot@/store/types/index.md#store-url-format)
+                to be used on the remote machine. The default is `auto`
+                (i.e. use the Nix daemon or `/nix/store` directly).
             )",
-        },
-    }
-{}
+          },
+      }
+{
+}
 
 const CommonSSHStoreConfig::Descriptions CommonSSHStoreConfig::descriptions{};
 

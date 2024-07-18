@@ -113,7 +113,7 @@ std::string LocalStoreConfig::doc()
         ;
 }
 
-std::shared_ptr<Store> LocalStore::Config::openStore()
+std::shared_ptr<Store> LocalStore::Config::openStore() const
 {
     return std::make_shared<LocalStore>(*this);
 }

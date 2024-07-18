@@ -154,7 +154,7 @@ struct StoreConfig :
      * Open a store of the type corresponding to this configuration
      * type.
      */
-    virtual std::shared_ptr<Store> openStore() = 0;
+    virtual std::shared_ptr<Store> openStore() const = 0;
 };
 
 class Store : public std::enable_shared_from_this<Store>, public virtual StoreConfig

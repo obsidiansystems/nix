@@ -56,9 +56,6 @@ struct LocalStoreConfig :
 
     static const Descriptions descriptions;
 
-    /**
-     * The other defaults depend on the choice of `storeDir` and `rootDir`
-     */
     static LocalStoreConfigT<config::JustValue> defaults;
 
     LocalStoreConfig(const StoreReference::Params &);
@@ -75,7 +72,7 @@ struct LocalStoreConfig :
 
     std::string doc() override;
 
-    std::shared_ptr<Store> openStore() override;
+    std::shared_ptr<Store> openStore() const override;
 };
 
 class LocalStore :

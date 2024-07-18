@@ -36,7 +36,7 @@ struct DummyStoreConfig : virtual StoreConfig {
         return {"dummy"};
     }
 
-    std::shared_ptr<Store> openStore() override;
+    std::shared_ptr<Store> openStore() const override;
 };
 
 
@@ -100,7 +100,7 @@ struct DummyStore : public virtual DummyStoreConfig, public virtual Store
     { unsupported("getFSAccessor"); }
 };
 
-std::shared_ptr<Store> DummyStore::Config::openStore()
+std::shared_ptr<Store> DummyStore::Config::openStore() const
 {
     return std::make_shared<DummyStore>(*this);
 }
