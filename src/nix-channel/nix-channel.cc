@@ -2,7 +2,6 @@
 #include "shared.hh"
 #include "globals.hh"
 #include "filetransfer.hh"
-#include "store-api.hh"
 #include "store-open.hh"
 #include "legacy.hh"
 #include "eval-settings.hh" // for defexpr
