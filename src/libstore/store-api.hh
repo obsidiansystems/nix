@@ -103,7 +103,7 @@ struct StoreConfigT
     const F<bool> isTrusted;
     F<int> priority;
     F<bool> wantMassQuery;
-    F<StringSet> systemFeatures;
+    const F<StringSet> systemFeatures;
 };
 
 StoreConfigT<config::JustValue> parseStoreConfig(const StoreReference::Params &);
@@ -155,6 +155,20 @@ struct StoreConfig :
      * type.
      */
     virtual ref<Store> openStore() const = 0;
+
+protected:
+
+    /**
+     * So caches themselves (not our config) can update default
+     * settings, but aren't allowed to update settings specied by the
+     * client (i.e. us).
+     */
+    bool defaultPriority;
+
+    /**
+     * @see defaultPriority
+     */
+    bool defaultWantMassQuery;
 };
 
 class Store : public std::enable_shared_from_this<Store>, public virtual StoreConfig

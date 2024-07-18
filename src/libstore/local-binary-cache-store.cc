@@ -125,6 +125,10 @@ std::set<std::string> LocalBinaryCacheStoreConfig::uriSchemes()
         return {"file"};
 }
 
+ref<Store> LocalBinaryCacheStoreConfig::openStore() const {
+    return make_ref<LocalBinaryCacheStore>(*this);
+}
+
 static RegisterStoreImplementation<LocalBinaryCacheStore> regLocalBinaryCacheStore;
 
 }

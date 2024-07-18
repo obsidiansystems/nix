@@ -256,6 +256,8 @@ Store::Config::StoreConfig(const StoreReference::Params & params)
         CONFIG_ROW(wantMassQuery),
         CONFIG_ROW(systemFeatures),
     }
+    , defaultPriority{params.count(descriptions.priority.name) == 0}
+    , defaultWantMassQuery{params.count(descriptions.wantMassQuery.name) == 0}
 {
 }
 

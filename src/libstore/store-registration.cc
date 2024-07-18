@@ -35,7 +35,7 @@ ref<StoreConfig> resolveStoreConfig(StoreReference && storeURI)
                 if (access(stateDir.c_str(), R_OK | W_OK) == 0)
                     return make_ref<LocalStore::Config>(params);
                 else if (pathExists(settings.nixDaemonSocketFile))
-                    return make_ref<UDSRemoteStore::Config>("unix", "", params);
+                    return make_ref<UDSRemoteStore::Config>(params);
 #if __linux__
                 else if (
                     !pathExists(stateDir) && params.empty() && !isRootUser() && !getEnv("NIX_STORE_DIR").has_value()

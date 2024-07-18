@@ -290,6 +290,7 @@ S3BinaryCacheStore::Config::S3BinaryCacheStoreConfig(
         CONFIG_ROW(multipartUpload),
         CONFIG_ROW(bufferSize),
     }
+    , bucketName{authority}
 {
     if (bucketName.empty())
         throw UsageError("`%s` store requires a bucket name in its Store URI", scheme);
@@ -334,8 +335,10 @@ struct S3BinaryCacheStoreImpl : virtual S3BinaryCacheStoreConfig, public virtual
     void init() override
     {
         if (auto cacheInfo = diskCache->upToDateCacheExists(getUri())) {
-            wantMassQuery.setDefault(cacheInfo->wantMassQuery);
-            priority.setDefault(cacheInfo->priority);
+            if (defaultWantMassQuery)
+               wantMassQuery.value = cacheInfo->wantMassQuery;
+            if (defaultPriority)
+               priority.value = cacheInfo->priority;
         } else {
             BinaryCacheStore::init();
             diskCache->createCache(getUri(), storeDir, wantMassQuery, priority);

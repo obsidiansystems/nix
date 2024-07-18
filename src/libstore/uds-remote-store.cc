@@ -18,6 +18,16 @@
 
 namespace nix {
 
+UDSRemoteStoreConfig::Descriptions::Descriptions()
+    : Store::Config::Descriptions{Store::Config::descriptions}
+    , LocalFSStore::Config::Descriptions{LocalFSStore::Config::descriptions}
+    , RemoteStore::Config::Descriptions{RemoteStore::Config::descriptions}
+{}
+
+
+const UDSRemoteStoreConfig::Descriptions UDSRemoteStoreConfig::descriptions{};
+
+
 UDSRemoteStoreConfig::UDSRemoteStoreConfig(
     std::string_view scheme,
     std::string_view authority,
@@ -95,6 +105,11 @@ void UDSRemoteStore::addIndirectRoot(const Path & path)
     conn->to << WorkerProto::Op::AddIndirectRoot << path;
     conn.processStderr();
     readInt(conn->from);
+}
+
+
+ref<Store> UDSRemoteStore::Config::openStore() const {
+    return make_ref<UDSRemoteStore>(*this);
 }
 
 

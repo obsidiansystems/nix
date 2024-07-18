@@ -345,9 +345,14 @@ unsigned int LegacySSHStore::getProtocol()
  * The legacy ssh protocol doesn't support checking for trusted-user.
  * Try using ssh-ng:// instead if you want to know.
  */
-std::optional<TrustedFlag> isTrustedClient()
+std::optional<TrustedFlag> LegacySSHStore::isTrustedClient()
 {
     return std::nullopt;
+}
+
+
+ref<Store> LegacySSHStore::Config::openStore() const {
+    return make_ref<LegacySSHStore>(*this);
 }
 
 

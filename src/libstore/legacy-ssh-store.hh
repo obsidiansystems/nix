@@ -137,10 +137,7 @@ public:
      * The legacy ssh protocol doesn't support checking for trusted-user.
      * Try using ssh-ng:// instead if you want to know.
      */
-    std::optional<TrustedFlag> isTrustedClient() override
-    {
-        return std::nullopt;
-    }
+    std::optional<TrustedFlag> isTrustedClient() override;
 
     void queryRealisationUncached(const DrvOutput &,
         Callback<std::shared_ptr<const Realisation>> callback) noexcept override

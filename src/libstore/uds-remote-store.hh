@@ -20,6 +20,10 @@ struct UDSRemoteStoreConfig :
 
     static const Descriptions descriptions;
 
+    UDSRemoteStoreConfig(const StoreReference::Params & params)
+        : UDSRemoteStoreConfig{"unix", "", params}
+    {}
+
     /**
      * @param authority is the socket path.
      */

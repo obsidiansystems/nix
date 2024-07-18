@@ -58,7 +58,9 @@ struct LocalStoreConfig :
 
     static LocalStoreConfigT<config::JustValue> defaults;
 
-    LocalStoreConfig(const StoreReference::Params &);
+    LocalStoreConfig(const StoreReference::Params & params)
+        : LocalStoreConfig{"local", "", params}
+    {}
 
     LocalStoreConfig(
         std::string_view scheme,

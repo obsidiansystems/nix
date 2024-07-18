@@ -101,6 +101,8 @@ BinaryCacheStore::BinaryCacheStore(const Config & config)
     StringSink sink;
     sink << narVersionMagic1;
     narMagic = sink.s;
+
+    init();
 }
 
 void BinaryCacheStore::init()
@@ -121,9 +123,11 @@ void BinaryCacheStore::init()
                     throw Error("binary cache '%s' is for Nix stores with prefix '%s', not '%s'",
                         getUri(), value, storeDir);
             } else if (name == "WantMassQuery") {
-                wantMassQuery.setDefault(value == "1");
+                if (defaultWantMassQuery)
+                   wantMassQuery.value = value == "1";
             } else if (name == "Priority") {
-                priority.setDefault(std::stoi(value));
+                if (defaultPriority)
+                   priority.value = std::stoi(value);
             }
         }
     }

@@ -113,6 +113,21 @@ protected:
 };
 
 
+ref<Store> SSHStore::Config::openStore() const {
+    return make_ref<SSHStore>(*this);
+}
+
+
+MountedSSHStoreConfig::Descriptions::Descriptions()
+    : Store::Config::Descriptions{Store::Config::descriptions}
+    , CommonSSHStoreConfig::Descriptions{CommonSSHStoreConfig::descriptions}
+    , SSHStore::Config::Descriptions{SSHStoreConfig::descriptions}
+{}
+
+
+const MountedSSHStoreConfig::Descriptions MountedSSHStoreConfig::descriptions{};
+
+
 MountedSSHStoreConfig::MountedSSHStoreConfig(
     std::string_view scheme,
     std::string_view host,
@@ -213,6 +228,12 @@ struct MountedSSHStore : virtual MountedSSHStoreConfig, virtual SSHStore, virtua
         return readString(conn->from);
     }
 };
+
+
+ref<Store> MountedSSHStore::Config::openStore() const {
+    return make_ref<MountedSSHStore>(*this);
+}
+
 
 ref<RemoteStore::Connection> SSHStore::openConnection()
 {
