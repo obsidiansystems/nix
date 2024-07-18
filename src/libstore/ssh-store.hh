@@ -14,9 +14,7 @@ struct SSHStoreConfigT
     const F<Strings> remoteProgram;
 };
 
-struct SSHStoreConfig : virtual RemoteStoreConfig,
-                        virtual CommonSSHStoreConfig,
-                        SSHStoreConfigT<config::JustValue>
+struct SSHStoreConfig : virtual RemoteStoreConfig, virtual CommonSSHStoreConfig, SSHStoreConfigT<config::JustValue>
 {
     struct Descriptions : virtual CommonSSHStoreConfig::Descriptions, SSHStoreConfigT<config::SettingInfo>
     {

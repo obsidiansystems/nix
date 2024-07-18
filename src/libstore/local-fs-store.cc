@@ -38,7 +38,7 @@ LocalFSStoreConfigT<config::JustValue> LocalFSStore::Config::defaults(
     const std::optional<Path> rootDir)
 {
     return {
-        .rootDir = {std::nullopt},
+        .rootDir = {rootDir},
         .stateDir = {rootDir ? *rootDir + "/nix/var/nix" : settings.nixStateDir},
         .logDir = {rootDir ? *rootDir + "/nix/var/log/nix" : settings.nixLogDir},
         .realStoreDir = {rootDir ? *rootDir + "/nix/store" : storeConfig.storeDir},
