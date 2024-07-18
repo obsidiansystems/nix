@@ -38,7 +38,6 @@ template<template<typename> class F>
 struct LocalStoreConfigT
 {
     const F<bool> requireSigs;
-
     const F<bool> readOnly;
 };
 
@@ -57,9 +56,6 @@ struct LocalStoreConfig :
 
     static const Descriptions descriptions;
 
-    /**
-     * The other defaults depend on the choice of `storeDir` and `rootDir`
-     */
     static LocalStoreConfigT<config::JustValue> defaults;
 
     LocalStoreConfig(const StoreReference::Params &);
@@ -76,7 +72,7 @@ struct LocalStoreConfig :
 
     std::string doc() override;
 
-    std::shared_ptr<Store> openStore() override;
+    ref<Store> openStore() const override;
 };
 
 class LocalStore :

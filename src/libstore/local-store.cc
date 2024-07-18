@@ -89,8 +89,8 @@ LocalStore::Config::Descriptions::Descriptions()
 const LocalStore::Config::Descriptions LocalStore::Config::descriptions{};
 
 decltype(LocalStore::Config::defaults) LocalStore::Config::defaults = {
-    .requireSigs = {.value = settings.requireSigs },
-    .readOnly = {.value = false },
+    .requireSigs = {settings.requireSigs},
+    .readOnly = {false},
 };
 
 LocalStore::Config::LocalStoreConfig(
@@ -113,9 +113,9 @@ std::string LocalStoreConfig::doc()
         ;
 }
 
-std::shared_ptr<Store> LocalStore::Config::openStore()
+ref<Store> LocalStore::Config::openStore() const
 {
-    return std::make_shared<LocalStore>(*this);
+    return make_ref<LocalStore>(*this);
 }
 
 struct LocalStore::State::Stmts {

@@ -33,15 +33,15 @@ LocalFSStore::Config::Descriptions::Descriptions()
 
 const LocalFSStore::Config::Descriptions LocalFSStore::Config::descriptions{};
 
-LocalFSStoreConfigT<config::JustValue> LocalFSStoreConfig::defaults(
+LocalFSStoreConfigT<config::JustValue> LocalFSStore::Config::defaults(
     const Store::Config & storeConfig,
     const std::optional<Path> rootDir)
 {
     return {
-        .rootDir = {.value = std::nullopt },
-        .stateDir = {.value = rootDir ? *rootDir + "/nix/var/nix" : settings.nixStateDir },
-        .logDir = {.value = rootDir ? *rootDir + "/nix/var/log/nix" : settings.nixLogDir },
-        .realStoreDir = {.value = rootDir ? *rootDir + "/nix/store" : storeConfig.storeDir },
+        .rootDir = {std::nullopt},
+        .stateDir = {rootDir ? *rootDir + "/nix/var/nix" : settings.nixStateDir},
+        .logDir = {rootDir ? *rootDir + "/nix/var/log/nix" : settings.nixLogDir},
+        .realStoreDir = {rootDir ? *rootDir + "/nix/store" : storeConfig.storeDir},
     };
 }
 
