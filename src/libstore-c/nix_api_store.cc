@@ -5,6 +5,7 @@
 
 #include "path.hh"
 #include "store-api.hh"
+#include "store-open.hh"
 #include "build-result.hh"
 
 #include "globals.hh"
@@ -29,16 +30,6 @@ nix_err nix_libstore_init_no_load_config(nix_c_context * context)
     NIXC_CATCH_ERRS
 }
 
-nix_err nix_init_plugins(nix_c_context * context)
-{
-    if (context)
-        context->last_err_code = NIX_OK;
-    try {
-        nix::initPlugins();
-    }
-    NIXC_CATCH_ERRS
-}
-
 Store * nix_store_open(nix_c_context * context, const char * uri, const char *** params)
 {
     if (context)
@@ -52,7 +43,7 @@ Store * nix_store_open(nix_c_context * context, const char * uri, const char ***
         if (!params)
             return new Store{nix::openStore(uri_str)};
 
-        nix::Store::Params params_map;
+        nix::StoreReference::Params params_map;
         for (size_t i = 0; params[i] != nullptr; i++) {
             params_map[params[i][0]] = params[i][1];
         }

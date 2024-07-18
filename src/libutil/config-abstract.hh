@@ -1,7 +1,7 @@
 #pragma once
 ///@type
 
-namespace nix {
+namespace nix::config {
 
 template<typename T>
 struct JustValue
@@ -23,10 +23,9 @@ struct JustValue
 };
 
 template<typename T>
-struct SettingInfo
+auto && operator<<(auto && str, const JustValue<T> & opt)
 {
-    std::string name;
-    std::string description;
-};
+    return str << opt.get();
+}
 
 }

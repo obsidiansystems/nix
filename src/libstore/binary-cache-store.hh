@@ -96,7 +96,11 @@ public:
 
 public:
 
-    virtual void init() override;
+    /**
+     * Perform any necessary effectful operation to make the store up and
+     * running
+     */
+    virtual void init();
 
 private:
 

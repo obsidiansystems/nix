@@ -1,13 +1,21 @@
 #pragma once
+//@file
 
-/**
- * Look up the setting's name in a map, falling back on the default if
- * it does not exist.
- */
-#define CONFIG_ROW(FIELD)                                  \
-    .FIELD = {                                             \
-        .value = ({                                        \
-            auto p = get(params, descriptions.FIELD.name); \
-            p ? *p : defaults.FIELD.value;                 \
-        }),                                                \
-    }
+#include <nlohmann/json_fwd.hpp>
+
+#include "config-abstract.hh"
+#include "util.hh"
+
+namespace nix::config {
+
+template<typename T>
+struct SettingInfo
+{
+    std::string name;
+    std::string description;
+    bool documentDefault = true;
+
+    std::optional<JustValue<T>> parseConfig(const nlohmann::json::object_t & map) const;
+};
+
+}
