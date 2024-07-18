@@ -18,7 +18,7 @@ struct StoreFactory
      * The `authorityPath` parameter is `<authority>/<path>`, or really
      * whatever comes after `<scheme>://` and before `?<query-params>`.
      */
-    std::function<std::shared_ptr<StoreConfig>(
+    std::function<ref<StoreConfig>(
         std::string_view scheme, std::string_view authorityPath, const StoreReference::Params & params)>
         parseConfig;
     const Store::Config::Descriptions & configDescriptions;
@@ -35,8 +35,8 @@ struct Implementations
             registered = new std::vector<StoreFactory>();
         StoreFactory factory{
             .uriSchemes = T::Config::uriSchemes(),
-            .parseConfig = ([](auto scheme, auto uri, auto & params) -> std::shared_ptr<StoreConfig> {
-                return std::make_shared<typename T::Config>(scheme, uri, params);
+            .parseConfig = ([](auto scheme, auto uri, auto & params) -> ref<StoreConfig> {
+                return make_ref<typename T::Config>(scheme, uri, params);
             }),
             .configDescriptions = T::Config::descriptions,
         };

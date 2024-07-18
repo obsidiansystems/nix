@@ -9,7 +9,7 @@ TEST(SSHStore, constructConfig)
     SSHStoreConfig config{
         "ssh",
         "localhost",
-        StoreConfig::Params{
+        StoreReference::Params{
             {
                 "remote-program",
                 // TODO #11106, no more split on space
@@ -31,7 +31,7 @@ TEST(MountedSSHStore, constructConfig)
     MountedSSHStoreConfig config{
         "mounted-ssh",
         "localhost",
-        StoreConfig::Params{
+        StoreReference::Params{
             {
                 "remote-program",
                 // TODO #11106, no more split on space
