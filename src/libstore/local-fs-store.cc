@@ -43,11 +43,10 @@ auto localFSStoreConfig(
 {
     const auto & descriptions = LocalFSStore::Config::descriptions;
 
-    auto rootDir = descriptions.rootDir.parseConfig(params)
-        .value_or(config::JustValue{.value = std::move(_rootDir)});
+    auto rootDir = descriptions.rootDir.parseConfig(params).value_or(std::move(_rootDir));
 
     return LocalFSStoreConfigT<config::JustValue>{
-        .rootDir = std::move(rootDir),
+        .rootDir = {.value = rootDir},
         CONFIG_ROW(stateDir, rootDir ? *rootDir + "/nix/var/nix" : settings.nixStateDir),
         CONFIG_ROW(logDir, rootDir ? *rootDir + "/nix/var/log/nix" : settings.nixLogDir),
         CONFIG_ROW(realStoreDir, rootDir ? *rootDir + "/nix/store" : storeConfig.storeDir),
