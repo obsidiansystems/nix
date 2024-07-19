@@ -238,23 +238,14 @@ Store::Config::Descriptions::Descriptions()
 const Store::Config::Descriptions Store::Config::descriptions{};
 
 
-decltype(Store::Config::defaults) Store::Config::defaults = {
-    .pathInfoCacheSize = {65536},
-    .isTrusted = {false},
-    .priority = {0},
-    .wantMassQuery = {false},
-    .systemFeatures = {Store::Config::getDefaultSystemFeatures()},
-};
-
-
 Store::Config::StoreConfig(const StoreReference::Params & params)
     : StoreDirConfig{params}
     , StoreConfigT<config::JustValue>{
-        CONFIG_ROW(pathInfoCacheSize),
-        CONFIG_ROW(isTrusted),
-        CONFIG_ROW(priority),
-        CONFIG_ROW(wantMassQuery),
-        CONFIG_ROW(systemFeatures),
+        CONFIG_ROW(pathInfoCacheSize, 65536),
+        CONFIG_ROW(isTrusted, false),
+        CONFIG_ROW(priority, 0),
+        CONFIG_ROW(wantMassQuery, false),
+        CONFIG_ROW(systemFeatures, getDefaultSystemFeatures()),
     }
     , defaultPriority{params.count(descriptions.priority.name) == 0}
     , defaultWantMassQuery{params.count(descriptions.wantMassQuery.name) == 0}

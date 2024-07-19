@@ -29,8 +29,6 @@ struct CommonSSHStoreConfig :
 
     static const Descriptions descriptions;
 
-    static CommonSSHStoreConfigT<config::JustValue> defaults;
-
     /**
      * @param scheme Note this isn't stored by this mix-in class, but
      * just used for better error messages.

@@ -65,13 +65,6 @@ LocalOverlayStore::Config::Descriptions::Descriptions()
 const LocalOverlayStore::Config::Descriptions LocalOverlayStore::Config::descriptions{};
 
 
-decltype(LocalOverlayStore::Config::defaults) LocalOverlayStore::Config::defaults = {
-    .lowerStoreUri{""},
-    .upperLayer{""},
-    .checkMount{true},
-    .remountHook{""},
-};
-
 LocalOverlayStore::Config::LocalOverlayStoreConfig(
     std::string_view scheme,
     std::string_view authority,
@@ -80,13 +73,14 @@ LocalOverlayStore::Config::LocalOverlayStoreConfig(
     , LocalFSStore::Config(authority, params)
     , LocalStore::Config(scheme, authority, params)
     , LocalOverlayStoreConfigT<config::JustValue>{
-        CONFIG_ROW(lowerStoreUri),
-        CONFIG_ROW(upperLayer),
-        CONFIG_ROW(checkMount),
-        CONFIG_ROW(remountHook),
+        CONFIG_ROW(lowerStoreUri, ""),
+        CONFIG_ROW(upperLayer, ""),
+        CONFIG_ROW(checkMount, true),
+        CONFIG_ROW(remountHook, ""),
     }
 {
 }
+
 
 std::string LocalOverlayStoreConfig::doc()
 {
@@ -95,9 +89,11 @@ std::string LocalOverlayStoreConfig::doc()
         ;
 }
 
+
 Path LocalOverlayStoreConfig::toUpperPath(const StorePath & path) {
     return upperLayer + "/" + path.to_string();
 }
+
 
 LocalOverlayStore::LocalOverlayStore(const Config & config)
     : Store::Config{config}

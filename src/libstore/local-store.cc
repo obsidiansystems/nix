@@ -88,11 +88,6 @@ LocalStore::Config::Descriptions::Descriptions()
 
 const LocalStore::Config::Descriptions LocalStore::Config::descriptions{};
 
-decltype(LocalStore::Config::defaults) LocalStore::Config::defaults = {
-    .requireSigs = {settings.requireSigs},
-    .readOnly = {false},
-};
-
 LocalStore::Config::LocalStoreConfig(
     std::string_view scheme,
     std::string_view authority,
@@ -100,8 +95,8 @@ LocalStore::Config::LocalStoreConfig(
     : Store::Config(params)
     , LocalFSStore::Config(authority, params)
     , LocalStoreConfigT<config::JustValue>{
-        CONFIG_ROW(requireSigs),
-        CONFIG_ROW(readOnly),
+        CONFIG_ROW(requireSigs, settings.requireSigs),
+        CONFIG_ROW(readOnly, false),
     }
 {
 }

@@ -23,8 +23,6 @@ struct SSHStoreConfig : virtual RemoteStoreConfig, virtual CommonSSHStoreConfig,
 
     static const Descriptions descriptions;
 
-    static SSHStoreConfigT<config::JustValue> defaults;
-
     SSHStoreConfig(std::string_view scheme, std::string_view authority, const StoreReference::Params & params);
 
     const std::string name() override

@@ -16,13 +16,9 @@ const StoreDirConfigT<config::SettingInfo> StoreDirConfig::descriptions = {
         },
 };
 
-const StoreDirConfigT<config::JustValue> StoreDirConfig::defaults = {
-    ._storeDir = {settings.nixStore},
-};
-
 StoreDirConfig::StoreDirConfig(const StoreReference::Params & params)
     : StoreDirConfigT<config::JustValue>{
-        CONFIG_ROW(_storeDir),
+        CONFIG_ROW(_storeDir, settings.nixStore),
     }
 {
 }

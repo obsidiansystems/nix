@@ -36,12 +36,6 @@ LegacySSHStore::Config::Descriptions::Descriptions()
 const LegacySSHStore::Config::Descriptions LegacySSHStore::Config::descriptions{};
 
 
-decltype(LegacySSHStore::Config::defaults) LegacySSHStore::Config::defaults = {
-    .remoteProgram = {{"nix-store"}},
-    .maxConnections = {1},
-};
-
-
 LegacySSHStore::Config::LegacySSHStoreConfig(
     std::string_view scheme,
     std::string_view authority,
@@ -49,8 +43,8 @@ LegacySSHStore::Config::LegacySSHStoreConfig(
     : Store::Config{params}
     , CommonSSHStoreConfig{scheme, authority, params}
     , LegacySSHStoreConfigT<config::JustValue>{
-        CONFIG_ROW(remoteProgram),
-        CONFIG_ROW(maxConnections),
+        CONFIG_ROW(remoteProgram, Strings{"nix-store"}),
+        CONFIG_ROW(maxConnections, 1),
     }
 {
 #ifndef _WIN32

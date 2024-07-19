@@ -15,7 +15,7 @@ struct SettingInfo
     std::string description;
     bool documentDefault = true;
 
-    std::optional<JustValue<T>> parseConfig(const nlohmann::json::object_t & map) const;
+    std::optional<T> parseConfig(const nlohmann::json::object_t & map) const;
 };
 
 }

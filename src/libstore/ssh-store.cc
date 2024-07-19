@@ -27,11 +27,6 @@ SSHStoreConfig::Descriptions::Descriptions()
 const SSHStoreConfig::Descriptions SSHStoreConfig::descriptions{};
 
 
-decltype(SSHStoreConfig::defaults) SSHStoreConfig::defaults = {
-    .remoteProgram = {{"nix-daemon"}},
-};
-
-
 SSHStoreConfig::SSHStoreConfig(
     std::string_view scheme,
     std::string_view authority,
@@ -40,7 +35,7 @@ SSHStoreConfig::SSHStoreConfig(
     , RemoteStore::Config{params}
     , CommonSSHStoreConfig{scheme, authority, params}
     , SSHStoreConfigT<config::JustValue>{
-        CONFIG_ROW(remoteProgram),
+        CONFIG_ROW(remoteProgram, Strings{"nix-daemon"}),
     }
 {
 }

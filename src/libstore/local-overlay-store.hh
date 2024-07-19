@@ -29,8 +29,6 @@ struct LocalOverlayStoreConfig :
 
     static const Descriptions descriptions;
 
-    static LocalOverlayStoreConfigT<config::JustValue> defaults;
-
     LocalOverlayStoreConfig(
         std::string_view scheme,
         PathView path,

@@ -42,17 +42,11 @@ RemoteStore::Config::Descriptions::Descriptions()
 const RemoteStore::Config::Descriptions RemoteStore::Config::descriptions{};
 
 
-decltype(RemoteStore::Config::defaults) RemoteStore::Config::defaults = {
-    .maxConnections = {1},
-    .maxConnectionAge = {std::numeric_limits<unsigned int>::max()},
-};
-
-
 RemoteStore::Config::RemoteStoreConfig(const StoreReference::Params & params)
     : Store::Config(params)
     , RemoteStoreConfigT<config::JustValue>{
-        CONFIG_ROW(maxConnections),
-        CONFIG_ROW(maxConnectionAge),
+        CONFIG_ROW(maxConnections, 1),
+        CONFIG_ROW(maxConnectionAge, std::numeric_limits<unsigned int>::max()),
     }
 {
 }

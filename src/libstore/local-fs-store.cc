@@ -33,18 +33,6 @@ LocalFSStore::Config::Descriptions::Descriptions()
 
 const LocalFSStore::Config::Descriptions LocalFSStore::Config::descriptions{};
 
-LocalFSStoreConfigT<config::JustValue> LocalFSStore::Config::defaults(
-    const Store::Config & storeConfig,
-    const std::optional<Path> rootDir)
-{
-    return {
-        .rootDir = {rootDir},
-        .stateDir = {rootDir ? *rootDir + "/nix/var/nix" : settings.nixStateDir},
-        .logDir = {rootDir ? *rootDir + "/nix/var/log/nix" : settings.nixLogDir},
-        .realStoreDir = {rootDir ? *rootDir + "/nix/store" : storeConfig.storeDir},
-    };
-}
-
 /**
  * @param rootDir Fallback if not in `params`
  */
@@ -58,13 +46,11 @@ auto localFSStoreConfig(
     auto rootDir = descriptions.rootDir.parseConfig(params)
         .value_or(config::JustValue{.value = std::move(_rootDir)});
 
-    auto defaults = LocalFSStore::Config::defaults(storeConfig, rootDir.value);
-
     return LocalFSStoreConfigT<config::JustValue>{
-        CONFIG_ROW(rootDir),
-        CONFIG_ROW(stateDir),
-        CONFIG_ROW(logDir),
-        CONFIG_ROW(realStoreDir),
+        .rootDir = std::move(rootDir),
+        CONFIG_ROW(stateDir, rootDir ? *rootDir + "/nix/var/nix" : settings.nixStateDir),
+        CONFIG_ROW(logDir, rootDir ? *rootDir + "/nix/var/log/nix" : settings.nixLogDir),
+        CONFIG_ROW(realStoreDir, rootDir ? *rootDir + "/nix/store" : storeConfig.storeDir),
     };
 }
 

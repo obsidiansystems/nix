@@ -68,24 +68,16 @@ BinaryCacheStore::Config::Descriptions::Descriptions()
 
 const BinaryCacheStore::Config::Descriptions BinaryCacheStore::Config::descriptions{};
 
-decltype(BinaryCacheStore::Config::defaults) BinaryCacheStore::Config::defaults = {
-    .compression = {"xz"},
-    .writeNARListing{false},
-    .writeDebugInfo{false},
-    .secretKeyFile{""},
-    .localNarCache{""},
-    .parallelCompression{false},
-    .compressionLevel{-1},
-};
-
 BinaryCacheStore::Config::BinaryCacheStoreConfig(const StoreReference::Params & params)
     : StoreConfig{params}
     , BinaryCacheStoreConfigT<config::JustValue>{
-        CONFIG_ROW(compression),
-        CONFIG_ROW(secretKeyFile),
-        CONFIG_ROW(localNarCache),
-        CONFIG_ROW(parallelCompression),
-        CONFIG_ROW(compressionLevel),
+        CONFIG_ROW(compression, "xz"),
+        CONFIG_ROW(writeNARListing, false),
+        CONFIG_ROW(writeDebugInfo, false),
+        CONFIG_ROW(secretKeyFile, ""),
+        CONFIG_ROW(localNarCache, ""),
+        CONFIG_ROW(parallelCompression, false),
+        CONFIG_ROW(compressionLevel, -1),
     }
 {
 }

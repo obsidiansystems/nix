@@ -32,8 +32,6 @@ struct S3BinaryCacheStoreConfig : virtual BinaryCacheStoreConfig, S3BinaryCacheS
 
     static const Descriptions descriptions;
 
-    static S3BinaryCacheStoreConfigT<config::JustValue> defaults;
-
     S3BinaryCacheStoreConfig(
         std::string_view uriScheme, std::string_view bucketName, const StoreReference::Params & params);
 

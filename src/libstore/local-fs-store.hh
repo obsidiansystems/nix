@@ -29,13 +29,6 @@ struct LocalFSStoreConfig :
 
     static const Descriptions descriptions;
 
-    /**
-     * The other defaults depend on the choice of `storeDir` and `rootDir`
-     */
-    static LocalFSStoreConfigT<config::JustValue> defaults(
-        const Store::Config &,
-        const std::optional<Path> rootDir);
-
     LocalFSStoreConfig(const StoreReference::Params &);
 
     /**

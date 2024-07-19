@@ -38,8 +38,6 @@ struct BinaryCacheStoreConfig :
 
     static const Descriptions descriptions;
 
-    static BinaryCacheStoreConfigT<config::JustValue> defaults;
-
     BinaryCacheStoreConfig(const StoreReference::Params &);
 };
 

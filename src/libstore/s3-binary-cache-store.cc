@@ -261,18 +261,6 @@ S3BinaryCacheStore::Config::Descriptions::Descriptions()
 
 const S3BinaryCacheStore::Config::Descriptions S3BinaryCacheStore::Config::descriptions{};
 
-decltype(S3BinaryCacheStore::Config::defaults) S3BinaryCacheStore::Config::defaults = {
-    .profile{""},
-    .region{Aws::Region::US_EAST_1},
-    .scheme{""},
-    .endpoint{""},
-    .narinfoCompression{""},
-    .lsCompression{""},
-    .logCompression{""},
-    .multipartUpload{false},
-    .bufferSize{5 * 1024 * 1024},
-};
-
 S3BinaryCacheStore::Config::S3BinaryCacheStoreConfig(
     std::string_view scheme,
     std::string_view authority,
@@ -280,15 +268,15 @@ S3BinaryCacheStore::Config::S3BinaryCacheStoreConfig(
     : Store::Config(params)
     , BinaryCacheStore::Config(params)
     , S3BinaryCacheStoreConfigT<config::JustValue>{
-        CONFIG_ROW(profile),
-        CONFIG_ROW(region),
-        CONFIG_ROW(scheme),
-        CONFIG_ROW(endpoint),
-        CONFIG_ROW(narinfoCompression),
-        CONFIG_ROW(lsCompression),
-        CONFIG_ROW(logCompression),
-        CONFIG_ROW(multipartUpload),
-        CONFIG_ROW(bufferSize),
+        CONFIG_ROW(profile, ""),
+        CONFIG_ROW(region, Aws::Region::US_EAST_1),
+        CONFIG_ROW(scheme, ""),
+        CONFIG_ROW(endpoint, ""),
+        CONFIG_ROW(narinfoCompression, ""),
+        CONFIG_ROW(lsCompression, ""),
+        CONFIG_ROW(logCompression, ""),
+        CONFIG_ROW(multipartUpload, false),
+        CONFIG_ROW(bufferSize, 5 * 1024 * 1024),
     }
     , bucketName{authority}
 {

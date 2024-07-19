@@ -29,8 +29,6 @@ struct LegacySSHStoreConfig :
 
     static const Descriptions descriptions;
 
-    static LegacySSHStoreConfigT<config::JustValue> defaults;
-
     /**
      * Hack for getting remote build log output. Intentionally not a
      * documented user-visible setting.

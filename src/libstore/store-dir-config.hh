@@ -27,8 +27,6 @@ struct StoreDirConfigT
 
 struct StoreDirConfig : StoreDirConfigT<config::JustValue>
 {
-    static const StoreDirConfigT<config::JustValue> defaults;
-
     using Descriptions = StoreDirConfigT<config::SettingInfo>;
 
     static const Descriptions descriptions;

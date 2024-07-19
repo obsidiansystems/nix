@@ -38,11 +38,6 @@ struct RemoteStoreConfig :
 
     static const Descriptions descriptions;
 
-    /**
-     * The other defaults depend on the choice of `storeDir` and `rootDir`
-     */
-    static RemoteStoreConfigT<config::JustValue> defaults;
-
     RemoteStoreConfig(const StoreReference::Params &);
 };
 

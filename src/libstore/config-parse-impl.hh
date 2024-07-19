@@ -9,16 +9,16 @@
 namespace nix::config {
 
 template<typename T>
-std::optional<JustValue<T>> SettingInfo<T>::parseConfig(const nlohmann::json::object_t & map) const
+std::optional<T> SettingInfo<T>::parseConfig(const nlohmann::json::object_t & map) const
 {
     auto * p = get(map, name);
-    return p ? (JustValue<T>{.value = p->get<T>()}) : (std::optional<JustValue<T>>{});
+    return p ? p->get<T>() : (std::optional<T>{});
 }
 
 /**
  * Look up the setting's name in a map, falling back on the default if
  * it does not exist.
  */
-#define CONFIG_ROW(FIELD) .FIELD = descriptions.FIELD.parseConfig(params).value_or(defaults.FIELD)
+#define CONFIG_ROW(FIELD, DEFAULT) .FIELD = {.value = descriptions.FIELD.parseConfig(params).value_or(DEFAULT)}
 
 }

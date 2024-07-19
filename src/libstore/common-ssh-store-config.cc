@@ -35,13 +35,6 @@ CommonSSHStoreConfig::Descriptions::Descriptions()
 
 const CommonSSHStoreConfig::Descriptions CommonSSHStoreConfig::descriptions{};
 
-decltype(CommonSSHStoreConfig::defaults) CommonSSHStoreConfig::defaults = {
-    .sshKey{""},
-    .sshPublicHostKey{""},
-    .compress{false},
-    .remoteStore{""},
-};
-
 static std::string extractConnStr(std::string_view scheme, std::string_view _connStr)
 {
     if (_connStr.empty())
@@ -65,10 +58,10 @@ CommonSSHStoreConfig::CommonSSHStoreConfig(
     const StoreReference::Params & params)
     : Store::Config(params)
     , CommonSSHStoreConfigT<config::JustValue>{
-        CONFIG_ROW(sshKey),
-        CONFIG_ROW(sshPublicHostKey),
-        CONFIG_ROW(compress),
-        CONFIG_ROW(remoteStore),
+        CONFIG_ROW(sshKey, ""),
+        CONFIG_ROW(sshPublicHostKey, ""),
+        CONFIG_ROW(compress, false),
+        CONFIG_ROW(remoteStore, ""),
     }
     , host(extractConnStr(scheme, host))
 {

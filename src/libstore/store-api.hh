@@ -118,8 +118,6 @@ struct StoreConfig :
         Descriptions();
     };
 
-    static const StoreConfigT<config::JustValue> defaults;
-
     static const Descriptions descriptions;
 
     StoreConfig(const StoreReference::Params &);
