@@ -364,6 +364,6 @@ void LocalOverlayStore::remountIfNecessary()
 }
 
 
-static RegisterStoreImplementation<LocalOverlayStore> regLocalOverlayStore;
+static RegisterStoreImplementation<LocalOverlayStore::Config> regLocalOverlayStore;
 
 }

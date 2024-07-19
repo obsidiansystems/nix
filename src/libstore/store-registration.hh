@@ -28,28 +28,28 @@ struct Implementations
 {
     static std::vector<StoreFactory> * registered;
 
-    template<typename T>
+    template<typename TConfig>
     static void add()
     {
         if (!registered)
             registered = new std::vector<StoreFactory>();
         StoreFactory factory{
-            .uriSchemes = T::Config::uriSchemes(),
+            .uriSchemes = TConfig::uriSchemes(),
             .parseConfig = ([](auto scheme, auto uri, auto & params) -> ref<StoreConfig> {
-                return make_ref<typename T::Config>(scheme, uri, params);
+                return make_ref<TConfig>(scheme, uri, params);
             }),
-            .configDescriptions = T::Config::descriptions,
+            .configDescriptions = TConfig::descriptions,
         };
         registered->push_back(factory);
     }
 };
 
-template<typename T>
+template<typename TConfig>
 struct RegisterStoreImplementation
 {
     RegisterStoreImplementation()
     {
-        Implementations::add<T>();
+        Implementations::add<TConfig>();
     }
 };
 

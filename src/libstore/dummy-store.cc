@@ -85,6 +85,6 @@ ref<Store> DummyStore::Config::openStore() const
     return make_ref<DummyStore>(*this);
 }
 
-static RegisterStoreImplementation<DummyStore> regDummyStore;
+static RegisterStoreImplementation<DummyStore::Config> regDummyStore;
 
 }

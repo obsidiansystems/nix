@@ -558,7 +558,7 @@ ref<Store> S3BinaryCacheStoreImpl::Config::openStore() const
     return make_ref<S3BinaryCacheStoreImpl>(*this);
 }
 
-static RegisterStoreImplementation<S3BinaryCacheStoreImpl> regS3BinaryCacheStore;
+static RegisterStoreImplementation<S3BinaryCacheStoreImpl::Config> regS3BinaryCacheStore;
 
 }
 

@@ -214,6 +214,6 @@ ref<Store> HttpBinaryCacheStore::Config::openStore() const
     return make_ref<HttpBinaryCacheStore>(*this);
 }
 
-static RegisterStoreImplementation<HttpBinaryCacheStore> regHttpBinaryCacheStore;
+static RegisterStoreImplementation<HttpBinaryCacheStore::Config> regHttpBinaryCacheStore;
 
 }

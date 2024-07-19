@@ -129,6 +129,6 @@ ref<Store> LocalBinaryCacheStoreConfig::openStore() const {
     return make_ref<LocalBinaryCacheStore>(*this);
 }
 
-static RegisterStoreImplementation<LocalBinaryCacheStore> regLocalBinaryCacheStore;
+static RegisterStoreImplementation<LocalBinaryCacheStore::Config> regLocalBinaryCacheStore;
 
 }

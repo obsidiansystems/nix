@@ -350,6 +350,6 @@ ref<Store> LegacySSHStore::Config::openStore() const {
 }
 
 
-static RegisterStoreImplementation<LegacySSHStore> regLegacySSHStore;
+static RegisterStoreImplementation<LegacySSHStore::Config> regLegacySSHStore;
 
 }

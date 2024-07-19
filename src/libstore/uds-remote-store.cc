@@ -113,6 +113,6 @@ ref<Store> UDSRemoteStore::Config::openStore() const {
 }
 
 
-static RegisterStoreImplementation<UDSRemoteStore> regUDSRemoteStore;
+static RegisterStoreImplementation<UDSRemoteStore::Config> regUDSRemoteStore;
 
 }

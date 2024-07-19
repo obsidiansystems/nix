@@ -247,7 +247,7 @@ ref<RemoteStore::Connection> SSHStore::openConnection()
     return conn;
 }
 
-static RegisterStoreImplementation<SSHStore> regSSHStore;
-static RegisterStoreImplementation<MountedSSHStore> regMountedSSHStore;
+static RegisterStoreImplementation<SSHStore::Config> regSSHStore;
+static RegisterStoreImplementation<MountedSSHStore::Config> regMountedSSHStore;
 
 }
