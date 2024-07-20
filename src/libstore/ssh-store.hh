@@ -16,7 +16,9 @@ struct SSHStoreConfigT
 
 struct SSHStoreConfig : virtual RemoteStoreConfig, virtual CommonSSHStoreConfig, SSHStoreConfigT<config::JustValue>
 {
-    struct Descriptions : virtual CommonSSHStoreConfig::Descriptions, SSHStoreConfigT<config::SettingInfo>
+    struct Descriptions : virtual RemoteStoreConfig::Descriptions,
+                          virtual CommonSSHStoreConfig::Descriptions,
+                          SSHStoreConfigT<config::SettingInfo>
     {
         Descriptions();
     };

@@ -1,6 +1,8 @@
 #pragma once
 ///@type
 
+#include <optional>
+
 namespace nix::config {
 
 template<typename T>
@@ -39,5 +41,11 @@ auto && operator<<(auto && str, const JustValue<T> & opt)
 {
     return str << opt.get();
 }
+
+template<typename T>
+struct OptValue
+{
+    std::optional<T> optValue;
+};
 
 }

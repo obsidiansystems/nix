@@ -17,11 +17,9 @@ struct CommonSSHStoreConfigT
 };
 
 struct CommonSSHStoreConfig :
-    virtual Store::Config,
     CommonSSHStoreConfigT<config::JustValue>
 {
     struct Descriptions :
-        virtual Store::Config::Descriptions,
         CommonSSHStoreConfigT<config::SettingInfo>
     {
         Descriptions();

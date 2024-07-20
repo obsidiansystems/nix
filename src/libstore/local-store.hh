@@ -37,24 +37,17 @@ struct OptimiseStats
 template<template<typename> class F>
 struct LocalStoreConfigT
 {
-    const F<bool> requireSigs;
-    const F<bool> readOnly;
+    F<bool> requireSigs;
+    F<bool> readOnly;
 };
 
 struct LocalStoreConfig :
-    virtual Store::Config,
-    virtual LocalFSStore::Config,
+    std::enable_shared_from_this<LocalStoreConfig>,
+    Store::Config,
+    LocalFSStore::Config,
     LocalStoreConfigT<config::JustValue>
 {
-    struct Descriptions :
-        virtual Store::Config::Descriptions,
-        virtual LocalFSStore::Config::Descriptions,
-        LocalStoreConfigT<config::SettingInfo>
-    {
-        Descriptions();
-    };
-
-    static const Descriptions descriptions;
+    static config::SettingDescriptionMap descriptions();
 
     LocalStoreConfig(const StoreReference::Params & params)
         : LocalStoreConfig{"local", "", params}
@@ -76,13 +69,14 @@ struct LocalStoreConfig :
 };
 
 class LocalStore :
-    public virtual LocalStoreConfig,
     public virtual IndirectRootStore,
     public virtual GcStore
 {
 public:
 
     using Config = LocalStoreConfig;
+
+    ref<const LocalStoreConfig> config;
 
 private:
 
@@ -151,7 +145,7 @@ public:
      * Initialise the local store, upgrading the schema if
      * necessary.
      */
-    LocalStore(const Config & params);
+    LocalStore(ref<const Config> params);
 
     ~LocalStore();
 

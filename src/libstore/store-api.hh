@@ -99,26 +99,30 @@ typedef std::map<StorePath, std::optional<ContentAddress>> StorePathCAMap;
 template<template<typename> class F>
 struct StoreConfigT
 {
-    const F<int> pathInfoCacheSize;
-    const F<bool> isTrusted;
-    F<int> priority;
-    F<bool> wantMassQuery;
-    const F<StringSet> systemFeatures;
+    F<int> pathInfoCacheSize;
+    F<bool> isTrusted;
+    F<StringSet> systemFeatures;
 };
 
-StoreConfigT<config::JustValue> parseStoreConfig(const StoreReference::Params &);
+template<template<typename> class F>
+struct SubstituterConfigT
+{
+    F<int> priority;
+    F<bool> wantMassQuery;
+};
+
+/**
+ * @note `config::OptValue` rather than `config::JustValue` is applied to
+ * `SubstitutorConfigT` because these are overrides. Caches themselves (not our
+ * config) can update default settings, but aren't allowed to update settings
+ * specified by the client (i.e. us).
+ */
 struct StoreConfig :
     StoreDirConfig,
-    StoreConfigT<config::JustValue>
+    StoreConfigT<config::JustValue>,
+    SubstituterConfigT<config::OptValue>
 {
-    struct Descriptions :
-        StoreDirConfig::Descriptions,
-        StoreConfigT<config::SettingInfo>
-    {
-        Descriptions();
-    };
-
-    static const Descriptions descriptions;
+    static config::SettingDescriptionMap descriptions();
 
     StoreConfig(const StoreReference::Params &);
 
@@ -153,27 +157,39 @@ struct StoreConfig :
      * type.
      */
     virtual ref<Store> openStore() const = 0;
-
-protected:
-
-    /**
-     * So caches themselves (not our config) can update default
-     * settings, but aren't allowed to update settings specied by the
-     * client (i.e. us).
-     */
-    bool defaultPriority;
-
-    /**
-     * @see defaultPriority
-     */
-    bool defaultWantMassQuery;
 };
 
-class Store : public std::enable_shared_from_this<Store>, public virtual StoreConfig
+/**
+ * A Store (client)
+ *
+ * This is an interface type allowing for create and read operations on
+ * a collection of store objects, and also building new store objects
+ * from `Derivation`s. See the manual for further details.
+ *
+ * "client" used is because this is just one view/actor onto an
+ * underlying resource, which could be an external process (daemon
+ * server), file system state, etc.
+ */
+class Store : public std::enable_shared_from_this<Store>, public MixStoreDirMethods
 {
 public:
 
     using Config = StoreConfig;
+
+    const Config & config;
+
+    /**
+     * @note Avoid churn, since we used to inherit from `Config`.
+     */
+    operator const Config &() const { return config; }
+
+    /**
+     * Resolved substituter configuration. This is intentionally mutable
+     * as store clients may do IO to ask the underlying store for their
+     * default setting values if the client config did not statically
+     * override them.
+     */
+    SubstituterConfigT<config::JustValue> resolvedSubstConfig;
 
 protected:
 

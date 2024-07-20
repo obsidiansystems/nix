@@ -21,7 +21,7 @@ struct StoreFactory
     std::function<ref<StoreConfig>(
         std::string_view scheme, std::string_view authorityPath, const StoreReference::Params & params)>
         parseConfig;
-    const Store::Config::Descriptions & configDescriptions;
+    config::SettingDescriptionMap configDescriptions;
 };
 
 struct Implementations
@@ -38,7 +38,7 @@ struct Implementations
             .parseConfig = ([](auto scheme, auto uri, auto & params) -> ref<StoreConfig> {
                 return make_ref<TConfig>(scheme, uri, params);
             }),
-            .configDescriptions = TConfig::descriptions,
+            .configDescriptions = TConfig::descriptions(),
         };
         registered->push_back(factory);
     }

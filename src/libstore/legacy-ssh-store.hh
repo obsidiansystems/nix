@@ -17,10 +17,12 @@ struct LegacySSHStoreConfigT
 };
 
 struct LegacySSHStoreConfig :
+    virtual Store::Config,
     virtual CommonSSHStoreConfig,
     LegacySSHStoreConfigT<config::JustValue>
 {
     struct Descriptions :
+        virtual Store::Config::Descriptions,
         virtual CommonSSHStoreConfig::Descriptions,
         LegacySSHStoreConfigT<config::SettingInfo>
     {
