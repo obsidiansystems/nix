@@ -15,7 +15,6 @@ ref<Store> openStore(StoreReference && storeURI)
 {
     auto store = resolveStoreConfig(std::move(storeURI))->openStore();
 
-    experimentalFeatureSettings.require(store->experimentalFeature());
 #if 0 // FIXME
     store->warnUnknownSettings();
     store->init();
@@ -69,6 +68,8 @@ ref<StoreConfig> resolveStoreConfig(StoreReference && storeURI)
         },
         storeURI.variant);
 
+    experimentalFeatureSettings.require(storeConfig->experimentalFeature());
+
     return storeConfig;
 }
 
@@ -94,12 +95,65 @@ std::list<ref<Store>> getDefaultSubstituters()
         for (auto uri : settings.substituters.get())
             addStore(uri);
 
-        stores.sort([](ref<Store> & a, ref<Store> & b) { return a->priority < b->priority; });
+        stores.sort([](ref<Store> & a, ref<Store> & b) {
+            return a->resolvedSubstConfig.priority < b->resolvedSubstConfig.priority;
+        });
 
         return stores;
     }());
 
     return stores;
+}
+
+}
+
+namespace nlohmann {
+
+using namespace nix::config;
+
+ref<const StoreConfig> adl_serializer<ref<const StoreConfig>>::from_json(const json & json)
+{
+    StoreReference ref;
+    switch (json.type()) {
+
+    case json::value_t::string: {
+        ref = StoreReference::parse(json.get_ref<const std::string &>());
+        break;
+    }
+
+    case json::value_t::object: {
+        auto & obj = json.get_ref<const json::object_t &>();
+        ref = StoreReference {
+            .variant = StoreReference::Specified{
+                .scheme = getString(valueAt(obj, "scheme")),
+                .authority = getString(valueAt(obj, "authority")),
+            },
+            .params = obj,
+        };
+        break;
+    }
+
+    case json::value_t::null:
+    case json::value_t::number_unsigned:
+    case json::value_t::number_integer:
+    case json::value_t::number_float:
+    case json::value_t::boolean:
+    case json::value_t::array:
+    case json::value_t::binary:
+    case json::value_t::discarded:
+    default:
+        throw UsageError(
+            "Invalid JSON for Store configuration: is type '%s' but must be string or object",
+            json.type_name());
+    };
+
+    return resolveStoreConfig(std::move(ref));
+}
+
+void adl_serializer<ref<const StoreConfig>>::to_json(json & obj, ref<const StoreConfig> s)
+{
+    // TODO, for tests maybe
+    assert(false);
 }
 
 }

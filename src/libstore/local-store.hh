@@ -58,12 +58,12 @@ struct LocalStoreConfig :
         std::string_view authority,
         const StoreReference::Params & params);
 
-    const std::string name() override { return "Local Store"; }
+    const std::string name() const override { return "Local Store"; }
 
     static std::set<std::string> uriSchemes()
     { return {"local"}; }
 
-    std::string doc() override;
+    std::string doc() const override;
 
     ref<Store> openStore() const override;
 };

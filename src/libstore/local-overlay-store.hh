@@ -6,7 +6,7 @@ namespace nix {
 template<template<typename> class F>
 struct LocalOverlayStoreConfigT
 {
-    const F<std::string> lowerStoreUri;
+    const F<ref<const StoreConfig>> lowerStoreConfig;
     const F<Path> upperLayer;
     const F<bool> checkMount;
     const F<Path> remountHook;
@@ -16,25 +16,17 @@ struct LocalOverlayStoreConfigT
  * Configuration for `LocalOverlayStore`.
  */
 struct LocalOverlayStoreConfig :
-    virtual LocalStoreConfig,
+    LocalStoreConfig,
     LocalOverlayStoreConfigT<config::JustValue>
 {
-    struct Descriptions :
-        virtual Store::Config::Descriptions,
-        virtual LocalStore::Config::Descriptions,
-        LocalOverlayStoreConfigT<config::SettingInfo>
-    {
-        Descriptions();
-    };
-
-    static const Descriptions descriptions;
+    static config::SettingDescriptionMap descriptions();
 
     LocalOverlayStoreConfig(
         std::string_view scheme,
         PathView path,
         const StoreReference::Params & params);
 
-    const std::string name() override { return "Experimental Local Overlay Store"; }
+    const std::string name() const override { return "Experimental Local Overlay Store"; }
 
     std::optional<ExperimentalFeature> experimentalFeature() const override
     {
@@ -46,7 +38,7 @@ struct LocalOverlayStoreConfig :
         return { "local-overlay" };
     }
 
-    std::string doc() override;
+    std::string doc() const override;
 
 protected:
     /**
@@ -57,7 +49,9 @@ protected:
      * at that file path. It might be stored in the lower layer instead,
      * or it might not be part of this store at all.
      */
-    Path toUpperPath(const StorePath & path);
+    Path toUpperPath(const StorePath & path) const;
+
+    friend struct LocalOverlayStore;
 };
 
 /**
@@ -66,11 +60,13 @@ protected:
  * Documentation on overridden methods states how they differ from their
  * `LocalStore` counterparts.
  */
-struct LocalOverlayStore : virtual LocalOverlayStoreConfig, virtual LocalStore
+struct LocalOverlayStore : virtual LocalStore
 {
     using Config = LocalOverlayStoreConfig;
 
-    LocalOverlayStore(const Config &);
+    ref<const Config> config;
+
+    LocalOverlayStore(ref<const Config>);
 
     std::string getUri() override
     {

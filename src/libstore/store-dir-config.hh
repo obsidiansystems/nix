@@ -64,7 +64,7 @@ struct MixStoreDirMethods
      * Display a set of paths in human-readable form (i.e., between quotes
      * and separated by commas).
      */
-    std::string showPaths(const StorePathSet & paths);
+    std::string showPaths(const StorePathSet & paths) const;
 
     /**
      * @return true if ‘path’ is in the Nix store (but not the Nix

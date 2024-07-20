@@ -1307,7 +1307,7 @@ std::optional<ValidPathInfo> decodeValidPathInfo(const Store & store, std::istre
 }
 
 
-std::string MixStoreDirMethods::showPaths(const StorePathSet & paths)
+std::string MixStoreDirMethods::showPaths(const StorePathSet & paths) const
 {
     std::string s;
     for (auto & i : paths) {

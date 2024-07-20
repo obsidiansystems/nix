@@ -20,7 +20,7 @@ struct LocalFSStoreConfig : LocalFSStoreConfigT<config::JustValue>
 {
     const Store::Config & storeConfig;
 
-    config::SettingDescriptionMap descriptions();
+    static config::SettingDescriptionMap descriptions();
 
     LocalFSStoreConfig(
         const Store::Config & storeConfig,

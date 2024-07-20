@@ -8,17 +8,12 @@
 namespace nix {
 
 struct UDSRemoteStoreConfig :
-    virtual LocalFSStore::Config,
-    virtual RemoteStore::Config
+    std::enable_shared_from_this<UDSRemoteStoreConfig>,
+    Store::Config,
+    LocalFSStore::Config,
+    RemoteStore::Config
 {
-    struct Descriptions :
-        virtual LocalFSStore::Config::Descriptions,
-        virtual RemoteStore::Config::Descriptions
-    {
-        Descriptions();
-    };
-
-    static const Descriptions descriptions;
+    static config::SettingDescriptionMap descriptions();
 
     UDSRemoteStoreConfig(const StoreReference::Params & params)
         : UDSRemoteStoreConfig{"unix", "", params}
@@ -32,9 +27,9 @@ struct UDSRemoteStoreConfig :
         std::string_view authority,
         const StoreReference::Params & params);
 
-    const std::string name() override { return "Local Daemon Store"; }
+    const std::string name() const override { return "Local Daemon Store"; }
 
-    std::string doc() override;
+    std::string doc() const override;
 
     /**
      * The path to the unix domain socket.
@@ -51,11 +46,12 @@ struct UDSRemoteStoreConfig :
 };
 
 struct UDSRemoteStore :
-    virtual UDSRemoteStoreConfig,
     virtual IndirectRootStore,
     virtual RemoteStore
 {
     using Config = UDSRemoteStoreConfig;
+
+    ref<const Config> config;
 
     UDSRemoteStore(const Config &);
 
