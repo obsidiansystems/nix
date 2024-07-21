@@ -18,6 +18,16 @@
 
 namespace nix {
 
+config::SettingDescriptionMap UDSRemoteStoreConfig::descriptions()
+{
+    config::SettingDescriptionMap ret;
+    ret.merge(StoreConfig::descriptions());
+    ret.merge(LocalFSStoreConfig::descriptions());
+    ret.merge(RemoteStoreConfig::descriptions());
+    return ret;
+}
+
+
 UDSRemoteStoreConfig::UDSRemoteStoreConfig(
     std::string_view scheme,
     std::string_view authority,
