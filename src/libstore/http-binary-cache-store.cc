@@ -88,7 +88,8 @@ public:
             } catch (UploadToHTTP &) {
                 throw Error("'%s' does not appear to be a binary cache", config->cacheUri);
             }
-            diskCache->createCache(config->cacheUri, storeDir, resolvedSubstConfig.wantMassQuery, resolvedSubstConfig.priority);
+            diskCache->createCache(
+                config->cacheUri, storeDir, resolvedSubstConfig.wantMassQuery, resolvedSubstConfig.priority);
         }
     }
 

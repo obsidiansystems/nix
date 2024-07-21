@@ -54,11 +54,7 @@ struct S3BinaryCacheStore : virtual BinaryCacheStore
 
     ref<const Config> config;
 
-protected:
-
     S3BinaryCacheStore(ref<const Config>);
-
-public:
 
     struct Stats
     {
