@@ -76,7 +76,7 @@ CommonSSHStoreConfig::CommonSSHStoreConfig(
 {
 }
 
-SSHMaster CommonSSHStoreConfig::createSSHMaster(bool useMaster, Descriptor logFD)
+SSHMaster CommonSSHStoreConfig::createSSHMaster(bool useMaster, Descriptor logFD) const
 {
     return {
         host,

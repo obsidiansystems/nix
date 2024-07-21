@@ -12,24 +12,17 @@ namespace nix {
 template<template<typename> class F>
 struct LegacySSHStoreConfigT
 {
-    const F<Strings> remoteProgram;
-    const F<int> maxConnections;
+    F<Strings> remoteProgram;
+    F<int> maxConnections;
 };
 
 struct LegacySSHStoreConfig :
-    virtual Store::Config,
-    virtual CommonSSHStoreConfig,
+    std::enable_shared_from_this<LegacySSHStoreConfig>,
+    Store::Config,
+    CommonSSHStoreConfig,
     LegacySSHStoreConfigT<config::JustValue>
 {
-    struct Descriptions :
-        virtual Store::Config::Descriptions,
-        virtual CommonSSHStoreConfig::Descriptions,
-        LegacySSHStoreConfigT<config::SettingInfo>
-    {
-        Descriptions();
-    };
-
-    static const Descriptions descriptions;
+    static config::SettingDescriptionMap descriptions();
 
     /**
      * Hack for getting remote build log output. Intentionally not a
@@ -42,18 +35,20 @@ struct LegacySSHStoreConfig :
         std::string_view authority,
         const StoreReference::Params & params);
 
-    const std::string name() override { return "SSH Store"; }
+    const std::string name() const override { return "SSH Store"; }
 
     static std::set<std::string> uriSchemes() { return {"ssh"}; }
 
-    std::string doc() override;
+    std::string doc() const override;
 
     ref<Store> openStore() const override;
 };
 
-struct LegacySSHStore : public virtual LegacySSHStoreConfig, public virtual Store
+struct LegacySSHStore : public virtual Store
 {
     using Config = LegacySSHStoreConfig;
+
+    ref<const Config> config;
 
     struct Connection;
 
@@ -61,7 +56,7 @@ struct LegacySSHStore : public virtual LegacySSHStoreConfig, public virtual Stor
 
     SSHMaster master;
 
-    LegacySSHStore(const Config &);
+    LegacySSHStore(ref<const Config>);
 
     ref<Connection> openConnection();
 
