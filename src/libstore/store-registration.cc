@@ -123,11 +123,12 @@ ref<const StoreConfig> adl_serializer<ref<const StoreConfig>>::from_json(const j
 
     case json::value_t::object: {
         auto & obj = json.get_ref<const json::object_t &>();
-        ref = StoreReference {
-            .variant = StoreReference::Specified{
-                .scheme = getString(valueAt(obj, "scheme")),
-                .authority = getString(valueAt(obj, "authority")),
-            },
+        ref = StoreReference{
+            .variant =
+                StoreReference::Specified{
+                    .scheme = getString(valueAt(obj, "scheme")),
+                    .authority = getString(valueAt(obj, "authority")),
+                },
             .params = obj,
         };
         break;
@@ -143,8 +144,7 @@ ref<const StoreConfig> adl_serializer<ref<const StoreConfig>>::from_json(const j
     case json::value_t::discarded:
     default:
         throw UsageError(
-            "Invalid JSON for Store configuration: is type '%s' but must be string or object",
-            json.type_name());
+            "Invalid JSON for Store configuration: is type '%s' but must be string or object", json.type_name());
     };
 
     return resolveStoreConfig(std::move(ref));

@@ -12,7 +12,7 @@ DummyStoreConfig::DummyStoreConfig(
         throw UsageError("`%s` store URIs must not contain an authority part %s", scheme, authority);
 }
 
-std::string DummyStoreConfig::doc()
+std::string DummyStoreConfig::doc() const
 {
     return
       #include "dummy-store.md"
@@ -20,22 +20,20 @@ std::string DummyStoreConfig::doc()
 }
 
 
-const DummyStoreConfig::Descriptions DummyStoreConfig::descriptions{};
-
-
-struct DummyStore : public virtual DummyStoreConfig, public virtual Store
+struct DummyStore : virtual Store
 {
     using Config = DummyStoreConfig;
 
-    DummyStore(const Config & config)
-        : StoreConfig(config)
-        , DummyStoreConfig(config)
-        , Store{static_cast<const Store::Config &>(*this)}
+    ref<const Config> config;
+
+    DummyStore(ref<const Config> config)
+        : Store{*config}
+        , config(config)
     { }
 
     std::string getUri() override
     {
-        return *uriSchemes().begin();
+        return *Config::uriSchemes().begin() + "://";
     }
 
     void queryPathInfoUncached(const StorePath & path,
@@ -82,7 +80,7 @@ struct DummyStore : public virtual DummyStoreConfig, public virtual Store
 
 ref<Store> DummyStore::Config::openStore() const
 {
-    return make_ref<DummyStore>(*this);
+    return make_ref<DummyStore>(ref{shared_from_this()});
 }
 
 static RegisterStoreImplementation<DummyStore::Config> regDummyStore;
