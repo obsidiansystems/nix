@@ -222,15 +222,12 @@ struct NixArgs : virtual MultiCommand, virtual MixCommonArgs, virtual RootArgs
         res["args"] = toJSON();
 
         auto stores = nlohmann::json::object();
-        for (auto & implem : *Implementations::registered) {
-#if 0
-            auto storeConfig = implem.getConfig();
-            auto storeName = storeConfig->name();
+        for (auto & [storeName, implem] : *Implementations::registered) {
             auto & j = stores[storeName];
-            j["doc"] = storeConfig->doc();
-            j["settings"] = storeConfig->toJSON();
-            j["experimentalFeature"] = storeConfig->experimentalFeature();
-#endif
+            j["doc"] = implem.doc;
+            j["uri-schemes"] = implem.uriSchemes;
+            j["settings"] = implem.configDescriptions;
+            j["experimentalFeature"] = implem.experimentalFeature;
         }
         res["stores"] = std::move(stores);
         res["fetchers"] = fetchers::dumpRegisterInputSchemeInfo();
