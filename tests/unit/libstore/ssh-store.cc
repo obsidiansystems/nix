@@ -7,7 +7,7 @@ namespace nix {
 TEST(SSHStore, constructConfig)
 {
     SSHStoreConfig config{
-        "ssh",
+        "ssh-ng",
         "localhost",
         StoreReference::Params{
             {
@@ -30,8 +30,8 @@ TEST(SSHStore, constructConfig)
 
 TEST(MountedSSHStore, constructConfig)
 {
-    MountedSSHStoreConfig config{
-        "mounted-ssh",
+    SSHStoreConfig config{
+        "ssh-ng",
         "localhost",
         StoreReference::Params{
             {
@@ -40,6 +40,10 @@ TEST(MountedSSHStore, constructConfig)
                     "foo",
                     "bar",
                 },
+            },
+            {
+                "mounted",
+                nlohmann::json::object_t{},
             },
         },
     };
@@ -50,6 +54,10 @@ TEST(MountedSSHStore, constructConfig)
             "foo",
             "bar",
         }));
+
+    ASSERT_TRUE(config.mounted);
+
+    EXPECT_EQ(config.mounted->realStoreDir, "/nix/store");
 }
 
 }

@@ -2,11 +2,12 @@
 
 namespace nix {
 
-struct HttpBinaryCacheStoreConfig :
-    std::enable_shared_from_this<HttpBinaryCacheStoreConfig>,
-    Store::Config,
-    BinaryCacheStoreConfig
+struct HttpBinaryCacheStoreConfig : std::enable_shared_from_this<HttpBinaryCacheStoreConfig>,
+                                    Store::Config,
+                                    BinaryCacheStoreConfig
 {
+    static config::SettingDescriptionMap descriptions();
+
     HttpBinaryCacheStoreConfig(
         std::string_view scheme, std::string_view cacheUri, const StoreReference::Params & params);
 

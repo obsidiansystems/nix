@@ -4,7 +4,6 @@
 
 namespace nix::config {
 
-
 };
 
 namespace nlohmann {
@@ -20,8 +19,8 @@ SettingDescription adl_serializer<SettingDescription>::from_json(const json & js
 void adl_serializer<SettingDescription>::to_json(json & obj, SettingDescription s)
 {
     obj.emplace("description", s.description);
-    //obj.emplace("aliases", s.aliases);
-    //obj.emplace("experimentalFeature", s.experimentalFeature);
+    // obj.emplace("aliases", s.aliases);
+    // obj.emplace("experimentalFeature", s.experimentalFeature);
 
     // Cannot use `null` because the default value might itself be
     // `null`.

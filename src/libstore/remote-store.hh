@@ -29,7 +29,9 @@ struct RemoteStoreConfig : RemoteStoreConfigT<config::JustValue>
 {
     static config::SettingDescriptionMap descriptions();
 
-    RemoteStoreConfig(const StoreReference::Params &);
+    const Store::Config & storeConfig;
+
+    RemoteStoreConfig(const Store::Config &, const StoreReference::Params &);
 };
 
 /**

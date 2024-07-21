@@ -21,13 +21,12 @@ struct S3BinaryCacheStoreConfigT
     F<uint64_t> bufferSize;
 };
 
-struct S3BinaryCacheStoreConfig :
-    std::enable_shared_from_this<S3BinaryCacheStoreConfig>,
-    Store::Config,
-    BinaryCacheStoreConfig,
-    S3BinaryCacheStoreConfigT<config::JustValue>
+struct S3BinaryCacheStoreConfig : std::enable_shared_from_this<S3BinaryCacheStoreConfig>,
+                                  Store::Config,
+                                  BinaryCacheStoreConfig,
+                                  S3BinaryCacheStoreConfigT<config::JustValue>
 {
-    static config::SettingDescriptionMap configDescriptions();
+    static config::SettingDescriptionMap descriptions();
 
     S3BinaryCacheStoreConfig(
         std::string_view uriScheme, std::string_view bucketName, const StoreReference::Params & params);

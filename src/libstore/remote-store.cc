@@ -24,40 +24,51 @@
 
 namespace nix {
 
-RemoteStore::Config::Descriptions::Descriptions()
-    : Store::Config::Descriptions{Store::Config::descriptions}
-    , RemoteStoreConfigT<config::SettingInfo>{
-        .maxConnections{
-            .name = "max-connections",
-            .description = "Maximum number of concurrent connections to the Nix daemon.",
-        },
-        .maxConnectionAge{
-            .name = "max-connection-age",
-            .description = "Maximum age of a connection before it is closed.",
-        },
-    }
-{}
+static const RemoteStoreConfigT<config::SettingInfo> remoteStoreConfigDescriptions = {
+    .maxConnections{
+        .name = "max-connections",
+        .description = "Maximum number of concurrent connections to the Nix daemon.",
+    },
+    .maxConnectionAge{
+        .name = "max-connection-age",
+        .description = "Maximum age of a connection before it is closed.",
+    },
+};
 
 
-const RemoteStore::Config::Descriptions RemoteStore::Config::descriptions{};
+#define REMOTE_STORE_CONFIG_FIELDS(X) \
+    X(maxConnections), \
+    X(maxConnectionAge),
 
 
-RemoteStore::Config::RemoteStoreConfig(const StoreReference::Params & params)
-    : Store::Config(params)
-    , RemoteStoreConfigT<config::JustValue>{
-        CONFIG_ROW(maxConnections, 1),
-        CONFIG_ROW(maxConnectionAge, std::numeric_limits<unsigned int>::max()),
-    }
+MAKE_PARSE(RemoteStoreConfig, remoteStoreConfig, REMOTE_STORE_CONFIG_FIELDS)
+
+
+static RemoteStoreConfigT<config::JustValue> remoteStoreConfigDefaults()
+{
+    return {
+        .maxConnections = {1},
+        .maxConnectionAge = {std::numeric_limits<unsigned int>::max()},
+    };
+}
+
+
+MAKE_APPLY_PARSE(RemoteStoreConfig, remoteStoreConfig, REMOTE_STORE_CONFIG_FIELDS)
+
+
+RemoteStore::Config::RemoteStoreConfig(const Store::Config & storeConfig, const StoreReference::Params & params)
+    : RemoteStoreConfigT<config::JustValue>{remoteStoreConfigApplyParse(params)}
+    , storeConfig{storeConfig}
 {
 }
 
 
 /* TODO: Separate these store types into different files, give them better names */
 RemoteStore::RemoteStore(const Config & config)
-    : RemoteStore::Config(config)
-    , Store(static_cast<const Store::Config &>(*this))
+    : Store{config.storeConfig}
+    , config{config}
     , connections(make_ref<Pool<Connection>>(
-            std::max(1, (int) maxConnections),
+            std::max(1, (int) config.maxConnections),
             [this]() {
                 auto conn = openConnectionWrapper();
                 try {
@@ -68,12 +79,12 @@ RemoteStore::RemoteStore(const Config & config)
                 }
                 return conn;
             },
-            [this](const ref<Connection> & r) {
+            [config](const ref<Connection> & r) {
                 return
                     r->to.good()
                     && r->from.good()
                     && std::chrono::duration_cast<std::chrono::seconds>(
-                        std::chrono::steady_clock::now() - r->startTime).count() < maxConnectionAge;
+                        std::chrono::steady_clock::now() - r->startTime).count() < config.maxConnectionAge;
             }
             ))
 {

@@ -74,7 +74,7 @@ SSHStoreConfig::SSHStoreConfig(
     std::string_view authority,
     const StoreReference::Params & params)
     : Store::Config{params}
-    , RemoteStore::Config{params}
+    , RemoteStore::Config{*this, params}
     , CommonSSHStoreConfig{scheme, authority, params}
     , SSHStoreConfigT<config::JustValue>{sshStoreConfigApplyParse(params)}
     , mounted{getMounted(*this, params)}

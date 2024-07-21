@@ -28,10 +28,11 @@ struct BinaryCacheStoreConfigT
 struct BinaryCacheStoreConfig :
     BinaryCacheStoreConfigT<config::JustValue>
 {
-    virtual Store::Config,
     static config::SettingDescriptionMap descriptions();
 
-    BinaryCacheStoreConfig(const StoreReference::Params &);
+    const Store::Config & storeConfig;
+
+    BinaryCacheStoreConfig(const Store::Config &, const StoreReference::Params &);
 };
 
 /**
@@ -39,11 +40,12 @@ struct BinaryCacheStoreConfig :
  * virtual getFile() methods.
  */
 struct BinaryCacheStore :
-    virtual BinaryCacheStoreConfig,
     virtual Store,
     virtual LogStore
 {
     using Config = BinaryCacheStoreConfig;
+
+    const Config & config;
 
 private:
     std::unique_ptr<Signer> signer;

@@ -58,6 +58,11 @@ struct LocalStoreConfig :
         std::string_view authority,
         const StoreReference::Params & params);
 
+    /**
+     * For `RestrictedStore`
+     */
+    LocalStoreConfig(const LocalStoreConfig &);
+
     static const std::string name() { return "Local Store"; }
 
     static std::set<std::string> uriSchemes()
