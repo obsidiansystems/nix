@@ -131,14 +131,9 @@ struct StoreConfig :
     static StringSet getDefaultSystemFeatures();
 
     /**
-     * The name of this type of store.
-     */
-    virtual const std::string name() const = 0;
-
-    /**
      * Documentation for this type of store.
      */
-    virtual std::string doc() const
+    static std::string doc()
     {
         return "";
     }
@@ -147,7 +142,7 @@ struct StoreConfig :
      * An experimental feature this type store is gated, if it is to be
      * experimental.
      */
-    virtual std::optional<ExperimentalFeature> experimentalFeature() const
+    static std::optional<ExperimentalFeature> experimentalFeature()
     {
         return std::nullopt;
     }

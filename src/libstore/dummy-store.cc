@@ -12,7 +12,7 @@ DummyStoreConfig::DummyStoreConfig(
         throw UsageError("`%s` store URIs must not contain an authority part %s", scheme, authority);
 }
 
-std::string DummyStoreConfig::doc() const
+std::string DummyStoreConfig::doc()
 {
     return
       #include "dummy-store.md"

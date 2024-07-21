@@ -43,7 +43,7 @@ UDSRemoteStoreConfig::UDSRemoteStoreConfig(
 }
 
 
-std::string UDSRemoteStoreConfig::doc() const
+std::string UDSRemoteStoreConfig::doc()
 {
     return
         #include "uds-remote-store.md"

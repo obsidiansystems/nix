@@ -26,9 +26,9 @@ struct LocalOverlayStoreConfig :
         PathView path,
         const StoreReference::Params & params);
 
-    const std::string name() const override { return "Experimental Local Overlay Store"; }
+    static const std::string name() { return "Experimental Local Overlay Store"; }
 
-    std::optional<ExperimentalFeature> experimentalFeature() const override
+    static std::optional<ExperimentalFeature> experimentalFeature()
     {
         return ExperimentalFeature::LocalOverlayStore;
     }
@@ -38,7 +38,7 @@ struct LocalOverlayStoreConfig :
         return { "local-overlay" };
     }
 
-    std::string doc() const override;
+    static std::string doc();
 
 protected:
     /**

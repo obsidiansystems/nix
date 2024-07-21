@@ -10,34 +10,31 @@ namespace nix {
 template<template<typename> class F>
 struct S3BinaryCacheStoreConfigT
 {
-    const F<std::string> profile;
-    const F<std::string> region;
-    const F<std::string> scheme;
-    const F<std::string> endpoint;
-    const F<std::string> narinfoCompression;
-    const F<std::string> lsCompression;
-    const F<std::string> logCompression;
-    const F<bool> multipartUpload;
-    const F<uint64_t> bufferSize;
+    F<std::string> profile;
+    F<std::string> region;
+    F<std::string> scheme;
+    F<std::string> endpoint;
+    F<std::string> narinfoCompression;
+    F<std::string> lsCompression;
+    F<std::string> logCompression;
+    F<bool> multipartUpload;
+    F<uint64_t> bufferSize;
 };
 
-struct S3BinaryCacheStoreConfig : virtual BinaryCacheStoreConfig, S3BinaryCacheStoreConfigT<config::JustValue>
+struct S3BinaryCacheStoreConfig :
+    std::enable_shared_from_this<S3BinaryCacheStoreConfig>,
+    Store::Config,
+    BinaryCacheStoreConfig,
+    S3BinaryCacheStoreConfigT<config::JustValue>
 {
-    struct Descriptions : virtual Store::Config::Descriptions,
-                          virtual BinaryCacheStore::Config::Descriptions,
-                          S3BinaryCacheStoreConfigT<config::SettingInfo>
-    {
-        Descriptions();
-    };
-
-    static const Descriptions descriptions;
+    static config::SettingDescriptionMap configDescriptions();
 
     S3BinaryCacheStoreConfig(
         std::string_view uriScheme, std::string_view bucketName, const StoreReference::Params & params);
 
     std::string bucketName;
 
-    const std::string name() override
+    static std::string name()
     {
         return "S3 Binary Cache Store";
     }
@@ -47,7 +44,7 @@ struct S3BinaryCacheStoreConfig : virtual BinaryCacheStoreConfig, S3BinaryCacheS
         return {"s3"};
     }
 
-    std::string doc() override;
+    static std::string doc();
 
     ref<Store> openStore() const override;
 };
@@ -56,9 +53,11 @@ struct S3BinaryCacheStore : virtual BinaryCacheStore
 {
     using Config = S3BinaryCacheStoreConfig;
 
+    ref<const Config> config;
+
 protected:
 
-    S3BinaryCacheStore(const Config &);
+    S3BinaryCacheStore(ref<const Config>);
 
 public:
 

@@ -86,7 +86,7 @@ LocalOverlayStore::Config::LocalOverlayStoreConfig(
 }
 
 
-std::string LocalOverlayStoreConfig::doc() const
+std::string LocalOverlayStoreConfig::doc()
 {
     return
         #include "local-overlay-store.md"

@@ -108,7 +108,7 @@ LocalStore::Config::LocalStoreConfig(
 {
 }
 
-std::string LocalStoreConfig::doc() const
+std::string LocalStoreConfig::doc()
 {
     return
         #include "local-store.md"

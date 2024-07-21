@@ -16,27 +16,20 @@ struct NarInfo;
 template<template<typename> class F>
 struct BinaryCacheStoreConfigT
 {
-    const F<std::string> compression;
-    const F<bool> writeNARListing;
-    const F<bool> writeDebugInfo;
-    const F<Path> secretKeyFile;
-    const F<Path> localNarCache;
-    const F<bool> parallelCompression;
-    const F<int> compressionLevel;
+    F<std::string> compression;
+    F<bool> writeNARListing;
+    F<bool> writeDebugInfo;
+    F<Path> secretKeyFile;
+    F<Path> localNarCache;
+    F<bool> parallelCompression;
+    F<int> compressionLevel;
 };
 
 struct BinaryCacheStoreConfig :
-    virtual Store::Config,
     BinaryCacheStoreConfigT<config::JustValue>
 {
-    struct Descriptions :
-        virtual Store::Config::Descriptions,
-        BinaryCacheStoreConfigT<config::SettingInfo>
-    {
-        Descriptions();
-    };
-
-    static const Descriptions descriptions;
+    virtual Store::Config,
+    static config::SettingDescriptionMap descriptions();
 
     BinaryCacheStoreConfig(const StoreReference::Params &);
 };

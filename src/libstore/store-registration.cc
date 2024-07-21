@@ -59,7 +59,7 @@ ref<StoreConfig> resolveStoreConfig(StoreReference && storeURI)
                     return make_ref<LocalStore::Config>(params);
             },
             [&](const StoreReference::Specified & g) {
-                for (auto implem : *Implementations::registered)
+                for (auto & [name, implem] : *Implementations::registered)
                     if (implem.uriSchemes.count(g.scheme))
                         return implem.parseConfig(g.scheme, g.authority, params);
 
@@ -73,7 +73,7 @@ ref<StoreConfig> resolveStoreConfig(StoreReference && storeURI)
     return storeConfig;
 }
 
-std::vector<StoreFactory> * Implementations::registered = 0;
+Implementations::V * Implementations::registered = 0;
 
 std::list<ref<Store>> getDefaultSubstituters()
 {

@@ -27,9 +27,9 @@ struct UDSRemoteStoreConfig :
         std::string_view authority,
         const StoreReference::Params & params);
 
-    const std::string name() const override { return "Local Daemon Store"; }
+    static const std::string name() { return "Local Daemon Store"; }
 
-    std::string doc() const override;
+    static std::string doc();
 
     /**
      * The path to the unix domain socket.

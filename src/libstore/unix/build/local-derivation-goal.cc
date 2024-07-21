@@ -1256,8 +1256,6 @@ bool LocalDerivationGoal::isAllowed(const DerivedPath & req)
 
 struct RestrictedStoreConfig : virtual LocalFSStoreConfig
 {
-    const std::string name() override { return "Restricted Store"; }
-
     ref<Store> openStore() const override;
 
     ref<LocalStore> next;

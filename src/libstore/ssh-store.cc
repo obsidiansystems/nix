@@ -82,18 +82,8 @@ SSHStoreConfig::SSHStoreConfig(
 }
 
 
-const std::string SSHStoreConfig::name() const
+std::string SSHStoreConfig::doc()
 {
-    std::string ret = "Experimental SSH Store";
-    if (mounted)
-        ret += " with filesystem mounted";
-    return ret;
-}
-
-
-std::string SSHStoreConfig::doc() const
-{
-    return
       #include "ssh-store.md"
       ;
 }

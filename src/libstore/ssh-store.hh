@@ -26,19 +26,17 @@ struct SSHStoreConfig : std::enable_shared_from_this<SSHStoreConfig>,
 
     SSHStoreConfig(std::string_view scheme, std::string_view authority, const StoreReference::Params & params);
 
-    const std::string name() const override;
+    static const std::string name()
+    {
+        return "Experimental SSH Store";
+    }
 
     static std::set<std::string> uriSchemes()
     {
         return {"ssh-ng"};
     }
 
-    std::string doc() const override;
-
-    std::optional<ExperimentalFeature> experimentalFeature() const override
-    {
-        return mounted ? std::optional{ExperimentalFeature::MountedSSHStore} : std::nullopt;
-    }
+    static std::string doc();
 
     ref<Store> openStore() const override;
 };

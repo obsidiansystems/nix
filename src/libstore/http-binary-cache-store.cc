@@ -9,6 +9,14 @@ namespace nix {
 
 MakeError(UploadToHTTP, Error);
 
+std::set<std::string> HttpBinaryCacheStoreConfig::uriSchemes()
+{
+    static bool forceHttp = getEnv("_NIX_FORCE_HTTP") == "1";
+    auto ret = std::set<std::string>({"http", "https"});
+    if (forceHttp)
+        ret.insert("file");
+    return ret;
+}
 
 HttpBinaryCacheStoreConfig::HttpBinaryCacheStoreConfig(
     std::string_view scheme,

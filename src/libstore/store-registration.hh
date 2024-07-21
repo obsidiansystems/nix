@@ -13,10 +13,24 @@ namespace nix {
 
 struct StoreFactory
 {
+    /**
+     * Documentation for this type of store.
+     */
     std::string doc;
+
+    /**
+     * URIs with these schemes should be handled by this factory
+     */
     std::set<std::string> uriSchemes;
+
     config::SettingDescriptionMap configDescriptions;
+
+    /**
+     * An experimental feature this type store is gated, if it is to be
+     * experimental.
+     */
     std::optional<ExperimentalFeature> experimentalFeature;
+
     /**
      * The `authorityPath` parameter is `<authority>/<path>`, or really
      * whatever comes after `<scheme>://` and before `?<query-params>`.
@@ -30,6 +44,9 @@ struct Implementations
 {
 private:
 
+    /**
+     * The name of this type of store, and a factory for it.
+     */
     using V = std::vector<std::pair<std::string, StoreFactory>>;
 
 public:

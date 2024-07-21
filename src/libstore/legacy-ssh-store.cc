@@ -82,7 +82,7 @@ LegacySSHStore::Config::LegacySSHStoreConfig(
 }
 
 
-std::string LegacySSHStoreConfig::doc() const
+std::string LegacySSHStoreConfig::doc()
 {
     return
       #include "legacy-ssh-store.md"
