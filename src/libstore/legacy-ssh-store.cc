@@ -28,11 +28,14 @@ static const LegacySSHStoreConfigT<config::SettingInfo> legacySSHStoreConfigDesc
     },
 };
 
+
 #define LEGACY_SSH_STORE_CONFIG_FIELDS(X) \
     X(remoteProgram), \
     X(maxConnections)
 
+
 MAKE_PARSE(LegacySSHStoreConfig, legacySSHStoreConfig, LEGACY_SSH_STORE_CONFIG_FIELDS)
+
 
 static LegacySSHStoreConfigT<config::JustValue> legacySSHStoreConfigDefaults()
 {
@@ -42,7 +45,26 @@ static LegacySSHStoreConfigT<config::JustValue> legacySSHStoreConfigDefaults()
     };
 }
 
+
 MAKE_APPLY_PARSE(LegacySSHStoreConfig, legacySSHStoreConfig, LEGACY_SSH_STORE_CONFIG_FIELDS)
+
+
+config::SettingDescriptionMap LegacySSHStoreConfig::descriptions()
+{
+    config::SettingDescriptionMap ret;
+    ret.merge(StoreConfig::descriptions());
+    ret.merge(CommonSSHStoreConfig::descriptions());
+    ret.merge(RemoteStoreConfig::descriptions());
+    {
+        constexpr auto & descriptions = legacySSHStoreConfigDescriptions;
+        auto defaults = legacySSHStoreConfigDefaults();
+        ret.merge(decltype(ret){
+            LEGACY_SSH_STORE_CONFIG_FIELDS(DESC_ROW)
+        });
+    }
+    return ret;
+}
+
 
 LegacySSHStore::Config::LegacySSHStoreConfig(
     std::string_view scheme,
@@ -73,6 +95,7 @@ struct LegacySSHStore::Connection : public ServeProto::BasicClientConnection
     std::unique_ptr<SSHMaster::Connection> sshConn;
     bool good = true;
 };
+
 
 LegacySSHStore::LegacySSHStore(ref<const Config> config)
     : Store{*config}

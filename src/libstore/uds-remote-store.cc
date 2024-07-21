@@ -32,9 +32,9 @@ UDSRemoteStoreConfig::UDSRemoteStoreConfig(
     std::string_view scheme,
     std::string_view authority,
     const StoreReference::Params & params)
-    : StoreConfig(params)
-    , LocalFSStoreConfig(*this, params)
-    , RemoteStoreConfig(params)
+    : Store::Config{params}
+    , LocalFSStore::Config{*this, params}
+    , RemoteStore::Config{params}
     , path{authority.empty() ? settings.nixDaemonSocketFile : authority}
 {
     if (uriSchemes().count(std::string{scheme}) == 0) {

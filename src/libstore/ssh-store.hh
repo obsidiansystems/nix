@@ -11,63 +11,33 @@ namespace nix {
 template<template<typename> class F>
 struct SSHStoreConfigT
 {
-    const F<Strings> remoteProgram;
+    F<Strings> remoteProgram;
 };
 
-struct SSHStoreConfig : virtual RemoteStoreConfig, virtual CommonSSHStoreConfig, SSHStoreConfigT<config::JustValue>
+struct SSHStoreConfig : std::enable_shared_from_this<SSHStoreConfig>,
+                        Store::Config,
+                        RemoteStore::Config,
+                        CommonSSHStoreConfig,
+                        SSHStoreConfigT<config::JustValue>
 {
-    struct Descriptions : virtual RemoteStoreConfig::Descriptions,
-                          virtual CommonSSHStoreConfig::Descriptions,
-                          SSHStoreConfigT<config::SettingInfo>
-    {
-        Descriptions();
-    };
+    static config::SettingDescriptionMap descriptions();
 
-    static const Descriptions descriptions;
+    std::optional<LocalFSStore::Config> mounted;
 
     SSHStoreConfig(std::string_view scheme, std::string_view authority, const StoreReference::Params & params);
 
-    const std::string name() override
-    {
-        return "Experimental SSH Store";
-    }
+    const std::string name() const override;
 
     static std::set<std::string> uriSchemes()
     {
         return {"ssh-ng"};
     }
 
-    std::string doc() override;
-
-    ref<Store> openStore() const override;
-};
-
-struct MountedSSHStoreConfig : virtual SSHStoreConfig, virtual LocalFSStore::Config
-{
-    struct Descriptions : virtual SSHStoreConfig::Descriptions, virtual LocalFSStore::Config::Descriptions
-    {
-        Descriptions();
-    };
-
-    static const Descriptions descriptions;
-
-    MountedSSHStoreConfig(std::string_view scheme, std::string_view host, const StoreReference::Params & params);
-
-    const std::string name() override
-    {
-        return "Experimental SSH Store with filesystem mounted";
-    }
-
-    static std::set<std::string> uriSchemes()
-    {
-        return {"mounted-ssh-ng"};
-    }
-
-    std::string doc() override;
+    std::string doc() const override;
 
     std::optional<ExperimentalFeature> experimentalFeature() const override
     {
-        return ExperimentalFeature::MountedSSHStore;
+        return mounted ? std::optional{ExperimentalFeature::MountedSSHStore} : std::nullopt;
     }
 
     ref<Store> openStore() const override;

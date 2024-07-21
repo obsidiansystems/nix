@@ -12,19 +12,61 @@
 
 namespace nix {
 
-SSHStoreConfig::Descriptions::Descriptions()
-    : Store::Config::Descriptions{Store::Config::descriptions}
-    , CommonSSHStoreConfig::Descriptions{CommonSSHStoreConfig::descriptions}
-    , SSHStoreConfigT<config::SettingInfo>{
-        .remoteProgram{
-            .name = "remote-program",
-            .description = "Path to the `nix-daemon` executable on the remote machine.",
-        },
+static const SSHStoreConfigT<config::SettingInfo> sshStoreConfigDescriptions = {
+    .remoteProgram{
+        .name = "remote-program",
+        .description = "Path to the `nix-daemon` executable on the remote machine.",
+    },
+};
+
+
+#define SSH_STORE_CONFIG_FIELDS(X) \
+    X(remoteProgram)
+
+
+MAKE_PARSE(SSHStoreConfig, sshStoreConfig, SSH_STORE_CONFIG_FIELDS)
+
+
+static SSHStoreConfigT<config::JustValue> sshStoreConfigDefaults()
+{
+    return {
+        .remoteProgram = {{"nix-daemon"}},
+    };
+}
+
+
+MAKE_APPLY_PARSE(SSHStoreConfig, sshStoreConfig, SSH_STORE_CONFIG_FIELDS)
+
+
+config::SettingDescriptionMap SSHStoreConfig::descriptions()
+{
+    config::SettingDescriptionMap ret;
+    ret.merge(StoreConfig::descriptions());
+    ret.merge(CommonSSHStoreConfig::descriptions());
+    ret.merge(RemoteStoreConfig::descriptions());
+    {
+        constexpr auto & descriptions = sshStoreConfigDescriptions;
+        auto defaults = sshStoreConfigDefaults();
+        ret.merge(decltype(ret){
+            SSH_STORE_CONFIG_FIELDS(DESC_ROW)
+        });
     }
-{}
+    //ret.merge(LocalFSStoreConfig::descriptions());
+    return ret;
+}
 
 
-const SSHStoreConfig::Descriptions SSHStoreConfig::descriptions{};
+static std::optional<LocalFSStore::Config> getMounted(
+    const Store::Config & storeConfig,
+    const StoreReference::Params & params)
+{
+    auto mountedParamsOpt = optionalValueAt(params, "mounted");
+    if (!mountedParamsOpt) return {};
+    auto * mountedParamsP = getNullable(*mountedParamsOpt);
+    if (!mountedParamsP) return {};
+    auto & mountedParams = getObject(*mountedParamsP);
+    return {{storeConfig, mountedParams}};
+}
 
 
 SSHStoreConfig::SSHStoreConfig(
@@ -34,34 +76,40 @@ SSHStoreConfig::SSHStoreConfig(
     : Store::Config{params}
     , RemoteStore::Config{params}
     , CommonSSHStoreConfig{scheme, authority, params}
-    , SSHStoreConfigT<config::JustValue>{
-        CONFIG_ROW(remoteProgram, Strings{"nix-daemon"}),
-    }
+    , SSHStoreConfigT<config::JustValue>{sshStoreConfigApplyParse(params)}
+    , mounted{getMounted(*this, params)}
 {
 }
 
 
-std::string SSHStoreConfig::doc()
+const std::string SSHStoreConfig::name() const
+{
+    std::string ret = "Experimental SSH Store";
+    if (mounted)
+        ret += " with filesystem mounted";
+    return ret;
+}
+
+
+std::string SSHStoreConfig::doc() const
 {
     return
       #include "ssh-store.md"
       ;
 }
 
-struct SSHStore :
-    public virtual SSHStoreConfig,
-    public virtual RemoteStore
+
+struct SSHStore : virtual RemoteStore
 {
     using Config = SSHStoreConfig;
 
-    SSHStore(const Config & config)
-        : Store::Config{config}
-        , RemoteStore::Config{config}
-        , CommonSSHStoreConfig{config}
-        , SSHStore::Config{config}
-        , Store{static_cast<const Store::Config &>(*this)}
-        , RemoteStore{static_cast<const RemoteStore::Config &>(*this)}
-        , master(createSSHMaster(
+    ref<const Config> config;
+
+    SSHStore(ref<const Config> config)
+        : Store{*config}
+        , RemoteStore{*config}
+        , config{config}
+        , master(config->createSSHMaster(
             // Use SSH master only if using more than 1 connection.
             connections->capacity() > 1))
     {
@@ -69,7 +117,7 @@ struct SSHStore :
 
     std::string getUri() override
     {
-        return *uriSchemes().begin() + "://" + host;
+        return *Config::uriSchemes().begin() + "://" + host;
     }
 
     // FIXME extend daemon protocol, move implementation to RemoteStore
@@ -108,41 +156,6 @@ protected:
 };
 
 
-ref<Store> SSHStore::Config::openStore() const {
-    return make_ref<SSHStore>(*this);
-}
-
-
-MountedSSHStoreConfig::Descriptions::Descriptions()
-    : Store::Config::Descriptions{Store::Config::descriptions}
-    , CommonSSHStoreConfig::Descriptions{CommonSSHStoreConfig::descriptions}
-    , SSHStore::Config::Descriptions{SSHStoreConfig::descriptions}
-{}
-
-
-const MountedSSHStoreConfig::Descriptions MountedSSHStoreConfig::descriptions{};
-
-
-MountedSSHStoreConfig::MountedSSHStoreConfig(
-    std::string_view scheme,
-    std::string_view host,
-    const StoreReference::Params & params)
-    : Store::Config{params}
-    , RemoteStore::Config{params}
-    , CommonSSHStoreConfig{scheme, host, params}
-    , SSHStoreConfig{scheme, host, params}
-    , LocalFSStoreConfig{params}
-{
-}
-
-std::string MountedSSHStoreConfig::doc()
-{
-    return
-      #include "mounted-ssh-store.md"
-      ;
-}
-
-
 /**
  * The mounted ssh store assumes that filesystems on the remote host are
  * shared with the local host. This means that the remote nix store is
@@ -157,30 +170,22 @@ std::string MountedSSHStoreConfig::doc()
  * The difference lies in how they manage GC roots. See addPermRoot
  * below for details.
  */
-struct MountedSSHStore : virtual MountedSSHStoreConfig, virtual SSHStore, virtual LocalFSStore
+struct MountedSSHStore : virtual SSHStore, virtual LocalFSStore
 {
-    using Config = MountedSSHStoreConfig;
+    using Config = SSHStore::Config;
 
-    MountedSSHStore(const Config & config)
-        : Store::Config{config}
-        , RemoteStore::Config{config}
-        , CommonSSHStoreConfig{config}
-        , SSHStore::Config{config}
-        , LocalFSStore::Config{config}
-        , MountedSSHStore::Config{config}
-        , Store{static_cast<const Store::Config &>(*this)}
-        , RemoteStore{static_cast<const RemoteStore::Config &>(*this)}
-        , SSHStore{static_cast<const SSHStore::Config &>(*this)}
-        , LocalFSStore{static_cast<const LocalFSStore::Config &>(*this)}
+    const LocalFSStore::Config & mountedConfig;
+
+    MountedSSHStore(ref<const Config> config, const LocalFSStore::Config & mountedConfig)
+        : Store{*config}
+        , RemoteStore{*config}
+        , SSHStore{config}
+        , LocalFSStore{mountedConfig}
+        , mountedConfig{mountedConfig}
     {
         extraRemoteProgramArgs = {
             "--process-ops",
         };
-    }
-
-    std::string getUri() override
-    {
-        return *uriSchemes().begin() + "://" + host;
     }
 
     void narFromPath(const StorePath & path, Sink & sink) override
@@ -226,18 +231,23 @@ struct MountedSSHStore : virtual MountedSSHStoreConfig, virtual SSHStore, virtua
 
 
 ref<Store> MountedSSHStore::Config::openStore() const {
-    return make_ref<MountedSSHStore>(*this);
+    ref config {shared_from_this()};
+
+    if (config->mounted)
+        return make_ref<MountedSSHStore>(config, *config->mounted);
+    else
+        return make_ref<SSHStore>(config);
 }
 
 
 ref<RemoteStore::Connection> SSHStore::openConnection()
 {
     auto conn = make_ref<Connection>();
-    Strings command = remoteProgram.get();
+    Strings command = config->remoteProgram.get();
     command.push_back("--stdio");
-    if (remoteStore.get() != "") {
+    if (config->remoteStore.get() != "") {
         command.push_back("--store");
-        command.push_back(remoteStore.get());
+        command.push_back(config->remoteStore.get());
     }
     command.insert(command.end(),
         extraRemoteProgramArgs.begin(), extraRemoteProgramArgs.end());
