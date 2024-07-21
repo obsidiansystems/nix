@@ -18,22 +18,12 @@
 
 namespace nix {
 
-UDSRemoteStoreConfig::Descriptions::Descriptions()
-    : Store::Config::Descriptions{Store::Config::descriptions}
-    , LocalFSStore::Config::Descriptions{LocalFSStore::Config::descriptions}
-    , RemoteStore::Config::Descriptions{RemoteStore::Config::descriptions}
-{}
-
-
-const UDSRemoteStoreConfig::Descriptions UDSRemoteStoreConfig::descriptions{};
-
-
 UDSRemoteStoreConfig::UDSRemoteStoreConfig(
     std::string_view scheme,
     std::string_view authority,
     const StoreReference::Params & params)
     : StoreConfig(params)
-    , LocalFSStoreConfig(params)
+    , LocalFSStoreConfig(*this, params)
     , RemoteStoreConfig(params)
     , path{authority.empty() ? settings.nixDaemonSocketFile : authority}
 {
@@ -43,7 +33,7 @@ UDSRemoteStoreConfig::UDSRemoteStoreConfig(
 }
 
 
-std::string UDSRemoteStoreConfig::doc()
+std::string UDSRemoteStoreConfig::doc() const
 {
     return
         #include "uds-remote-store.md"
@@ -51,27 +41,24 @@ std::string UDSRemoteStoreConfig::doc()
 }
 
 
-UDSRemoteStore::UDSRemoteStore(const Config & config)
-    : Store::Config{config}
-    , LocalFSStore::Config{config}
-    , RemoteStore::Config{config}
-    , UDSRemoteStore::Config{config}
-    , Store(static_cast<const Store::Config &>(*this))
-    , LocalFSStore(static_cast<const LocalFSStore::Config &>(*this))
-    , RemoteStore(static_cast<const RemoteStore::Config &>(*this))
+UDSRemoteStore::UDSRemoteStore(ref<const Config> config)
+    : Store{*config}
+    , LocalFSStore{*config}
+    , RemoteStore{*config}
+    , config{config}
 {
 }
 
 
 std::string UDSRemoteStore::getUri()
 {
-    return path == settings.nixDaemonSocketFile
+    return config->path == settings.nixDaemonSocketFile
         ? // FIXME: Not clear why we return daemon here and not default
           // to settings.nixDaemonSocketFile
           //
           // unix:// with no path also works. Change what we return?
           "daemon"
-        : std::string(*uriSchemes().begin()) + "://" + path;
+        : std::string(*Config::uriSchemes().begin()) + "://" + config->path;
 }
 
 
@@ -88,7 +75,7 @@ ref<RemoteStore::Connection> UDSRemoteStore::openConnection()
     /* Connect to a daemon that does the privileged work for us. */
     conn->fd = createUnixDomainSocket();
 
-    nix::connect(toSocket(conn->fd.get()), path);
+    nix::connect(toSocket(conn->fd.get()), config->path);
 
     conn->from.fd = conn->fd.get();
     conn->to.fd = conn->fd.get();
@@ -109,7 +96,7 @@ void UDSRemoteStore::addIndirectRoot(const Path & path)
 
 
 ref<Store> UDSRemoteStore::Config::openStore() const {
-    return make_ref<UDSRemoteStore>(*this);
+    return make_ref<UDSRemoteStore>(ref{shared_from_this()});
 }
 
 

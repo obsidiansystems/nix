@@ -53,7 +53,7 @@ struct UDSRemoteStore :
 
     ref<const Config> config;
 
-    UDSRemoteStore(const Config &);
+    UDSRemoteStore(ref<const Config>);
 
     std::string getUri() override;
 
