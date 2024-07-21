@@ -132,6 +132,8 @@ struct Constant
     typedef std::map<std::string, Value *> ValMap;
 #endif
 
+typedef std::unordered_map<PosIdx, DocComment> DocCommentMap;
+
 struct Env
 {
     Env * up;
@@ -313,15 +315,15 @@ private:
 
     /* Cache for calls to addToStore(); maps source paths to the store
        paths. */
-    Sync<std::map<SourcePath, StorePath>> srcToStore;
+    Sync<std::unordered_map<SourcePath, StorePath>> srcToStore;
 
     /**
      * A cache from path names to parse trees.
      */
 #if HAVE_BOEHMGC
-    typedef std::map<SourcePath, Expr *, std::less<SourcePath>, traceable_allocator<std::pair<const SourcePath, Expr *>>> FileParseCache;
+    typedef std::unordered_map<SourcePath, Expr *, std::hash<SourcePath>, std::equal_to<SourcePath>, traceable_allocator<std::pair<const SourcePath, Expr *>>> FileParseCache;
 #else
-    typedef std::map<SourcePath, Expr *> FileParseCache;
+    typedef std::unordered_map<SourcePath, Expr *> FileParseCache;
 #endif
     FileParseCache fileParseCache;
 
@@ -329,11 +331,17 @@ private:
      * A cache from path names to values.
      */
 #if HAVE_BOEHMGC
-    typedef std::map<SourcePath, Value, std::less<SourcePath>, traceable_allocator<std::pair<const SourcePath, Value>>> FileEvalCache;
+    typedef std::unordered_map<SourcePath, Value, std::hash<SourcePath>, std::equal_to<SourcePath>, traceable_allocator<std::pair<const SourcePath, Value>>> FileEvalCache;
 #else
-    typedef std::map<SourcePath, Value> FileEvalCache;
+    typedef std::unordered_map<SourcePath, Value> FileEvalCache;
 #endif
     FileEvalCache fileEvalCache;
+
+    /**
+     * Associate source positions of certain AST nodes with their preceding doc comment, if they have one.
+     * Grouped by file.
+     */
+    std::unordered_map<SourcePath, DocCommentMap> positionToDocComment;
 
     LookupPath lookupPath;
 
@@ -820,6 +828,8 @@ public:
         Value * filterFun,
         const SourcePath & path,
         PosIdx pos);
+
+    DocComment getDocCommentForPos(PosIdx pos);
 
 private:
 

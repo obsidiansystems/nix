@@ -90,7 +90,7 @@ public:
      */
     std::optional<std::string> isRelative() const;
 
-    bool operator ==(const Input & other) const;
+    bool operator ==(const Input & other) const noexcept;
 
     bool contains(const Input & other) const;
 

@@ -9,6 +9,8 @@
 #include <iterator>
 #include <nlohmann/json.hpp>
 
+#include "strings.hh"
+
 namespace nix::flake {
 
 static FlakeRef getFlakeRef(
@@ -253,11 +255,6 @@ bool LockFile::operator ==(const LockFile & other) const
 {
     // FIXME: slow
     return toJSON().first == other.toJSON().first;
-}
-
-bool LockFile::operator !=(const LockFile & other) const
-{
-    return !(*this == other);
 }
 
 InputPath parseInputPath(std::string_view s)
