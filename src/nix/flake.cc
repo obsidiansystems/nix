@@ -27,10 +27,6 @@
 // FIXME is this supposed to be private or not?
 #include "flake-command.hh"
 
-namespace nix::fs {
-using namespace std::filesystem;
-}
-
 using namespace nix;
 using namespace nix::flake;
 using json = nlohmann::json;
