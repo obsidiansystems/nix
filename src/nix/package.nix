@@ -36,9 +36,10 @@ mkMesonDerivation (finalAttrs: {
     ../../.version
     ./.version
     ./meson.build
-    # ./meson.options
+    ./meson.options
 
     # Symbolic links to other dirs
+    ## exes
     ./build-remote
     ./doc
     ./nix-build
@@ -48,6 +49,11 @@ mkMesonDerivation (finalAttrs: {
     ./nix-env
     ./nix-instantiate
     ./nix-store
+    ## dirs
+    ./scripts
+    ../../scripts
+    ./misc
+    ../../misc
 
     # Doc nix files for --help
     ../../doc/manual/generate-manpage.nix
@@ -84,8 +90,6 @@ mkMesonDerivation (finalAttrs: {
     ]
   );
 
-  outputs = [ "out" "dev" ];
-
   nativeBuildInputs = [
     meson
     ninja
@@ -114,11 +118,7 @@ mkMesonDerivation (finalAttrs: {
     LDFLAGS = "-fuse-ld=gold";
   };
 
-  enableParallelBuilding = true;
-
   separateDebugInfo = !stdenv.hostPlatform.isStatic;
-
-  strictDeps = true;
 
   hardeningDisable = lib.optional stdenv.hostPlatform.isStatic "pie";
 

@@ -23,6 +23,8 @@ deps_public_maybe_subproject = [
 ]
 subdir('build-utils-meson/subprojects')
 
+subdir('build-utils-meson/threads')
+
 rapidcheck = dependency('rapidcheck')
 deps_public += rapidcheck
 
@@ -44,6 +46,7 @@ include_dirs = [include_directories('.')]
 
 headers = files(
   'tests/characterization.hh',
+  'tests/gtest-with-params.hh',
   'tests/hash.hh',
   'tests/nix_api_util.hh',
   'tests/string_callback.hh',

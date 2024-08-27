@@ -113,8 +113,11 @@ void RemoteStore::initConnection(Connection & conn)
         StringSink saved;
         TeeSource tee(conn.from, saved);
         try {
-            conn.protoVersion = WorkerProto::BasicClientConnection::handshake(
-                conn.to, tee, PROTOCOL_VERSION);
+            auto [protoVersion, features] = WorkerProto::BasicClientConnection::handshake(
+                conn.to, tee, PROTOCOL_VERSION,
+                WorkerProto::allFeatures);
+            conn.protoVersion = protoVersion;
+            conn.features = features;
         } catch (SerialisationError & e) {
             /* In case the other side is waiting for our input, close
                it. */
@@ -127,6 +130,9 @@ void RemoteStore::initConnection(Connection & conn)
         }
 
         static_cast<WorkerProto::ClientHandshakeInfo &>(conn) = conn.postHandshake(*this);
+
+        for (auto & feature : conn.features)
+            debug("negotiated feature '%s'", feature);
 
         auto ex = conn.processStderrReturn();
         if (ex) std::rethrow_exception(ex);
@@ -187,9 +193,9 @@ RemoteStore::ConnectionHandle::~ConnectionHandle()
     }
 }
 
-void RemoteStore::ConnectionHandle::processStderr(Sink * sink, Source * source, bool flush)
+void RemoteStore::ConnectionHandle::processStderr(Sink * sink, Source * source, bool flush, bool block)
 {
-    handle->processStderr(&daemonException, sink, source, flush);
+    handle->processStderr(&daemonException, sink, source, flush, block);
 }
 
 
@@ -960,43 +966,17 @@ void RemoteStore::ConnectionHandle::withFramedSink(std::function<void(Sink & sin
 {
     (*this)->to.flush();
 
-    std::exception_ptr ex;
-
-    /* Handle log messages / exceptions from the remote on a separate
-       thread. */
-    std::thread stderrThread([&]()
     {
-        try {
-            ReceiveInterrupts receiveInterrupts;
-            processStderr(nullptr, nullptr, false);
-        } catch (...) {
-            ex = std::current_exception();
-        }
-    });
-
-    Finally joinStderrThread([&]()
-    {
-        if (stderrThread.joinable()) {
-            stderrThread.join();
-            if (ex) {
-                try {
-                    std::rethrow_exception(ex);
-                } catch (...) {
-                    ignoreException();
-                }
-            }
-        }
-    });
-
-    {
-        FramedSink sink((*this)->to, ex);
+        FramedSink sink((*this)->to, [&]() {
+            /* Periodically process stderr messages and exceptions
+               from the daemon. */
+            processStderr(nullptr, nullptr, false, false);
+        });
         fun(sink);
         sink.flush();
     }
 
-    stderrThread.join();
-    if (ex)
-        std::rethrow_exception(ex);
+    processStderr(nullptr, nullptr, false);
 }
 
 }

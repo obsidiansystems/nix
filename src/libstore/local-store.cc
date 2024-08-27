@@ -45,7 +45,6 @@
 # include <sched.h>
 # include <sys/statvfs.h>
 # include <sys/mount.h>
-# include <sys/ioctl.h>
 #endif
 
 #ifdef __CYGWIN__
@@ -408,8 +407,6 @@ LocalStore::LocalStore(ref<const Config> config)
         /* Get the schema version again, because another process may
            have performed the upgrade already. */
         curSchema = getSchema();
-
-        if (curSchema < 7) { upgradeStore7(); }
 
         openDB(*state, false);
 
@@ -1174,7 +1171,7 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source,
             TeeSource wrapperSource { source, hashSink };
 
             narRead = true;
-            restorePath(realPath, wrapperSource);
+            restorePath(realPath, wrapperSource, settings.fsyncStorePaths);
 
             auto hashResult = hashSink.finish();
 
@@ -1227,6 +1224,11 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source,
             canonicalisePathMetaData(realPath);
 
             optimisePath(realPath, repair); // FIXME: combine with hashPath()
+
+            if (settings.fsyncStorePaths) {
+                recursiveSync(realPath);
+                syncParent(realPath);
+            }
 
             registerValidPath(info);
         }
@@ -1308,7 +1310,7 @@ StorePath LocalStore::addToStoreFromDump(
         delTempDir = std::make_unique<AutoDelete>(tempDir);
         tempPath = tempDir / "x";
 
-        restorePath(tempPath.string(), bothSource, dumpMethod);
+        restorePath(tempPath.string(), bothSource, dumpMethod, settings.fsyncStorePaths);
 
         dumpBuffer.reset();
         dump = {};
@@ -1355,7 +1357,7 @@ StorePath LocalStore::addToStoreFromDump(
                 switch (fim) {
                 case FileIngestionMethod::Flat:
                 case FileIngestionMethod::NixArchive:
-                    restorePath(realPath, dumpSource, (FileSerialisationMethod) fim);
+                    restorePath(realPath, dumpSource, (FileSerialisationMethod) fim, settings.fsyncStorePaths);
                     break;
                 case FileIngestionMethod::Git:
                     // doesn't correspond to serialization method, so
@@ -1379,6 +1381,11 @@ StorePath LocalStore::addToStoreFromDump(
             canonicalisePathMetaData(realPath); // FIXME: merge into restorePath
 
             optimisePath(realPath, repair);
+
+            if (settings.fsyncStorePaths) {
+                recursiveSync(realPath);
+                syncParent(realPath);
+            }
 
             ValidPathInfo info {
                 *this,
@@ -1631,62 +1638,6 @@ std::optional<TrustedFlag> LocalStore::isTrustedClient()
 {
     return Trusted;
 }
-
-
-#if defined(FS_IOC_SETFLAGS) && defined(FS_IOC_GETFLAGS) && defined(FS_IMMUTABLE_FL)
-
-static void makeMutable(const Path & path)
-{
-    checkInterrupt();
-
-    auto st = lstat(path);
-
-    if (!S_ISDIR(st.st_mode) && !S_ISREG(st.st_mode)) return;
-
-    if (S_ISDIR(st.st_mode)) {
-        for (auto & i : readDirectory(path))
-            makeMutable(path + "/" + i.name);
-    }
-
-    /* The O_NOFOLLOW is important to prevent us from changing the
-       mutable bit on the target of a symlink (which would be a
-       security hole). */
-    AutoCloseFD fd = open(path.c_str(), O_RDONLY | O_NOFOLLOW
-#ifndef _WIN32
-        | O_CLOEXEC
-#endif
-        );
-    if (fd == INVALID_DESCRIPTOR) {
-        if (errno == ELOOP) return; // it's a symlink
-        throw SysError("opening file '%1%'", path);
-    }
-
-    unsigned int flags = 0, old;
-
-    /* Silently ignore errors getting/setting the immutable flag so
-       that we work correctly on filesystems that don't support it. */
-    if (ioctl(fd, FS_IOC_GETFLAGS, &flags)) return;
-    old = flags;
-    flags &= ~FS_IMMUTABLE_FL;
-    if (old == flags) return;
-    if (ioctl(fd, FS_IOC_SETFLAGS, &flags)) return;
-}
-
-/* Upgrade from schema 6 (Nix 0.15) to schema 7 (Nix >= 1.3). */
-void LocalStore::upgradeStore7()
-{
-    if (!isRootUser()) return;
-    printInfo("removing immutable bits from the Nix store (this may take a while)...");
-    makeMutable(realStoreDir);
-}
-
-#else
-
-void LocalStore::upgradeStore7()
-{
-}
-
-#endif
 
 
 void LocalStore::vacuumDB()

@@ -104,6 +104,9 @@ struct BufferedSource : Source
 
     size_t read(char * data, size_t len) override;
 
+    /**
+     * Return true if the buffer is not empty.
+     */
     bool hasData();
 
 protected:
@@ -162,6 +165,13 @@ struct FdSource : BufferedSource
     FdSource & operator=(FdSource && s) = default;
 
     bool good() override;
+
+    /**
+     * Return true if the buffer is not empty after a non-blocking
+     * read.
+     */
+    bool hasData();
+
 protected:
     size_t readUnbuffered(char * data, size_t len) override;
 private:
@@ -204,7 +214,7 @@ struct TeeSink : Sink
 {
     Sink & sink1, & sink2;
     TeeSink(Sink & sink1, Sink & sink2) : sink1(sink1), sink2(sink2) { }
-    virtual void operator () (std::string_view data)
+    virtual void operator () (std::string_view data) override
     {
         sink1(data);
         sink2(data);
@@ -221,7 +231,7 @@ struct TeeSource : Source
     Sink & sink;
     TeeSource(Source & orig, Sink & sink)
         : orig(orig), sink(sink) { }
-    size_t read(char * data, size_t len)
+    size_t read(char * data, size_t len) override
     {
         size_t n = orig.read(data, len);
         sink({data, n});
@@ -238,7 +248,7 @@ struct SizedSource : Source
     size_t remain;
     SizedSource(Source & orig, size_t size)
         : orig(orig), remain(size) { }
-    size_t read(char * data, size_t len)
+    size_t read(char * data, size_t len) override
     {
         if (this->remain <= 0) {
             throw EndOfFile("sized: unexpected end-of-file");
@@ -483,13 +493,17 @@ struct FramedSource : Source
 
     ~FramedSource()
     {
-        if (!eof) {
-            while (true) {
-                auto n = readInt(from);
-                if (!n) break;
-                std::vector<char> data(n);
-                from(data.data(), n);
+        try {
+            if (!eof) {
+                while (true) {
+                    auto n = readInt(from);
+                    if (!n) break;
+                    std::vector<char> data(n);
+                    from(data.data(), n);
+                }
             }
+        } catch (...) {
+            ignoreException();
         }
     }
 
@@ -518,15 +532,16 @@ struct FramedSource : Source
 /**
  * Write as chunks in the format expected by FramedSource.
  *
- * The exception_ptr reference can be used to terminate the stream when you
- * detect that an error has occurred on the remote end.
+ * The `checkError` function can be used to terminate the stream when you
+ * detect that an error has occurred. It does so by throwing an exception.
  */
 struct FramedSink : nix::BufferedSink
 {
     BufferedSink & to;
-    std::exception_ptr & ex;
+    std::function<void()> checkError;
 
-    FramedSink(BufferedSink & to, std::exception_ptr & ex) : to(to), ex(ex)
+    FramedSink(BufferedSink & to, std::function<void()> && checkError)
+        : to(to), checkError(checkError)
     { }
 
     ~FramedSink()
@@ -541,39 +556,12 @@ struct FramedSink : nix::BufferedSink
 
     void writeUnbuffered(std::string_view data) override
     {
-        /* Don't send more data if the remote has
-            encountered an error. */
-        if (ex) {
-            auto ex2 = ex;
-            ex = nullptr;
-            std::rethrow_exception(ex2);
-        }
+        /* Don't send more data if an error has occured. */
+        checkError();
+
         to << data.size();
         to(data);
     };
 };
-
-/**
- * Stack allocation strategy for sinkToSource.
- * Mutable to avoid a boehm gc dependency in libutil.
- *
- * boost::context doesn't provide a virtual class, so we define our own.
- */
-struct StackAllocator {
-    virtual boost::context::stack_context allocate() = 0;
-    virtual void deallocate(boost::context::stack_context sctx) = 0;
-
-    /**
-     * The stack allocator to use in sinkToSource and potentially elsewhere.
-     * It is reassigned by the initGC() method in libexpr.
-     */
-    static StackAllocator *defaultAllocator;
-};
-
-/* Disabling GC when entering a coroutine (without the boehm patch).
-   mutable to avoid boehm gc dependency in libutil.
- */
-extern std::shared_ptr<void> (*create_coro_gc_hook)();
-
 
 }

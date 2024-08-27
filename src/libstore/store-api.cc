@@ -319,14 +319,16 @@ StorePath Store::addToStore(
         fsm = FileSerialisationMethod::NixArchive;
         break;
     }
-    auto source = sinkToSource([&](Sink & sink) {
-        dumpPath(path, sink, fsm, filter);
+    std::optional<StorePath> storePath;
+    auto sink = sourceToSink([&](Source & source) {
+        LengthSource lengthSource(source);
+        storePath = addToStoreFromDump(lengthSource, name, fsm, method, hashAlgo, references, repair);
+        if (lengthSource.total >= settings.warnLargePathThreshold)
+            warn("copied large path '%s' to the store (%s)", path, renderSize(lengthSource.total));
     });
-    LengthSource lengthSource(*source);
-    auto storePath = addToStoreFromDump(lengthSource, name, fsm, method, hashAlgo, references, repair);
-    if (lengthSource.total >= settings.warnLargePathThreshold)
-        warn("copied large path '%s' to the store (%s)", path, renderSize(lengthSource.total));
-    return storePath;
+    dumpPath(path, *sink, fsm, filter);
+    sink->finish();
+    return storePath.value();
 }
 
 void Store::addMultipleToStore(
@@ -1030,7 +1032,7 @@ StorePathSet Store::exportReferences(const StorePathSet & storePaths, const Stor
 const Store::Stats & Store::getStats()
 {
     {
-        auto state_(state.lock());
+        auto state_(state.readLock());
         stats.pathInfoCacheSize = state_->pathInfoCache.size();
     }
     return stats;

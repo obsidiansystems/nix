@@ -33,7 +33,7 @@ Sink & operator << (Sink & sink, const Logger::Fields & fields)
             sink << f.i;
         else if (f.type == Logger::Field::tString)
             sink << f.s;
-        else abort();
+        else unreachable();
     }
     return sink;
 }
@@ -167,7 +167,7 @@ struct TunnelSink : Sink
 {
     Sink & to;
     TunnelSink(Sink & to) : to(to) { }
-    void operator () (std::string_view data)
+    void operator () (std::string_view data) override
     {
         to << STDERR_WRITE;
         writeString(data, to);
@@ -402,6 +402,9 @@ static void performOp(TunnelLogger * logger, ref<Store> store,
             logger->startWork();
             auto pathInfo = [&]() {
                 // NB: FramedSource must be out of scope before logger->stopWork();
+                // FIXME: this means that if there is an error
+                // half-way through, the client will keep sending
+                // data, since we haven't sent it the error yet.
                 auto [contentAddressMethod, hashAlgo] = ContentAddressMethod::parseWithAlgo(camStr);
                 FramedSource source(conn.from);
                 FileSerialisationMethod dumpMethod;
@@ -1025,19 +1028,20 @@ void processConnection(
 #endif
 
     /* Exchange the greeting. */
-    WorkerProto::Version clientVersion =
+    auto [protoVersion, features] =
         WorkerProto::BasicServerConnection::handshake(
-            to, from, PROTOCOL_VERSION);
+            to, from, PROTOCOL_VERSION, WorkerProto::allFeatures);
 
-    if (clientVersion < 0x10a)
+    if (protoVersion < 0x10a)
         throw Error("the Nix client version is too old");
 
     WorkerProto::BasicServerConnection conn;
     conn.to = std::move(to);
     conn.from = std::move(from);
-    conn.protoVersion = clientVersion;
+    conn.protoVersion = protoVersion;
+    conn.features = features;
 
-    auto tunnelLogger = new TunnelLogger(conn.to, clientVersion);
+    auto tunnelLogger = new TunnelLogger(conn.to, protoVersion);
     auto prevLogger = nix::logger;
     // FIXME
     if (!recursive)
