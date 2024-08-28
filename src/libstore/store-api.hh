@@ -99,28 +99,30 @@ typedef std::map<StorePath, std::optional<ContentAddress>> StorePathCAMap;
 template<template<typename> class F>
 struct StoreConfigT
 {
-    const F<int> pathInfoCacheSize;
-    const F<bool> isTrusted;
-    F<int> priority;
-    F<bool> wantMassQuery;
+    F<int> pathInfoCacheSize;
+    F<bool> isTrusted;
     F<StringSet> systemFeatures;
 };
 
-StoreConfigT<config::JustValue> parseStoreConfig(const StoreReference::Params &);
+template<template<typename> class F>
+struct SubstituterConfigT
+{
+    F<int> priority;
+    F<bool> wantMassQuery;
+};
+
+/**
+ * @note `config::OptValue` rather than `config::JustValue` is applied to
+ * `SubstitutorConfigT` because these are overrides. Caches themselves (not our
+ * config) can update default settings, but aren't allowed to update settings
+ * specified by the client (i.e. us).
+ */
 struct StoreConfig :
     StoreDirConfig,
-    StoreConfigT<config::JustValue>
+    StoreConfigT<config::JustValue>,
+    SubstituterConfigT<config::OptValue>
 {
-    struct Descriptions :
-        StoreDirConfig::Descriptions,
-        StoreConfigT<config::SettingInfo>
-    {
-        Descriptions();
-    };
-
-    static const StoreConfigT<config::JustValue> defaults;
-
-    static const Descriptions descriptions;
+    static config::SettingDescriptionMap descriptions();
 
     StoreConfig(const StoreReference::Params &);
 
@@ -129,14 +131,9 @@ struct StoreConfig :
     static StringSet getDefaultSystemFeatures();
 
     /**
-     * The name of this type of store.
-     */
-    virtual const std::string name() = 0;
-
-    /**
      * Documentation for this type of store.
      */
-    virtual std::string doc()
+    static std::string doc()
     {
         return "";
     }
@@ -145,7 +142,7 @@ struct StoreConfig :
      * An experimental feature this type store is gated, if it is to be
      * experimental.
      */
-    virtual std::optional<ExperimentalFeature> experimentalFeature() const
+    static std::optional<ExperimentalFeature> experimentalFeature()
     {
         return std::nullopt;
     }
@@ -157,11 +154,37 @@ struct StoreConfig :
     virtual ref<Store> openStore() const = 0;
 };
 
-class Store : public std::enable_shared_from_this<Store>, public virtual StoreConfig
+/**
+ * A Store (client)
+ *
+ * This is an interface type allowing for create and read operations on
+ * a collection of store objects, and also building new store objects
+ * from `Derivation`s. See the manual for further details.
+ *
+ * "client" used is because this is just one view/actor onto an
+ * underlying resource, which could be an external process (daemon
+ * server), file system state, etc.
+ */
+class Store : public std::enable_shared_from_this<Store>, public MixStoreDirMethods
 {
 public:
 
     using Config = StoreConfig;
+
+    const Config & config;
+
+    /**
+     * @note Avoid churn, since we used to inherit from `Config`.
+     */
+    operator const Config &() const { return config; }
+
+    /**
+     * Resolved substituter configuration. This is intentionally mutable
+     * as store clients may do IO to ask the underlying store for their
+     * default setting values if the client config did not statically
+     * override them.
+     */
+    SubstituterConfigT<config::JustValue> resolvedSubstConfig;
 
 protected:
 
@@ -197,7 +220,7 @@ protected:
         LRUCache<std::string, PathInfoCacheValue> pathInfoCache;
     };
 
-    Sync<State> state;
+    SharedSync<State> state;
 
     std::shared_ptr<NarInfoDiskCache> diskCache;
 
@@ -869,3 +892,6 @@ std::map<DrvOutput, StorePath> drvOutputReferences(
     Store * evalStore = nullptr);
 
 }
+
+// Parses a Store URL, uses global state not pure so think about this
+JSON_IMPL(ref<const StoreConfig>)

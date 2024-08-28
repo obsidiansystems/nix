@@ -30,13 +30,13 @@ using json = nlohmann::json;
 
 namespace nix {
 
-bool StoreDirConfig::isInStore(PathView path) const
+bool MixStoreDirMethods::isInStore(PathView path) const
 {
     return isInDir(path, storeDir);
 }
 
 
-std::pair<StorePath, Path> StoreDirConfig::toStorePath(PathView path) const
+std::pair<StorePath, Path> MixStoreDirMethods::toStorePath(PathView path) const
 {
     if (!isInStore(path))
         throw Error("path '%1%' is not in the Nix store", path);
@@ -78,7 +78,7 @@ to match.
 */
 
 
-StorePath StoreDirConfig::makeStorePath(std::string_view type,
+StorePath MixStoreDirMethods::makeStorePath(std::string_view type,
     std::string_view hash, std::string_view name) const
 {
     /* e.g., "source:sha256:1abc...:/nix/store:foo.tar.gz" */
@@ -89,14 +89,14 @@ StorePath StoreDirConfig::makeStorePath(std::string_view type,
 }
 
 
-StorePath StoreDirConfig::makeStorePath(std::string_view type,
+StorePath MixStoreDirMethods::makeStorePath(std::string_view type,
     const Hash & hash, std::string_view name) const
 {
     return makeStorePath(type, hash.to_string(HashFormat::Base16, true), name);
 }
 
 
-StorePath StoreDirConfig::makeOutputPath(std::string_view id,
+StorePath MixStoreDirMethods::makeOutputPath(std::string_view id,
     const Hash & hash, std::string_view name) const
 {
     return makeStorePath("output:" + std::string { id }, hash, outputPathName(name, id));
@@ -107,7 +107,7 @@ StorePath StoreDirConfig::makeOutputPath(std::string_view id,
    hacky, but we can't put them in, say, <s2> (per the grammar above)
    since that would be ambiguous. */
 static std::string makeType(
-    const StoreDirConfig & store,
+    const MixStoreDirMethods & store,
     std::string && type,
     const StoreReferences & references)
 {
@@ -120,7 +120,7 @@ static std::string makeType(
 }
 
 
-StorePath StoreDirConfig::makeFixedOutputPath(std::string_view name, const FixedOutputInfo & info) const
+StorePath MixStoreDirMethods::makeFixedOutputPath(std::string_view name, const FixedOutputInfo & info) const
 {
     if (info.method == FileIngestionMethod::Git && info.hash.algo != HashAlgorithm::SHA1)
         throw Error("Git file ingestion must use SHA-1 hash");
@@ -142,7 +142,7 @@ StorePath StoreDirConfig::makeFixedOutputPath(std::string_view name, const Fixed
 }
 
 
-StorePath StoreDirConfig::makeFixedOutputPathFromCA(std::string_view name, const ContentAddressWithReferences & ca) const
+StorePath MixStoreDirMethods::makeFixedOutputPathFromCA(std::string_view name, const ContentAddressWithReferences & ca) const
 {
     // New template
     return std::visit(overloaded {
@@ -163,7 +163,7 @@ StorePath StoreDirConfig::makeFixedOutputPathFromCA(std::string_view name, const
 }
 
 
-std::pair<StorePath, Hash> StoreDirConfig::computeStorePath(
+std::pair<StorePath, Hash> MixStoreDirMethods::computeStorePath(
     std::string_view name,
     const SourcePath & path,
     ContentAddressMethod method,
@@ -189,74 +189,111 @@ std::pair<StorePath, Hash> StoreDirConfig::computeStorePath(
 }
 
 
-Store::Config::Descriptions::Descriptions()
-    : StoreDirConfig::Descriptions{StoreDirConfig::descriptions}
-    , StoreConfigT<config::SettingInfo>{
-        .pathInfoCacheSize = {
-            .name = "path-info-cache-size",
-            .description = "Size of the in-memory store path metadata cache.",
-        },
-        .isTrusted = {
-            .name = "trusted",
-            .description = R"(
-              Whether paths from this store can be used as substitutes
-              even if they are not signed by a key listed in the
-              [`trusted-public-keys`](@docroot@/command-ref/conf-file.md#conf-trusted-public-keys)
-              setting.
-            )",
-        },
-        .priority = {
-            .name = "priority",
-            .description = R"(
-              Priority of this store when used as a [substituter](@docroot@/command-ref/conf-file.md#conf-substituters).
-              A lower value means a higher priority.
-            )",
-        },
-        .wantMassQuery = {
-            .name = "want-mass-query",
-            .description = R"(
-              Whether this store can be queried efficiently for path validity when used as a [substituter](@docroot@/command-ref/conf-file.md#conf-substituters).
-            )",
-        },
+static const StoreConfigT<config::SettingInfo> storeConfigDescriptions = {
+    .pathInfoCacheSize{
+        .name = "path-info-cache-size",
+        .description = "Size of the in-memory store path metadata cache.",
+    },
+    .isTrusted{
+        .name = "trusted",
+        .description = R"(
+          Whether paths from this store can be used as substitutes
+          even if they are not signed by a key listed in the
+          [`trusted-public-keys`](@docroot@/command-ref/conf-file.md#conf-trusted-public-keys)
+          setting.
+        )",
+    },
+    .systemFeatures{
+        .name = "system-features",
+        .description = R"(
+          Optional [system features](@docroot@/command-ref/conf-file.md#conf-system-features) available on the system this store uses to build derivations.
 
-        .systemFeatures = {
-            .name = "system-features",
-            .description = R"(
-              Optional [system features](@docroot@/command-ref/conf-file.md#conf-system-features) available on the system this store uses to build derivations.
-
-              Example: `"kvm"`
-            )",
-            // The default value is CPU- and OS-specific, and thus
-            // unsuitable to be rendered in the documentation.
-            .documentDefault = false,
-        },
-    }
-{
-}
-
-
-const Store::Config::Descriptions Store::Config::descriptions{};
-
-
-decltype(Store::Config::defaults) Store::Config::defaults = {
-    .pathInfoCacheSize = {65536},
-    .isTrusted = {false},
-    .priority = {0},
-    .wantMassQuery = {false},
-    .systemFeatures = {Store::Config::getDefaultSystemFeatures()},
+          Example: `"kvm"`
+        )",
+        // The default value is CPU- and OS-specific, and thus
+        // unsuitable to be rendered in the documentation.
+        .documentDefault = false,
+    },
 };
+
+static const SubstituterConfigT<config::SettingInfo> substituterConfigDescriptions = {
+    .priority{
+        .name = "priority",
+        .description = R"(
+          Priority of this store when used as a [substituter](@docroot@/command-ref/conf-file.md#conf-substituters).
+          A lower value means a higher priority.
+        )",
+    },
+    .wantMassQuery{
+        .name = "want-mass-query",
+        .description = R"(
+          Whether this store can be queried efficiently for path validity when used as a [substituter](@docroot@/command-ref/conf-file.md#conf-substituters).
+        )",
+    },
+};
+
+
+#define STORE_CONFIG_FIELDS(X) \
+    X(pathInfoCacheSize), \
+    X(isTrusted), \
+    X(systemFeatures),
+
+#define SUBSTITUTER_CONFIG_FIELDS(X) \
+    X(priority), \
+    X(wantMassQuery),
+
+
+MAKE_PARSE(StoreConfig, storeConfig, STORE_CONFIG_FIELDS)
+MAKE_PARSE(SubstituterConfig, substituterConfig, SUBSTITUTER_CONFIG_FIELDS)
+
+
+static StoreConfigT<config::JustValue> storeConfigDefaults()
+{
+    return {
+        .pathInfoCacheSize = {65536},
+        .isTrusted = {false},
+        .systemFeatures = {StoreConfig::getDefaultSystemFeatures()},
+    };
+};
+
+static SubstituterConfigT<config::JustValue> substituterConfigDefaults()
+{
+    return {
+        .priority = {0},
+        .wantMassQuery = {false},
+    };
+};
+
+
+MAKE_APPLY_PARSE(StoreConfig, storeConfig, STORE_CONFIG_FIELDS)
 
 
 Store::Config::StoreConfig(const StoreReference::Params & params)
     : StoreDirConfig{params}
-    , StoreConfigT<config::JustValue>{
-        CONFIG_ROW(pathInfoCacheSize),
-        CONFIG_ROW(isTrusted),
-        CONFIG_ROW(priority),
-        CONFIG_ROW(wantMassQuery),
-        CONFIG_ROW(systemFeatures),
-    }
+    , StoreConfigT<config::JustValue>{storeConfigApplyParse(params)}
+    , SubstituterConfigT<config::OptValue>{substituterConfigParse(params)}
 {
+}
+
+
+config::SettingDescriptionMap StoreConfig::descriptions()
+{
+    auto ret = StoreDirConfig::descriptions();
+    {
+        constexpr auto & descriptions = storeConfigDescriptions;
+        auto defaults = storeConfigDefaults();
+        ret.merge(config::SettingDescriptionMap {
+            STORE_CONFIG_FIELDS(DESC_ROW)
+        });
+    }
+    {
+        constexpr auto & descriptions = substituterConfigDescriptions;
+        auto defaults = substituterConfigDefaults();
+        ret.merge(config::SettingDescriptionMap {
+            SUBSTITUTER_CONFIG_FIELDS(DESC_ROW)
+        });
+    };
+    return ret;
 }
 
 
@@ -282,14 +319,16 @@ StorePath Store::addToStore(
         fsm = FileSerialisationMethod::NixArchive;
         break;
     }
-    auto source = sinkToSource([&](Sink & sink) {
-        dumpPath(path, sink, fsm, filter);
+    std::optional<StorePath> storePath;
+    auto sink = sourceToSink([&](Source & source) {
+        LengthSource lengthSource(source);
+        storePath = addToStoreFromDump(lengthSource, name, fsm, method, hashAlgo, references, repair);
+        if (lengthSource.total >= settings.warnLargePathThreshold)
+            warn("copied large path '%s' to the store (%s)", path, renderSize(lengthSource.total));
     });
-    LengthSource lengthSource(*source);
-    auto storePath = addToStoreFromDump(lengthSource, name, fsm, method, hashAlgo, references, repair);
-    if (lengthSource.total >= settings.warnLargePathThreshold)
-        warn("copied large path '%s' to the store (%s)", path, renderSize(lengthSource.total));
-    return storePath;
+    dumpPath(path, *sink, fsm, filter);
+    sink->finish();
+    return storePath.value();
 }
 
 void Store::addMultipleToStore(
@@ -505,8 +544,9 @@ StringSet Store::Config::getDefaultSystemFeatures()
 }
 
 Store::Store(const Store::Config & config)
-    : Store::Config(config)
-    , state({(size_t) pathInfoCacheSize})
+    : MixStoreDirMethods{config}
+    , config{config}
+    , state({(size_t) config.pathInfoCacheSize})
 {
     assertLibStoreInitialized();
 }
@@ -992,7 +1032,7 @@ StorePathSet Store::exportReferences(const StorePathSet & storePaths, const Stor
 const Store::Stats & Store::getStats()
 {
     {
-        auto state_(state.lock());
+        auto state_(state.readLock());
         stats.pathInfoCacheSize = state_->pathInfoCache.size();
     }
     return stats;
@@ -1269,7 +1309,7 @@ std::optional<ValidPathInfo> decodeValidPathInfo(const Store & store, std::istre
 }
 
 
-std::string StoreDirConfig::showPaths(const StorePathSet & paths)
+std::string MixStoreDirMethods::showPaths(const StorePathSet & paths) const
 {
     std::string s;
     for (auto & i : paths) {

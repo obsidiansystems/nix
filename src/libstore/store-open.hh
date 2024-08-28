@@ -16,14 +16,19 @@
 namespace nix {
 
 /**
+ * @return The store config denoted `uri` (slight misnomer...).
+ */
+ref<StoreConfig> resolveStoreConfig(StoreReference && storeURI);
+
+/**
  * @return a Store object to access the Nix store denoted by
  * ‘uri’ (slight misnomer...).
  */
 ref<Store> openStore(StoreReference && storeURI);
 
 /**
- * Opens the store at `uri`, where `uri` is in the format expected by `StoreReference::parse`
-
+ * Opens the store at `uri`, where `uri` is in the format expected by
+ * `StoreReference::parse`
  */
 ref<Store> openStore(
     const std::string & uri = settings.storeUri.get(),

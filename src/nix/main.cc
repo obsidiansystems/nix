@@ -20,6 +20,7 @@
 #include "network-proxy.hh"
 #include "eval-cache.hh"
 #include "flake/flake.hh"
+#include "self-exe.hh"
 
 #include <sys/types.h>
 #include <regex>
@@ -165,7 +166,7 @@ struct NixArgs : virtual MultiCommand, virtual MixCommonArgs, virtual RootArgs
         {"ls-store", { AliasStatus::Deprecated, {"store", "ls"}}},
         {"make-content-addressable", { AliasStatus::Deprecated, {"store", "make-content-addressed"}}},
         {"optimise-store", { AliasStatus::Deprecated, {"store", "optimise"}}},
-        {"ping-store", { AliasStatus::Deprecated, {"store", "ping"}}},
+        {"ping-store", { AliasStatus::Deprecated, {"store", "info"}}},
         {"sign-paths", { AliasStatus::Deprecated, {"store", "sign"}}},
         {"shell", { AliasStatus::AcceptedShorthand, {"env", "shell"}}},
         {"show-derivation", { AliasStatus::Deprecated, {"derivation", "show"}}},
@@ -222,13 +223,12 @@ struct NixArgs : virtual MultiCommand, virtual MixCommonArgs, virtual RootArgs
         res["args"] = toJSON();
 
         auto stores = nlohmann::json::object();
-        for (auto & implem : *Implementations::registered) {
-            auto storeConfig = implem.getConfig();
-            auto storeName = storeConfig->name();
+        for (auto & [storeName, implem] : *Implementations::registered) {
             auto & j = stores[storeName];
-            j["doc"] = storeConfig->doc();
-            j["settings"] = storeConfig->toJSON();
-            j["experimentalFeature"] = storeConfig->experimentalFeature();
+            j["doc"] = implem.doc;
+            j["uri-schemes"] = implem.uriSchemes;
+            j["settings"] = implem.configDescriptions;
+            j["experimentalFeature"] = implem.experimentalFeature;
         }
         res["stores"] = std::move(stores);
         res["fetchers"] = fetchers::dumpRegisterInputSchemeInfo();
@@ -366,6 +366,17 @@ void mainWrapped(int argc, char * * argv)
     initNix();
     initGC();
     flake::initLib(flakeSettings);
+
+    /* Set the build hook location
+
+       For builds we perform a self-invocation, so Nix has to be
+       self-aware. That is, it has to know where it is installed. We
+       don't think it's sentient.
+     */
+    settings.buildHook.setDefault(Strings {
+        getNixBin({}).string(),
+        "__build-remote",
+    });
 
     #if __linux__
     if (isRootUser()) {

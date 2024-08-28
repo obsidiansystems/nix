@@ -13,43 +13,70 @@ namespace nix {
 
 struct StoreFactory
 {
+    /**
+     * Documentation for this type of store.
+     */
+    std::string doc;
+
+    /**
+     * URIs with these schemes should be handled by this factory
+     */
     std::set<std::string> uriSchemes;
+
+    config::SettingDescriptionMap configDescriptions;
+
+    /**
+     * An experimental feature this type store is gated, if it is to be
+     * experimental.
+     */
+    std::optional<ExperimentalFeature> experimentalFeature;
+
     /**
      * The `authorityPath` parameter is `<authority>/<path>`, or really
      * whatever comes after `<scheme>://` and before `?<query-params>`.
      */
-    std::function<std::shared_ptr<StoreConfig>(
+    std::function<ref<StoreConfig>(
         std::string_view scheme, std::string_view authorityPath, const StoreReference::Params & params)>
         parseConfig;
-    const Store::Config::Descriptions & configDescriptions;
 };
 
 struct Implementations
 {
-    static std::vector<StoreFactory> * registered;
+private:
 
-    template<typename T>
+    /**
+     * The name of this type of store, and a factory for it.
+     */
+    using V = std::vector<std::pair<std::string, StoreFactory>>;
+
+public:
+
+    static V * registered;
+
+    template<typename TConfig>
     static void add()
     {
         if (!registered)
-            registered = new std::vector<StoreFactory>();
+            registered = new V{};
         StoreFactory factory{
-            .uriSchemes = T::Config::uriSchemes(),
-            .parseConfig = ([](auto scheme, auto uri, auto & params) -> std::shared_ptr<StoreConfig> {
-                return std::make_shared<typename T::Config>(scheme, uri, params);
+            .doc = TConfig::doc(),
+            .uriSchemes = TConfig::uriSchemes(),
+            .configDescriptions = TConfig::descriptions(),
+            .experimentalFeature = TConfig::experimentalFeature(),
+            .parseConfig = ([](auto scheme, auto uri, auto & params) -> ref<StoreConfig> {
+                return make_ref<TConfig>(scheme, uri, params);
             }),
-            .configDescriptions = T::Config::descriptions,
         };
-        registered->push_back(factory);
+        registered->push_back({TConfig::name(), std::move(factory)});
     }
 };
 
-template<typename T>
+template<typename TConfig>
 struct RegisterStoreImplementation
 {
     RegisterStoreImplementation()
     {
-        Implementations::add<T>();
+        Implementations::add<TConfig>();
     }
 };
 

@@ -12,7 +12,7 @@
 #include "derivations.hh"
 #include "realisation.hh"
 #include "globals.hh"
-#include "store-api.hh"
+#include "store-open.hh"
 #include "posix-source-accessor.hh"
 
 #include <sodium.h>
@@ -422,11 +422,6 @@ StoreWrapper::addTempRoot(char * storePath)
         } catch (Error & e) {
             croak("%s", e.what());
         }
-
-
-SV * getBinDir()
-    PPCODE:
-        XPUSHs(sv_2mortal(newSVpv(settings.nixBinDir.c_str(), 0)));
 
 
 SV * getStoreDir()

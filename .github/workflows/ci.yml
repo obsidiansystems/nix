@@ -49,6 +49,7 @@ jobs:
           done
         ) &
     - run: nix --experimental-features 'nix-command flakes' flake check -L
+    - run: nix --experimental-features 'nix-command flakes' flake show --all-systems --json
 
   # Steps to test CI automation in your own fork.
   # Cachix:
@@ -145,7 +146,7 @@ jobs:
       with:
         install_url: https://releases.nixos.org/nix/nix-2.20.3/install
     - run: echo CACHIX_NAME="$(echo $GITHUB_REPOSITORY-install-tests | tr "[A-Z]/" "[a-z]-")" >> $GITHUB_ENV
-    - run: echo NIX_VERSION="$(nix --experimental-features 'nix-command flakes' eval .\#default.version | tr -d \")" >> $GITHUB_ENV
+    - run: echo NIX_VERSION="$(nix --experimental-features 'nix-command flakes' eval .\#nix.version | tr -d \")" >> $GITHUB_ENV
     - uses: cachix/cachix-action@v15
       if: needs.check_secrets.outputs.cachix == 'true'
       with:
@@ -195,16 +196,22 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - run: nix build -L .#hydraJobs.tests.githubFlakes .#hydraJobs.tests.tarballFlakes .#hydraJobs.tests.functional_user
 
-  meson_build:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+  flake_regressions:
+    needs: vm_tests
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout nix
+        uses: actions/checkout@v4
+      - name: Checkout flake-regressions
+        uses: actions/checkout@v4
+        with:
+          repository: NixOS/flake-regressions
+          path: flake-regressions
+      - name: Checkout flake-regressions-data
+        uses: actions/checkout@v4
+        with:
+          repository: NixOS/flake-regressions-data
+          path: flake-regressions/tests
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
-      # Only meson packages that don't have a tests.run derivation.
-      # Those that have it are already built and tested as part of nix flake check.
-      - run: nix build -L .#hydraJobs.build.{nix-cmd,nix-main}.$(nix-instantiate --eval --expr builtins.currentSystem | sed -e 's/"//g')
+      - run: nix build --out-link ./new-nix && PATH=$(pwd)/new-nix/bin:$PATH scripts/flake-regressions.sh

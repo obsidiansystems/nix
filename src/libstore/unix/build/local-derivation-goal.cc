@@ -32,7 +32,7 @@
 #include <sys/socket.h>
 
 #if HAVE_STATVFS
-#include <sys/statvfs.h>
+# include <sys/statvfs.h>
 #endif
 
 /* Includes required for chroot support. */
@@ -56,8 +56,8 @@
 #endif
 
 #if __APPLE__
-#include <spawn.h>
-#include <sys/sysctl.h>
+# include <spawn.h>
+# include <sys/sysctl.h>
 #endif
 
 #include <pwd.h>
@@ -165,7 +165,7 @@ void LocalDerivationGoal::killSandbox(bool getStats)
             buildResult.cpuSystem = stats.cpuSystem;
         }
         #else
-        abort();
+        unreachable();
         #endif
     }
 
@@ -214,7 +214,7 @@ Goal::Co LocalDerivationGoal::tryLocalBuild()
     }
 
     auto & localStore = getLocalStore();
-    if (localStore.storeDir != localStore.realStoreDir.get()) {
+    if (localStore.storeDir != localStore.config->realStoreDir.get()) {
         #if __linux__
             useChroot = true;
         #else
@@ -354,7 +354,7 @@ bool LocalDerivationGoal::cleanupDecideWhetherDiskFull()
         auto & localStore = getLocalStore();
         uint64_t required = 8ULL * 1024 * 1024; // FIXME: make configurable
         struct statvfs st;
-        if (statvfs(localStore.realStoreDir.get().c_str(), &st) == 0 &&
+        if (statvfs(localStore.config->realStoreDir.get().c_str(), &st) == 0 &&
             (uint64_t) st.f_bavail * st.f_bsize < required)
             diskFull = true;
         if (statvfs(tmpDir.c_str(), &st) == 0 &&
@@ -500,7 +500,7 @@ void LocalDerivationGoal::startBuilder()
             concatStringsSep(", ", parsedDrv->getRequiredSystemFeatures()),
             worker.store.printStorePath(drvPath),
             settings.thisSystem,
-            concatStringsSep<StringSet>(", ", worker.store.systemFeatures));
+            concatStringsSep<StringSet>(", ", worker.store.config.systemFeatures));
 
     /* Create a temporary directory where the build will take
        place. */
@@ -1254,50 +1254,46 @@ bool LocalDerivationGoal::isAllowed(const DerivedPath & req)
     return this->isAllowed(pathPartOfReq(req));
 }
 
-struct RestrictedStoreConfig : virtual LocalFSStoreConfig
-{
-    const std::string name() override { return "Restricted Store"; }
-
-    ref<Store> openStore() const override;
-
-    ref<LocalStore> next;
-
-    LocalDerivationGoal & goal;
-
-    RestrictedStoreConfig(
-        const StoreReference::Params & params,
-        ref<LocalStore> next,
-        LocalDerivationGoal & goal)
-        : Store::Config{params}
-        , LocalFSStore::Config{params}
-        , next{next}
-        , goal{goal}
-    {
-    }
-};
-
 /**
  * A wrapper around LocalStore that only allows building/querying of
  * paths that are in the input closures of the build or were added via
  * recursive Nix calls.
  */
 struct RestrictedStore :
-    virtual RestrictedStoreConfig,
     virtual IndirectRootStore,
     virtual GcStore
 {
-    using Config = RestrictedStoreConfig;
+    ref<const LocalStore::Config> config;
 
-    RestrictedStore(const RestrictedStoreConfig & config)
-        : Store::Config(config)
-        , LocalFSStore::Config(config)
-        , RestrictedStore::Config(config)
-        , Store(static_cast<const Store::Config &>(*this))
-        , LocalFSStore(static_cast<const LocalFSStore::Config &>(*this))
-    { }
+    ref<LocalStore> next;
+
+    LocalDerivationGoal & goal;
+
+    RestrictedStore(
+        ref<LocalStore::Config> config,
+        ref<LocalStore> next,
+        LocalDerivationGoal & goal)
+        : Store{*config}
+        , LocalFSStore{*config}
+        , config{config}
+        , next{next}
+        , goal{goal}
+    {
+    }
+
+    static ref<RestrictedStore> make(
+        ref<LocalStore> next,
+        LocalDerivationGoal & goal)
+    {
+        ref<LocalStore::Config> config = make_ref<LocalStore::Config>(*next->config);
+        config->pathInfoCacheSize.value = 0;
+        config->stateDir.value = "/no-such-path";
+        config->logDir.value = "/no-such-path";
+        return make_ref<RestrictedStore>(std::move(config), std::move(next), goal);
+    }
 
     Path getRealStoreDir() override
-    { return next->realStoreDir; }
+    { return next->config->realStoreDir; }
 
     std::string getUri() override
     { return next->getUri(); }
@@ -1497,28 +1493,13 @@ struct RestrictedStore :
 };
 
 
-ref<Store> RestrictedStore::Config::openStore() const
-{
-    return make_ref<RestrictedStore>(*this);
-}
-
-
 void LocalDerivationGoal::startDaemon()
 {
     experimentalFeatureSettings.require(Xp::RecursiveNix);
 
-    StoreReference::Params params;
-    params["path-info-cache-size"] = "0";
-    params["store"] = worker.store.storeDir;
-    if (auto & optRoot = getLocalStore().rootDir.get())
-        params["root"] = *optRoot;
-    params["state"] = "/no-such-path";
-    params["log"] = "/no-such-path";
-    auto store = RestrictedStore::Config{
-        params,
+    auto store = RestrictedStore::make(
         ref<LocalStore>(std::dynamic_pointer_cast<LocalStore>(worker.store.shared_from_this())),
-        *this,
-    }.openStore();
+        *this);
 
     addedPaths.clear();
 
@@ -1551,10 +1532,11 @@ void LocalDerivationGoal::startDaemon()
             debug("received daemon connection");
 
             auto workerThread = std::thread([store, remote{std::move(remote)}]() {
-                FdSource from(remote.get());
-                FdSink to(remote.get());
                 try {
-                    daemon::processConnection(store, from, to,
+                    daemon::processConnection(
+                        store,
+                        FdSource(remote.get()),
+                        FdSink(remote.get()),
                         NotTrusted, daemon::Recursive);
                     debug("terminated daemon connection");
                 } catch (SystemError &) {
@@ -1726,10 +1708,13 @@ void setupSeccomp()
             throw SysError("unable to add seccomp rule");
     }
 
-    /* Prevent builders from creating EAs or ACLs. Not all filesystems
+    /* Prevent builders from using EAs or ACLs. Not all filesystems
        support these, and they're not allowed in the Nix store because
        they're not representable in the NAR serialisation. */
-    if (seccomp_rule_add(ctx, SCMP_ACT_ERRNO(ENOTSUP), SCMP_SYS(setxattr), 0) != 0 ||
+    if (seccomp_rule_add(ctx, SCMP_ACT_ERRNO(ENOTSUP), SCMP_SYS(getxattr), 0) != 0 ||
+        seccomp_rule_add(ctx, SCMP_ACT_ERRNO(ENOTSUP), SCMP_SYS(lgetxattr), 0) != 0 ||
+        seccomp_rule_add(ctx, SCMP_ACT_ERRNO(ENOTSUP), SCMP_SYS(fgetxattr), 0) != 0 ||
+        seccomp_rule_add(ctx, SCMP_ACT_ERRNO(ENOTSUP), SCMP_SYS(setxattr), 0) != 0 ||
         seccomp_rule_add(ctx, SCMP_ACT_ERRNO(ENOTSUP), SCMP_SYS(lsetxattr), 0) != 0 ||
         seccomp_rule_add(ctx, SCMP_ACT_ERRNO(ENOTSUP), SCMP_SYS(fsetxattr), 0) != 0)
         throw SysError("unable to add seccomp rule");
@@ -1845,7 +1830,7 @@ void LocalDerivationGoal::runChild()
                 createDirs(chrootRootDir + "/dev/shm");
                 createDirs(chrootRootDir + "/dev/pts");
                 ss.push_back("/dev/full");
-                if (worker.store.systemFeatures.get().count("kvm") && pathExists("/dev/kvm"))
+                if (worker.store.config.systemFeatures.get().count("kvm") && pathExists("/dev/kvm"))
                     ss.push_back("/dev/kvm");
                 ss.push_back("/dev/null");
                 ss.push_back("/dev/random");
@@ -2007,7 +1992,7 @@ void LocalDerivationGoal::runChild()
             throw SysError("changing into '%1%'", tmpDir);
 
         /* Close all other file descriptors. */
-        unix::closeMostFDs({STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO});
+        unix::closeExtraFDs();
 
 #if __linux__
         linux::setPersonality(drv->platform);

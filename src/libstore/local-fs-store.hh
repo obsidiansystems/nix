@@ -10,33 +10,21 @@ namespace nix {
 template<template<typename> class F>
 struct LocalFSStoreConfigT
 {
-    const F<std::optional<Path>> rootDir;
-    const F<Path> stateDir;
-    const F<Path> logDir;
-    const F<Path> realStoreDir;
+    F<std::optional<Path>> rootDir;
+    F<Path> stateDir;
+    F<Path> logDir;
+    F<Path> realStoreDir;
 };
 
-struct LocalFSStoreConfig :
-    virtual Store::Config,
-    LocalFSStoreConfigT<config::JustValue>
+struct LocalFSStoreConfig : LocalFSStoreConfigT<config::JustValue>
 {
-    struct Descriptions :
-        virtual Store::Config::Descriptions,
-        LocalFSStoreConfigT<config::SettingInfo>
-    {
-        Descriptions();
-    };
+    const Store::Config & storeConfig;
 
-    static const Descriptions descriptions;
+    static config::SettingDescriptionMap descriptions();
 
-    /**
-     * The other defaults depend on the choice of `storeDir` and `rootDir`
-     */
-    static LocalFSStoreConfigT<config::JustValue> defaults(
-        const Store::Config &,
-        const std::optional<Path> rootDir);
-
-    LocalFSStoreConfig(const StoreReference::Params &);
+    LocalFSStoreConfig(
+        const Store::Config & storeConfig,
+        const StoreReference::Params &);
 
     /**
      * Used to override the `root` settings. Can't be done via modifying
@@ -45,16 +33,20 @@ struct LocalFSStoreConfig :
      *
      * @todo Make this less error-prone with new store settings system.
      */
-    LocalFSStoreConfig(PathView path, const StoreReference::Params & params);
+    LocalFSStoreConfig(
+        const Store::Config & storeConfig,
+        PathView path,
+        const StoreReference::Params & params);
 };
 
 struct LocalFSStore :
-    virtual LocalFSStoreConfig,
     virtual Store,
     virtual GcStore,
     virtual LogStore
 {
     using Config = LocalFSStoreConfig;
+
+    const Config & config;
 
     inline static std::string operationName = "Local Filesystem Store";
 
@@ -81,7 +73,7 @@ struct LocalFSStore :
      */
     virtual Path addPermRoot(const StorePath & storePath, const Path & gcRoot) = 0;
 
-    virtual Path getRealStoreDir() { return realStoreDir; }
+    virtual Path getRealStoreDir() { return config.realStoreDir; }
 
     Path toRealPath(const Path & storePath) override
     {

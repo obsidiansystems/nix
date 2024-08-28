@@ -18,35 +18,57 @@
 #include "callback.hh"
 #include "filetransfer.hh"
 #include "signals.hh"
+#include "config-parse-impl.hh"
 
 #include <nlohmann/json.hpp>
 
 namespace nix {
 
-#if 0
-    const Setting<int> maxConnections{this, 1, "max-connections",
-        "Maximum number of concurrent connections to the Nix daemon."};
+static const RemoteStoreConfigT<config::SettingInfo> remoteStoreConfigDescriptions = {
+    .maxConnections{
+        .name = "max-connections",
+        .description = "Maximum number of concurrent connections to the Nix daemon.",
+    },
+    .maxConnectionAge{
+        .name = "max-connection-age",
+        .description = "Maximum age of a connection before it is closed.",
+    },
+};
 
-    const Setting<unsigned int> maxConnectionAge{this,
-        std::numeric_limits<unsigned int>::max(),
-        "max-connection-age",
-        "Maximum age of a connection before it is closed."};
 
-    const Setting<int> maxConnections{this, 1, "max-connections",
-        "Maximum number of concurrent connections to the Nix daemon."};
+#define REMOTE_STORE_CONFIG_FIELDS(X) \
+    X(maxConnections), \
+    X(maxConnectionAge),
 
-    const Setting<unsigned int> maxConnectionAge{this,
-        std::numeric_limits<unsigned int>::max(),
-        "max-connection-age",
-        "Maximum age of a connection before it is closed."};
-#endif
+
+MAKE_PARSE(RemoteStoreConfig, remoteStoreConfig, REMOTE_STORE_CONFIG_FIELDS)
+
+
+static RemoteStoreConfigT<config::JustValue> remoteStoreConfigDefaults()
+{
+    return {
+        .maxConnections = {1},
+        .maxConnectionAge = {std::numeric_limits<unsigned int>::max()},
+    };
+}
+
+
+MAKE_APPLY_PARSE(RemoteStoreConfig, remoteStoreConfig, REMOTE_STORE_CONFIG_FIELDS)
+
+
+RemoteStore::Config::RemoteStoreConfig(const Store::Config & storeConfig, const StoreReference::Params & params)
+    : RemoteStoreConfigT<config::JustValue>{remoteStoreConfigApplyParse(params)}
+    , storeConfig{storeConfig}
+{
+}
+
 
 /* TODO: Separate these store types into different files, give them better names */
-RemoteStore::RemoteStore(const Params & params)
-    : RemoteStoreConfig(params)
-    , Store(params)
+RemoteStore::RemoteStore(const Config & config)
+    : Store{config.storeConfig}
+    , config{config}
     , connections(make_ref<Pool<Connection>>(
-            std::max(1, (int) maxConnections),
+            std::max(1, (int) config.maxConnections),
             [this]() {
                 auto conn = openConnectionWrapper();
                 try {
@@ -57,12 +79,12 @@ RemoteStore::RemoteStore(const Params & params)
                 }
                 return conn;
             },
-            [this](const ref<Connection> & r) {
+            [config](const ref<Connection> & r) {
                 return
                     r->to.good()
                     && r->from.good()
                     && std::chrono::duration_cast<std::chrono::seconds>(
-                        std::chrono::steady_clock::now() - r->startTime).count() < maxConnectionAge;
+                        std::chrono::steady_clock::now() - r->startTime).count() < config.maxConnectionAge;
             }
             ))
 {
@@ -91,8 +113,11 @@ void RemoteStore::initConnection(Connection & conn)
         StringSink saved;
         TeeSource tee(conn.from, saved);
         try {
-            conn.daemonVersion = WorkerProto::BasicClientConnection::handshake(
-                conn.to, tee, PROTOCOL_VERSION);
+            auto [protoVersion, features] = WorkerProto::BasicClientConnection::handshake(
+                conn.to, tee, PROTOCOL_VERSION,
+                WorkerProto::allFeatures);
+            conn.protoVersion = protoVersion;
+            conn.features = features;
         } catch (SerialisationError & e) {
             /* In case the other side is waiting for our input, close
                it. */
@@ -105,6 +130,9 @@ void RemoteStore::initConnection(Connection & conn)
         }
 
         static_cast<WorkerProto::ClientHandshakeInfo &>(conn) = conn.postHandshake(*this);
+
+        for (auto & feature : conn.features)
+            debug("negotiated feature '%s'", feature);
 
         auto ex = conn.processStderrReturn();
         if (ex) std::rethrow_exception(ex);
@@ -133,8 +161,8 @@ void RemoteStore::setOptions(Connection & conn)
        << settings.buildCores
        << settings.useSubstitutes;
 
-    if (GET_PROTOCOL_MINOR(conn.daemonVersion) >= 12) {
-        std::map<std::string, Config::SettingInfo> overrides;
+    if (GET_PROTOCOL_MINOR(conn.protoVersion) >= 12) {
+        std::map<std::string, nix::Config::SettingInfo> overrides;
         settings.getSettings(overrides, true); // libstore settings
         fileTransferSettings.getSettings(overrides, true);
         overrides.erase(settings.keepFailed.name);
@@ -165,9 +193,9 @@ RemoteStore::ConnectionHandle::~ConnectionHandle()
     }
 }
 
-void RemoteStore::ConnectionHandle::processStderr(Sink * sink, Source * source, bool flush)
+void RemoteStore::ConnectionHandle::processStderr(Sink * sink, Source * source, bool flush, bool block)
 {
-    handle->processStderr(&daemonException, sink, source, flush);
+    handle->processStderr(&daemonException, sink, source, flush, block);
 }
 
 
@@ -193,7 +221,7 @@ bool RemoteStore::isValidPathUncached(const StorePath & path)
 StorePathSet RemoteStore::queryValidPaths(const StorePathSet & paths, SubstituteFlag maybeSubstitute)
 {
     auto conn(getConnection());
-    if (GET_PROTOCOL_MINOR(conn->daemonVersion) < 12) {
+    if (GET_PROTOCOL_MINOR(conn->protoVersion) < 12) {
         StorePathSet res;
         for (auto & i : paths)
             if (isValidPath(i)) res.insert(i);
@@ -216,7 +244,7 @@ StorePathSet RemoteStore::queryAllValidPaths()
 StorePathSet RemoteStore::querySubstitutablePaths(const StorePathSet & paths)
 {
     auto conn(getConnection());
-    if (GET_PROTOCOL_MINOR(conn->daemonVersion) < 12) {
+    if (GET_PROTOCOL_MINOR(conn->protoVersion) < 12) {
         StorePathSet res;
         for (auto & i : paths) {
             conn->to << WorkerProto::Op::HasSubstitutes << printStorePath(i);
@@ -239,7 +267,7 @@ void RemoteStore::querySubstitutablePathInfos(const StorePathCAMap & pathsMap, S
 
     auto conn(getConnection());
 
-    if (GET_PROTOCOL_MINOR(conn->daemonVersion) < 12) {
+    if (GET_PROTOCOL_MINOR(conn->protoVersion) < 12) {
 
         for (auto & i : pathsMap) {
             SubstitutablePathInfo info;
@@ -259,7 +287,7 @@ void RemoteStore::querySubstitutablePathInfos(const StorePathCAMap & pathsMap, S
     } else {
 
         conn->to << WorkerProto::Op::QuerySubstitutablePathInfos;
-        if (GET_PROTOCOL_MINOR(conn->daemonVersion) < 22) {
+        if (GET_PROTOCOL_MINOR(conn->protoVersion) < 22) {
             StorePathSet paths;
             for (auto & path : pathsMap)
                 paths.insert(path.first);
@@ -386,7 +414,7 @@ ref<const ValidPathInfo> RemoteStore::addCAToStore(
     std::optional<ConnectionHandle> conn_(getConnection());
     auto & conn = *conn_;
 
-    if (GET_PROTOCOL_MINOR(conn->daemonVersion) >= 25) {
+    if (GET_PROTOCOL_MINOR(conn->protoVersion) >= 25) {
 
         conn->to
             << WorkerProto::Op::AddToStore
@@ -503,7 +531,7 @@ void RemoteStore::addToStore(const ValidPathInfo & info, Source & source,
 {
     auto conn(getConnection());
 
-    if (GET_PROTOCOL_MINOR(conn->daemonVersion) < 18) {
+    if (GET_PROTOCOL_MINOR(conn->protoVersion) < 18) {
         auto source2 = sinkToSource([&](Sink & sink) {
             sink << 1 // == path follows
                 ;
@@ -531,11 +559,11 @@ void RemoteStore::addToStore(const ValidPathInfo & info, Source & source,
                  << info.ultimate << info.sigs << renderContentAddress(info.ca)
                  << repair << !checkSigs;
 
-        if (GET_PROTOCOL_MINOR(conn->daemonVersion) >= 23) {
+        if (GET_PROTOCOL_MINOR(conn->protoVersion) >= 23) {
             conn.withFramedSink([&](Sink & sink) {
                 copyNAR(source, sink);
             });
-        } else if (GET_PROTOCOL_MINOR(conn->daemonVersion) >= 21) {
+        } else if (GET_PROTOCOL_MINOR(conn->protoVersion) >= 21) {
             conn.processStderr(0, &source);
         } else {
             copyNAR(source, conn->to);
@@ -572,7 +600,7 @@ void RemoteStore::addMultipleToStore(
     RepairFlag repair,
     CheckSigsFlag checkSigs)
 {
-    if (GET_PROTOCOL_MINOR(getConnection()->daemonVersion) >= 32) {
+    if (GET_PROTOCOL_MINOR(getConnection()->protoVersion) >= 32) {
         auto conn(getConnection());
         conn->to
             << WorkerProto::Op::AddMultipleToStore
@@ -590,7 +618,7 @@ void RemoteStore::registerDrvOutput(const Realisation & info)
 {
     auto conn(getConnection());
     conn->to << WorkerProto::Op::RegisterDrvOutput;
-    if (GET_PROTOCOL_MINOR(conn->daemonVersion) < 31) {
+    if (GET_PROTOCOL_MINOR(conn->protoVersion) < 31) {
         conn->to << info.id.to_string();
         conn->to << std::string(info.outPath.to_string());
     } else {
@@ -605,7 +633,7 @@ void RemoteStore::queryRealisationUncached(const DrvOutput & id,
     try {
         auto conn(getConnection());
 
-        if (GET_PROTOCOL_MINOR(conn->daemonVersion) < 27) {
+        if (GET_PROTOCOL_MINOR(conn->protoVersion) < 27) {
             warn("the daemon is too old to support content-addressed derivations, please upgrade it to 2.4");
             return callback(nullptr);
         }
@@ -615,7 +643,7 @@ void RemoteStore::queryRealisationUncached(const DrvOutput & id,
         conn.processStderr();
 
         auto real = [&]() -> std::shared_ptr<const Realisation> {
-            if (GET_PROTOCOL_MINOR(conn->daemonVersion) < 31) {
+            if (GET_PROTOCOL_MINOR(conn->protoVersion) < 31) {
                 auto outPaths = WorkerProto::Serialise<std::set<StorePath>>::read(
                     *this, *conn);
                 if (outPaths.empty())
@@ -662,9 +690,9 @@ void RemoteStore::buildPaths(const std::vector<DerivedPath> & drvPaths, BuildMod
 
     auto conn(getConnection());
     conn->to << WorkerProto::Op::BuildPaths;
-    assert(GET_PROTOCOL_MINOR(conn->daemonVersion) >= 13);
+    assert(GET_PROTOCOL_MINOR(conn->protoVersion) >= 13);
     WorkerProto::write(*this, *conn, drvPaths);
-    if (GET_PROTOCOL_MINOR(conn->daemonVersion) >= 15)
+    if (GET_PROTOCOL_MINOR(conn->protoVersion) >= 15)
         conn->to << buildMode;
     else
         /* Old daemons did not take a 'buildMode' parameter, so we
@@ -685,7 +713,7 @@ std::vector<KeyedBuildResult> RemoteStore::buildPathsWithResults(
     std::optional<ConnectionHandle> conn_(getConnection());
     auto & conn = *conn_;
 
-    if (GET_PROTOCOL_MINOR(conn->daemonVersion) >= 34) {
+    if (GET_PROTOCOL_MINOR(conn->protoVersion) >= 34) {
         conn->to << WorkerProto::Op::BuildPathsWithResults;
         WorkerProto::write(*this, *conn, paths);
         conn->to << buildMode;
@@ -859,7 +887,7 @@ void RemoteStore::queryMissing(const std::vector<DerivedPath> & targets,
 {
     {
         auto conn(getConnection());
-        if (GET_PROTOCOL_MINOR(conn->daemonVersion) < 19)
+        if (GET_PROTOCOL_MINOR(conn->protoVersion) < 19)
             // Don't hold the connection handle in the fallback case
             // to prevent a deadlock.
             goto fallback;
@@ -907,7 +935,7 @@ void RemoteStore::connect()
 unsigned int RemoteStore::getProtocol()
 {
     auto conn(connections->get());
-    return conn->daemonVersion;
+    return conn->protoVersion;
 }
 
 std::optional<TrustedFlag> RemoteStore::isTrustedClient()
@@ -938,43 +966,17 @@ void RemoteStore::ConnectionHandle::withFramedSink(std::function<void(Sink & sin
 {
     (*this)->to.flush();
 
-    std::exception_ptr ex;
-
-    /* Handle log messages / exceptions from the remote on a separate
-       thread. */
-    std::thread stderrThread([&]()
     {
-        try {
-            ReceiveInterrupts receiveInterrupts;
-            processStderr(nullptr, nullptr, false);
-        } catch (...) {
-            ex = std::current_exception();
-        }
-    });
-
-    Finally joinStderrThread([&]()
-    {
-        if (stderrThread.joinable()) {
-            stderrThread.join();
-            if (ex) {
-                try {
-                    std::rethrow_exception(ex);
-                } catch (...) {
-                    ignoreException();
-                }
-            }
-        }
-    });
-
-    {
-        FramedSink sink((*this)->to, ex);
+        FramedSink sink((*this)->to, [&]() {
+            /* Periodically process stderr messages and exceptions
+               from the daemon. */
+            processStderr(nullptr, nullptr, false, false);
+        });
         fun(sink);
         sink.flush();
     }
 
-    stderrThread.join();
-    if (ex)
-        std::rethrow_exception(ex);
+    processStderr(nullptr, nullptr, false);
 }
 
 }

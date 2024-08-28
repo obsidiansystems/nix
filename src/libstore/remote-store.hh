@@ -21,28 +21,17 @@ template<typename T> class Pool;
 template<template<typename> class F>
 struct RemoteStoreConfigT
 {
-    const F<int> maxConnections;
-
-    const F<unsigned int> maxConnectionAge;
+    F<int> maxConnections;
+    F<unsigned int> maxConnectionAge;
 };
 
-struct RemoteStoreConfig :
-    virtual Store::Config,
-    RemoteStoreConfigT<config::JustValue>
+struct RemoteStoreConfig : RemoteStoreConfigT<config::JustValue>
 {
-    struct Descriptions :
-        virtual Store::Config::Descriptions,
-        RemoteStoreConfigT<config::SettingInfo>
-    {
-        Descriptions();
-    };
+    static config::SettingDescriptionMap descriptions();
 
-    static const Descriptions descriptions;
+    const Store::Config & storeConfig;
 
-    /**
-     * The other defaults depend on the choice of `storeDir` and `rootDir`
-     */
-    static RemoteStoreConfigT<config::JustValue> defaults;
+    RemoteStoreConfig(const Store::Config &, const StoreReference::Params &);
 };
 
 /**
@@ -50,12 +39,13 @@ struct RemoteStoreConfig :
  * DaemonStore.
  */
 struct RemoteStore :
-    public virtual RemoteStoreConfig,
     public virtual Store,
     public virtual GcStore,
     public virtual LogStore
 {
     using Config = RemoteStoreConfig;
+
+    const Config & config;
 
     RemoteStore(const Config & config);
 

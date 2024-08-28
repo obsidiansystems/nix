@@ -10,26 +10,15 @@ class SSHMaster;
 template<template<typename> class F>
 struct CommonSSHStoreConfigT
 {
-    const F<Path> sshKey;
-    const F<std::string> sshPublicHostKey;
-    const F<bool> compress;
-    const F<std::string> remoteStore;
+    F<Path> sshKey;
+    F<std::string> sshPublicHostKey;
+    F<bool> compress;
+    F<std::string> remoteStore;
 };
 
-struct CommonSSHStoreConfig :
-    virtual Store::Config,
-    CommonSSHStoreConfigT<config::JustValue>
+struct CommonSSHStoreConfig : CommonSSHStoreConfigT<config::JustValue>
 {
-    struct Descriptions :
-        virtual Store::Config::Descriptions,
-        CommonSSHStoreConfigT<config::SettingInfo>
-    {
-        Descriptions();
-    };
-
-    static const Descriptions descriptions;
-
-    static CommonSSHStoreConfigT<config::JustValue> defaults;
+    static config::SettingDescriptionMap descriptions();
 
     /**
      * @param scheme Note this isn't stored by this mix-in class, but
@@ -67,7 +56,7 @@ struct CommonSSHStoreConfig :
      */
     SSHMaster createSSHMaster(
         bool useMaster,
-        Descriptor logFD = INVALID_DESCRIPTOR);
+        Descriptor logFD = INVALID_DESCRIPTOR) const;
 };
 
 }

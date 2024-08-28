@@ -37,52 +37,51 @@ struct OptimiseStats
 template<template<typename> class F>
 struct LocalStoreConfigT
 {
-    const F<bool> requireSigs;
-    const F<bool> readOnly;
+    F<bool> requireSigs;
+    F<bool> readOnly;
 };
 
 struct LocalStoreConfig :
-    virtual Store::Config,
-    virtual LocalFSStore::Config,
+    std::enable_shared_from_this<LocalStoreConfig>,
+    Store::Config,
+    LocalFSStore::Config,
     LocalStoreConfigT<config::JustValue>
 {
-    struct Descriptions :
-        virtual Store::Config::Descriptions,
-        virtual LocalFSStore::Config::Descriptions,
-        LocalStoreConfigT<config::SettingInfo>
-    {
-        Descriptions();
-    };
+    static config::SettingDescriptionMap descriptions();
 
-    static const Descriptions descriptions;
-
-    static LocalStoreConfigT<config::JustValue> defaults;
-
-    LocalStoreConfig(const StoreReference::Params &);
+    LocalStoreConfig(const StoreReference::Params & params)
+        : LocalStoreConfig{"local", "", params}
+    {}
 
     LocalStoreConfig(
         std::string_view scheme,
         std::string_view authority,
         const StoreReference::Params & params);
 
-    const std::string name() override { return "Local Store"; }
+    /**
+     * For `RestrictedStore`
+     */
+    LocalStoreConfig(const LocalStoreConfig &);
+
+    static const std::string name() { return "Local Store"; }
 
     static std::set<std::string> uriSchemes()
     { return {"local"}; }
 
-    std::string doc() override;
+    static std::string doc();
 
     ref<Store> openStore() const override;
 };
 
 class LocalStore :
-    public virtual LocalStoreConfig,
     public virtual IndirectRootStore,
     public virtual GcStore
 {
 public:
 
     using Config = LocalStoreConfig;
+
+    ref<const LocalStoreConfig> config;
 
 private:
 
@@ -151,7 +150,7 @@ public:
      * Initialise the local store, upgrading the schema if
      * necessary.
      */
-    LocalStore(const Config & params);
+    LocalStore(ref<const Config> params);
 
     ~LocalStore();
 
@@ -376,8 +375,6 @@ private:
 
     void updatePathInfo(State & state, const ValidPathInfo & info);
 
-    void upgradeStore6();
-    void upgradeStore7();
     PathSet queryValidPathsOld();
     ValidPathInfo queryPathInfoOld(const Path & path);
 

@@ -178,12 +178,11 @@ public:
     const std::string name;
     const std::string description;
     const std::set<std::string> aliases;
+    std::optional<ExperimentalFeature> experimentalFeature;
 
     int created = 123;
 
     bool overridden = false;
-
-    std::optional<ExperimentalFeature> experimentalFeature;
 
 protected:
 
@@ -390,7 +389,7 @@ struct ExperimentalFeatureSettings : Config {
 
           {{#include experimental-features-shortlist.md}}
 
-          Experimental features are [further documented in the manual](@docroot@/contributing/experimental-features.md).
+          Experimental features are [further documented in the manual](@docroot@/development/experimental-features.md).
         )"};
 
     /**

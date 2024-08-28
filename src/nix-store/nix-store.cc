@@ -481,7 +481,7 @@ static void opQuery(Strings opFlags, Strings opArgs)
         }
 
         default:
-            abort();
+            unreachable();
     }
 }
 

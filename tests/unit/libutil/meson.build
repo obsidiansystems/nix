@@ -25,6 +25,8 @@ deps_public_maybe_subproject = [
 ]
 subdir('build-utils-meson/subprojects')
 
+subdir('build-utils-meson/threads')
+
 subdir('build-utils-meson/export-all-symbols')
 
 rapidcheck = dependency('rapidcheck')
@@ -46,11 +48,14 @@ subdir('build-utils-meson/diagnostics')
 sources = files(
   'args.cc',
   'canon-path.cc',
+  'checked-arithmetic.cc',
   'chunked-vector.cc',
   'closure.cc',
   'compression.cc',
   'config.cc',
+  'executable-path.cc',
   'file-content-address.cc',
+  'file-system.cc',
   'git.cc',
   'hash.cc',
   'hilite.cc',
@@ -59,11 +64,15 @@ sources = files(
   'lru-cache.cc',
   'nix_api_util.cc',
   'pool.cc',
+  'position.cc',
+  'processes.cc',
   'references.cc',
   'spawn.cc',
+  'strings.cc',
   'suggestions.cc',
-  'tests.cc',
+  'terminal.cc',
   'url.cc',
+  'util.cc',
   'xml-writer.cc',
 )
 

@@ -192,7 +192,7 @@ struct JSONLogger : Logger {
             else if (f.type == Logger::Field::tString)
                 arr.push_back(f.s);
             else
-                abort();
+                unreachable();
     }
 
     void write(const nlohmann::json & json)

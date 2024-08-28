@@ -7,6 +7,7 @@ project('nix-store', 'cpp',
     'debug=true',
     'optimization=2',
     'errorlogs=true', # Please print logs for tests that fail
+    'localstatedir=/nix/var',
   ],
   meson_version : '>= 1.1',
   license : 'LGPL-2.1-or-later',
@@ -21,7 +22,7 @@ configdata = configuration_data()
 # TODO rename, because it will conflict with downstream projects
 configdata.set_quoted('PACKAGE_VERSION', meson.project_version())
 
-configdata.set_quoted('SYSTEM', host_machine.system())
+configdata.set_quoted('SYSTEM', host_machine.cpu_family() + '-' + host_machine.system())
 
 deps_private_maybe_subproject = [
 ]
@@ -55,6 +56,7 @@ configdata.set('CAN_LINK_SYMLINK', can_link_symlink.to_int())
 check_funcs = [
   # Optionally used for canonicalising files from the build
   'lchown',
+  'statvfs',
 ]
 foreach funcspec : check_funcs
   define_name = 'HAVE_' + funcspec.underscorify().to_upper()
@@ -72,6 +74,7 @@ subdir('build-utils-meson/threads')
 boost = dependency(
   'boost',
   modules : ['container'],
+  include_type: 'system',
 )
 # boost is a public dependency, but not a pkg-config dependency unfortunately, so we
 # put in `deps_other`.
@@ -98,6 +101,23 @@ deps_public += nlohmann_json
 
 sqlite = dependency('sqlite3', 'sqlite', version : '>=3.6.19')
 deps_private += sqlite
+
+# AWS C++ SDK has bad pkg-config
+aws_s3 = dependency('aws-cpp-sdk-s3', required : false)
+configdata.set('ENABLE_S3', aws_s3.found().to_int())
+if aws_s3.found()
+  aws_s3 = declare_dependency(
+    include_directories: include_directories(aws_s3.get_variable('includedir')),
+    link_args: [
+      '-L' + aws_s3.get_variable('libdir'),
+      '-laws-cpp-sdk-transfer',
+      '-laws-cpp-sdk-s3',
+      '-laws-cpp-sdk-core',
+      '-laws-crt-cpp',
+    ],
+  ).as_system('system')
+endif
+deps_other += aws_s3
 
 subdir('build-utils-meson/generate-header')
 
@@ -163,6 +183,7 @@ sources = files(
   'builtins/unpack-channel.cc',
   'common-protocol.cc',
   'common-ssh-store-config.cc',
+  'config-parse.cc',
   'content-address.cc',
   'daemon.cc',
   'derivations.cc',
@@ -210,6 +231,8 @@ sources = files(
   'ssh-store.cc',
   'ssh.cc',
   'store-api.cc',
+  'store-dir-config.cc',
+  'store-registration.cc',
   'store-reference.cc',
   'uds-remote-store.cc',
   'worker-protocol-connection.cc',
@@ -282,6 +305,8 @@ headers = [config_h] + files(
   'sqlite.hh',
   'ssh.hh',
   'store-api.hh',
+  'store-open.hh',
+  'store-registration.hh',
   'store-cast.hh',
   'store-dir-config.hh',
   'store-reference.hh',
@@ -305,24 +330,23 @@ fs = import('fs')
 
 prefix = get_option('prefix')
 # For each of these paths, assume that it is relative to the prefix unless
-# it is already an absolute path (which is the default for store-dir, state-dir, and log-dir).
+# it is already an absolute path (which is the default for store-dir, localstatedir, and log-dir).
 path_opts = [
   # Meson built-ins.
   'datadir',
-  'bindir',
   'mandir',
   'libdir',
   'includedir',
   'libexecdir',
   # Homecooked Nix directories.
   'store-dir',
-  'state-dir',
+  'localstatedir',
   'log-dir',
 ]
 # For your grepping pleasure, this loop sets the following variables that aren't mentioned
 # literally above:
 # store_dir
-# state_dir
+# localstatedir
 # log_dir
 # profile_dir
 foreach optname : path_opts
@@ -346,15 +370,14 @@ lsof = find_program('lsof', required : false)
 
 # Aside from prefix itself, each of these was made into an absolute path
 # by joining it with prefix, unless it was already an absolute path
-# (which is the default for store-dir, state-dir, and log-dir).
+# (which is the default for store-dir, localstatedir, and log-dir).
 cpp_str_defines = {
   'NIX_PREFIX':    prefix,
   'NIX_STORE_DIR': store_dir,
   'NIX_DATA_DIR':  datadir,
-  'NIX_STATE_DIR': state_dir / 'nix',
+  'NIX_STATE_DIR': localstatedir / 'nix',
   'NIX_LOG_DIR':   log_dir,
   'NIX_CONF_DIR':  sysconfdir / 'nix',
-  'NIX_BIN_DIR':   bindir,
   'NIX_MAN_DIR':   mandir,
 }
 
@@ -403,5 +426,16 @@ this_library = library(
 install_headers(headers, subdir : 'nix', preserve_path : true)
 
 libraries_private = []
+
+extra_pkg_config_variables = {
+  'storedir' : get_option('store-dir'),
+}
+
+# Working around https://github.com/mesonbuild/meson/issues/13584
+if host_machine.system() != 'macos'
+  extra_pkg_config_variables += {
+    'localstatedir' : get_option('localstatedir'),
+  }
+endif
 
 subdir('build-utils-meson/export')

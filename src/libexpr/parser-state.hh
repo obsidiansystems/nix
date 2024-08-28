@@ -20,6 +20,7 @@ struct StringToken
     operator std::string_view() const { return {p, l}; }
 };
 
+// This type must be trivially copyable; see YYLTYPE_IS_TRIVIAL in parser.y.
 struct ParserLocation
 {
     int beginOffset;
@@ -86,7 +87,7 @@ struct ParserState
 
     void dupAttr(const AttrPath & attrPath, const PosIdx pos, const PosIdx prevPos);
     void dupAttr(Symbol attr, const PosIdx pos, const PosIdx prevPos);
-    void addAttr(ExprAttrs * attrs, AttrPath && attrPath, Expr * e, const PosIdx pos);
+    void addAttr(ExprAttrs * attrs, AttrPath && attrPath, const ParserLocation & loc, Expr * e, const ParserLocation & exprLoc);
     Formals * validateFormals(Formals * formals, PosIdx pos = noPos, Symbol arg = {});
     Expr * stripIndentation(const PosIdx pos,
         std::vector<std::pair<PosIdx, std::variant<Expr *, StringToken>>> && es);
@@ -110,11 +111,12 @@ inline void ParserState::dupAttr(Symbol attr, const PosIdx pos, const PosIdx pre
     });
 }
 
-inline void ParserState::addAttr(ExprAttrs * attrs, AttrPath && attrPath, Expr * e, const PosIdx pos)
+inline void ParserState::addAttr(ExprAttrs * attrs, AttrPath && attrPath, const ParserLocation & loc, Expr * e, const ParserLocation & exprLoc)
 {
     AttrPath::iterator i;
     // All attrpaths have at least one attr
     assert(!attrPath.empty());
+    auto pos = at(loc);
     // Checking attrPath validity.
     // ===========================
     for (i = attrPath.begin(); i + 1 < attrPath.end(); i++) {
@@ -178,6 +180,12 @@ inline void ParserState::addAttr(ExprAttrs * attrs, AttrPath && attrPath, Expr *
         }
     } else {
         attrs->dynamicAttrs.push_back(ExprAttrs::DynamicAttrDef(i->expr, e, pos));
+    }
+
+    auto it = lexerState.positionToDocComment.find(pos);
+    if (it != lexerState.positionToDocComment.end()) {
+        e->setDocComment(it->second);
+        lexerState.positionToDocComment.emplace(at(exprLoc), it->second);
     }
 }
 
@@ -291,10 +299,21 @@ inline Expr * ParserState::stripIndentation(const PosIdx pos,
                 s2 = std::string(s2, 0, p + 1);
         }
 
-        es2->emplace_back(i->first, new ExprString(std::move(s2)));
+        // Ignore empty strings for a minor optimisation and AST simplification
+        if (s2 != "") {
+            es2->emplace_back(i->first, new ExprString(std::move(s2)));
+        }
     };
     for (; i != es.end(); ++i, --n) {
         std::visit(overloaded { trimExpr, trimString }, i->second);
+    }
+
+    // If there is nothing at all, return the empty string directly.
+    // This also ensures that equivalent empty strings result in the same ast, which is helpful when testing formatters.
+    if (es2->size() == 0) {
+        auto *const result = new ExprString("");
+        delete es2;
+        return result;
     }
 
     /* If this is a single string, then don't do a concatenation. */
