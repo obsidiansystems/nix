@@ -40,14 +40,14 @@ endif
 
 ifeq ($(ENABLE_UNIT_TESTS), yes)
 makefiles += \
-  tests/unit/libutil/local.mk \
-  tests/unit/libutil-support/local.mk \
-  tests/unit/libstore/local.mk \
-  tests/unit/libstore-support/local.mk \
-  tests/unit/libfetchers/local.mk \
-  tests/unit/libexpr/local.mk \
-  tests/unit/libexpr-support/local.mk \
-  tests/unit/libflake/local.mk
+  src/nix-util-tests/local.mk \
+  src/nix-util-test-support/local.mk \
+  src/nix-store-tests/local.mk \
+  src/nix-store-test-support/local.mk \
+  src/nix-fetchers-tests/local.mk \
+  src/nix-expr-tests/local.mk \
+  src/nix-expr-test-support/local.mk \
+  src/nix-flake-tests/local.mk
 endif
 
 ifeq ($(ENABLE_FUNCTIONAL_TESTS), yes)
