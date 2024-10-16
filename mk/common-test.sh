@@ -5,7 +5,7 @@
 
 test_name=$(echo -n "${test?must be defined by caller (test runner)}" | sed \
     -e "s|^src/[^/]*-test/data/||" \
-    -e "s|^tests/functional/||" \
+    -e "s|^src/nix-functional-tests/||" \
     -e "s|\.sh$||" \
     )
 

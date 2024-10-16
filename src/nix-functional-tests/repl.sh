@@ -298,8 +298,8 @@ runRepl () {
     | stripEmptyLinesBeforePrompt \
     | stripFinalPrompt \
     | sed \
-      -e "s@$testDir@/path/to/tests/functional@g" \
-      -e "s@$testDirNoUnderscores@/path/to/tests/functional@g" \
+      -e "s@$testDir@/path/to/src/nix-functional-tests@g" \
+      -e "s@$testDirNoUnderscores@/path/to/src/nix-functional-tests@g" \
       -e "s@$nixVersion@<nix version>@g" \
       -e "s@Added [0-9]* variables@Added <number omitted> variables@g" \
     | grep -vF $'warning: you don\'t have Internet access; disabling some network-dependent features' \

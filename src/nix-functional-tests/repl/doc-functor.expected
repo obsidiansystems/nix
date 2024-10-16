@@ -6,21 +6,21 @@ Added <number omitted> variables.
 
 nix-repl> :doc multiplier
 Function `__functor`\
-  … defined at /path/to/tests/functional/repl/doc-functor.nix:12:23
+  … defined at /path/to/src/nix-functional-tests/repl/doc-functor.nix:12:23
 
 
 Multiply the argument by the factor stored in the factor attribute.
 
 nix-repl> :doc doubler
 Function `multiply`\
-  … defined at /path/to/tests/functional/repl/doc-functor.nix:5:17
+  … defined at /path/to/src/nix-functional-tests/repl/doc-functor.nix:5:17
 
 
 Look, it's just like a function!
 
 nix-repl> :doc recursive
 Function `__functor`\
-  … defined at /path/to/tests/functional/repl/doc-functor.nix:77:23
+  … defined at /path/to/src/nix-functional-tests/repl/doc-functor.nix:77:23
 
 
 This looks bad, but the docs are ok because of the eta expansion.
@@ -30,14 +30,14 @@ error:
        … while partially calling '__functor' to retrieve documentation
 
        … while calling '__functor'
-         at /path/to/tests/functional/repl/doc-functor.nix:85:17:
+         at /path/to/src/nix-functional-tests/repl/doc-functor.nix:85:17:
            84|      */
            85|     __functor = self: self.__functor self;
              |                 ^
            86|   };
 
        … from call site
-         at /path/to/tests/functional/repl/doc-functor.nix:85:23:
+         at /path/to/src/nix-functional-tests/repl/doc-functor.nix:85:23:
            84|      */
            85|     __functor = self: self.__functor self;
              |                       ^
@@ -46,7 +46,7 @@ error:
        (19999 duplicate frames omitted)
 
        error: stack overflow; max-call-depth exceeded
-       at /path/to/tests/functional/repl/doc-functor.nix:85:23:
+       at /path/to/src/nix-functional-tests/repl/doc-functor.nix:85:23:
            84|      */
            85|     __functor = self: self.__functor self;
              |                       ^
@@ -59,14 +59,14 @@ error:
        (10000 duplicate frames omitted)
 
        … while calling '__functor'
-         at /path/to/tests/functional/repl/doc-functor.nix:97:19:
+         at /path/to/src/nix-functional-tests/repl/doc-functor.nix:97:19:
            96|     f = x: {
            97|       __functor = self: (f (x + 1));
              |                   ^
            98|     };
 
        error: stack overflow; max-call-depth exceeded
-       at /path/to/tests/functional/repl/doc-functor.nix:97:26:
+       at /path/to/src/nix-functional-tests/repl/doc-functor.nix:97:26:
            96|     f = x: {
            97|       __functor = self: (f (x + 1));
              |                          ^
@@ -74,28 +74,28 @@ error:
 
 nix-repl> :doc helper
 Function `square`\
-  … defined at /path/to/tests/functional/repl/doc-functor.nix:36:12
+  … defined at /path/to/src/nix-functional-tests/repl/doc-functor.nix:36:12
 
 
 Compute x^2
 
 nix-repl> :doc helper2
 Function `__functor`\
-  … defined at /path/to/tests/functional/repl/doc-functor.nix:45:23
+  … defined at /path/to/src/nix-functional-tests/repl/doc-functor.nix:45:23
 
 
 This is a function that can be overridden.
 
 nix-repl> :doc lib.helper3
 Function `__functor`\
-  … defined at /path/to/tests/functional/repl/doc-functor.nix:45:23
+  … defined at /path/to/src/nix-functional-tests/repl/doc-functor.nix:45:23
 
 
 This is a function that can be overridden.
 
 nix-repl> :doc helper3
 Function `__functor`\
-  … defined at /path/to/tests/functional/repl/doc-functor.nix:45:23
+  … defined at /path/to/src/nix-functional-tests/repl/doc-functor.nix:45:23
 
 
 This is a function that can be overridden.

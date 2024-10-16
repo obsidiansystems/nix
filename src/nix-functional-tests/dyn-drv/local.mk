@@ -12,4 +12,4 @@ clean-files += \
   $(d)/config.nix
 
 test-deps += \
-  tests/functional/dyn-drv/config.nix
+  src/nix-functional-tests/dyn-drv/config.nix

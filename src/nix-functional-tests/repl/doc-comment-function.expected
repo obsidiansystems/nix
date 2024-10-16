@@ -2,6 +2,6 @@ Nix <nix version>
 Type :? for help.
 
 nix-repl> :doc import ./doc-comment-function.nix
-Function defined at /path/to/tests/functional/repl/doc-comment-function.nix:2:1
+Function defined at /path/to/src/nix-functional-tests/repl/doc-comment-function.nix:2:1
 
 A doc comment for a file that only contains a function

@@ -177,7 +177,7 @@ in {
         ] ++ lib.optionals enableManual [
           ./doc/manual
         ] ++ lib.optionals doInstallCheck [
-          ./tests/functional
+          ./src/nix-functional-tests
         ]));
       };
 

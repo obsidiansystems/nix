@@ -39,5 +39,5 @@
     # Unit tests
     - any-glob-to-any-file: "src/*/tests/**/*"
     # Functional and integration tests
-    - any-glob-to-any-file: "tests/functional/**/*"
+    - any-glob-to-any-file: "src/nix-functional-tests/**/*"
 

@@ -10,21 +10,21 @@ error: value does not have documentation
 nix-repl> :doc lib.version
 Attribute `version`
 
-  … defined at /path/to/tests/functional/repl/doc-comments.nix:30:3
+  … defined at /path/to/src/nix-functional-tests/repl/doc-comments.nix:30:3
 
 Immovably fixed.
 
 nix-repl> :doc lib.attr.empty
 Attribute `empty`
 
-  … defined at /path/to/tests/functional/repl/doc-comments.nix:33:3
+  … defined at /path/to/src/nix-functional-tests/repl/doc-comments.nix:33:3
 
 Unchangeably constant.
 
 nix-repl> :doc lib.attr.undocument
 error:
        … while evaluating the attribute 'attr.undocument'
-         at /path/to/tests/functional/repl/doc-comments.nix:33:3:
+         at /path/to/src/nix-functional-tests/repl/doc-comments.nix:33:3:
            32|   /** Unchangeably constant. */
            33|   lib.attr.empty = { };
              |   ^
@@ -39,28 +39,28 @@ error:
 nix-repl> :doc (import ./doc-comments.nix).constant
 Attribute `constant`
 
-  … defined at /path/to/tests/functional/repl/doc-comments.nix:27:3
+  … defined at /path/to/src/nix-functional-tests/repl/doc-comments.nix:27:3
 
 Firmly rigid.
 
 nix-repl> :doc (import ./doc-comments.nix).lib.version
 Attribute `version`
 
-  … defined at /path/to/tests/functional/repl/doc-comments.nix:30:3
+  … defined at /path/to/src/nix-functional-tests/repl/doc-comments.nix:30:3
 
 Immovably fixed.
 
 nix-repl> :doc (import ./doc-comments.nix).lib.attr.empty
 Attribute `empty`
 
-  … defined at /path/to/tests/functional/repl/doc-comments.nix:33:3
+  … defined at /path/to/src/nix-functional-tests/repl/doc-comments.nix:33:3
 
 Unchangeably constant.
 
 nix-repl> :doc (import ./doc-comments.nix).lib.attr.undocumented
 Attribute `undocumented`
 
-  … defined at /path/to/tests/functional/repl/doc-comments.nix:35:3
+  … defined at /path/to/src/nix-functional-tests/repl/doc-comments.nix:35:3
 
 No documentation found.
 
@@ -97,7 +97,7 @@ error: attribute 'missing' missing
 nix-repl> :doc lib.attr.undocumental
 error:
        … while evaluating the attribute 'attr.undocumental'
-         at /path/to/tests/functional/repl/doc-comments.nix:33:3:
+         at /path/to/src/nix-functional-tests/repl/doc-comments.nix:33:3:
            32|   /** Unchangeably constant. */
            33|   lib.attr.empty = { };
              |   ^

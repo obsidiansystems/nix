@@ -95,25 +95,25 @@ perl/Makefile.config
 
 /src/build-remote/build-remote
 
-# /tests/functional/
-/tests/functional/test-tmp
-/tests/functional/common/subst-vars.sh
-/tests/functional/result*
-/tests/functional/restricted-innocent
-/tests/functional/shell
-/tests/functional/shell.drv
-/tests/functional/config.nix
-/tests/functional/ca/config.nix
-/tests/functional/dyn-drv/config.nix
-/tests/functional/repl-result-out
-/tests/functional/debugger-test-out
-/tests/functional/test-libstoreconsumer/test-libstoreconsumer
+# /src/nix-functional-tests/
+/src/nix-functional-tests/test-tmp
+/src/nix-functional-tests/common/subst-vars.sh
+/src/nix-functional-tests/result*
+/src/nix-functional-tests/restricted-innocent
+/src/nix-functional-tests/shell
+/src/nix-functional-tests/shell.drv
+/src/nix-functional-tests/config.nix
+/src/nix-functional-tests/ca/config.nix
+/src/nix-functional-tests/dyn-drv/config.nix
+/src/nix-functional-tests/repl-result-out
+/src/nix-functional-tests/debugger-test-out
+/src/nix-functional-tests/test-libstoreconsumer/test-libstoreconsumer
 
-# /tests/functional/lang/
-/tests/functional/lang/*.out
-/tests/functional/lang/*.out.xml
-/tests/functional/lang/*.err
-/tests/functional/lang/*.ast
+# /src/nix-functional-tests/lang/
+/src/nix-functional-tests/lang/*.out
+/src/nix-functional-tests/lang/*.out.xml
+/src/nix-functional-tests/lang/*.err
+/src/nix-functional-tests/lang/*.ast
 
 /perl/lib/Nix/Config.pm
 /perl/lib/Nix/Store.cc

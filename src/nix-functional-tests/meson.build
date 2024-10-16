@@ -233,7 +233,7 @@ foreach suite : suites
     prefix = fs.relative_to(workdir, meson.project_build_root())
 
     script = script
-    # Turns, e.g., `tests/functional/flakes/show.sh` into a Meson test target called
+    # Turns, e.g., `src/nix-functional-tests/flakes/show.sh` into a Meson test target called
     # `functional-flakes-show`.
     name = fs.replace_suffix(prefix / script, '')
 

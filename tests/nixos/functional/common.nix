@@ -49,8 +49,8 @@ in
           cd nix
 
           # Tests we don't need
-          echo >tests/functional/plugins/local.mk
-          sed -i tests/functional/local.mk \
+          echo >src/nix-functional-tests/plugins/local.mk
+          sed -i src/nix-functional-tests/local.mk \
             -e 's!nix_tests += plugins\.sh!!' \
             -e 's!nix_tests += test-libstoreconsumer\.sh!!' \
             ;

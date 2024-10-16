@@ -6,6 +6,6 @@ Added <number omitted> variables.
 
 nix-repl> :doc measurement
 Function `measurement`\
-  … defined at /path/to/tests/functional/repl/doc-comments.nix:13:17
+  … defined at /path/to/src/nix-functional-tests/repl/doc-comments.nix:13:17
 
 👈 precisely this wide 👉

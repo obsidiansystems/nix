@@ -1,7 +1,7 @@
 { runCommand, nix, expect }:
 
 # We only use expect when necessary, e.g. for testing tab completion in nix repl.
-# See also tests/functional/repl.sh
+# See also src/nix-functional-tests/repl.sh
 
 runCommand "repl-completion" {
   nativeBuildInputs = [

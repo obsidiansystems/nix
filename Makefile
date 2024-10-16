@@ -53,14 +53,14 @@ endif
 ifeq ($(ENABLE_FUNCTIONAL_TESTS), yes)
 ifdef HOST_UNIX
 makefiles += \
-  tests/functional/local.mk \
-  tests/functional/flakes/local.mk \
-  tests/functional/ca/local.mk \
-  tests/functional/git-hashing/local.mk \
-  tests/functional/dyn-drv/local.mk \
-  tests/functional/local-overlay-store/local.mk \
-  tests/functional/test-libstoreconsumer/local.mk \
-  tests/functional/plugins/local.mk
+  src/nix-functional-tests/local.mk \
+  src/nix-functional-tests/flakes/local.mk \
+  src/nix-functional-tests/ca/local.mk \
+  src/nix-functional-tests/git-hashing/local.mk \
+  src/nix-functional-tests/dyn-drv/local.mk \
+  src/nix-functional-tests/local-overlay-store/local.mk \
+  src/nix-functional-tests/test-libstoreconsumer/local.mk \
+  src/nix-functional-tests/plugins/local.mk
 endif
 endif
 

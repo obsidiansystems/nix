@@ -128,7 +128,7 @@ On other platforms they wouldn't be run at all.
 
 ## Functional tests
 
-The functional tests reside under the `tests/functional` directory and are listed in `tests/functional/local.mk`.
+The functional tests reside under the `src/nix-functional-tests` directory and are listed in `src/nix-functional-tests/local.mk`.
 Each test is a bash script.
 
 Functional tests are run during `installCheck` in the `nix` package build, as well as separately from the build, in VM tests.
@@ -145,7 +145,7 @@ $ mesonCheckPhase
 
 Sometimes it is useful to group related tests so they can be easily run together without running the entire test suite.
 Each test group is in a subdirectory of `tests`.
-For example, `tests/functional/ca/meson.build` defines a `ca` test group for content-addressed derivation outputs.
+For example, `src/nix-functional-tests/ca/meson.build` defines a `ca` test group for content-addressed derivation outputs.
 
 That test group can be run like this:
 
@@ -184,7 +184,7 @@ regardless of whether the test succeeds or fails.
 Tests can be also run directly without `meson`:
 
 ```shell-session
-$ TEST_NAME=${testName} NIX_REMOTE='' PS4='+(${BASH_SOURCE[0]-$0}:$LINENO) tests/functional/${testName}.sh
+$ TEST_NAME=${testName} NIX_REMOTE='' PS4='+(${BASH_SOURCE[0]-$0}:$LINENO) src/nix-functional-tests/${testName}.sh
 +(${testName}.sh:1) foo
 output from foo
 +(${testName}.sh:2) bar
@@ -217,7 +217,7 @@ edit it like so:
 Then, running the test with `./mk/debug-test.sh` will drop you into GDB once the script reaches that point:
 
 ```shell-session
-$ ./mk/debug-test.sh tests/functional/${testName}.sh
+$ ./mk/debug-test.sh src/nix-functional-tests/${testName}.sh
 ...
 + gdb blash blub
 GNU gdb (GDB) 12.1

@@ -623,7 +623,7 @@ void LocalStore::collectGarbage(const GCOptions & options, GCResults & results)
         roots.insert(root.first);
     }
 
-    /* Synchronisation point for testing, see tests/functional/gc-non-blocking.sh. */
+    /* Synchronisation point for testing, see src/nix-functional-tests/gc-non-blocking.sh. */
     if (auto p = getEnv("_NIX_TEST_GC_SYNC_2"))
         readFile(*p);
 

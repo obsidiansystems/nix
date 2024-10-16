@@ -43,7 +43,6 @@ mkMesonDerivation (finalAttrs: {
   fileset = fileset.unions [
     ../../scripts/nix-profile.sh.in
     ../../.version
-    ../../tests/functional
     ./.
   ];
 
@@ -87,7 +86,7 @@ mkMesonDerivation (finalAttrs: {
     # not the actual directory directory.
     + ''
       cd $(readlink -e $PWD)
-      echo $PWD | grep tests/functional
+      echo $PWD | grep src/nix-functional-tests
     '';
 
   mesonCheckFlags = [

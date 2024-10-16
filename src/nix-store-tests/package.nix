@@ -71,7 +71,7 @@ mkMesonExecutable (finalAttrs: {
           root = ../..;
           fileset = lib.fileset.unions [
             ./data
-            ../../tests/functional/derivation
+            ../nix-functional-tests/derivation
           ];
         };
       in runCommand "${finalAttrs.pname}-run" {
