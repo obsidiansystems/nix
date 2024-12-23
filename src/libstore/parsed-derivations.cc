@@ -117,7 +117,7 @@ bool ParsedDerivation::canBuildLocally(Store & localStore) const
 
 bool ParsedDerivation::willBuildLocally(Store & localStore) const
 {
-    return getBoolAttr("preferLocalBuild") && canBuildLocally(localStore);
+    return false;
 }
 
 bool ParsedDerivation::substitutesAllowed() const
