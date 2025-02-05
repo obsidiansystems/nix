@@ -95,7 +95,12 @@ struct RestrictedStore : public virtual RestrictedStoreConfig, public virtual In
         PathFilter & filter,
         RepairFlag repair) override
     {
-        throw Error("addToStore");
+        for (auto & ref : references)
+            if (!goal.isAllowed(ref))
+                throw InvalidPath("cannot add store object with unknown reference '%s' in recursive Nix", printStorePath(ref));
+        auto path = next->Store::addToStore(name, srcPath, method, hashAlgo, references, filter, repair);
+        goal.addDependency(path);
+        return path;
     }
 
     void addToStore(
@@ -236,6 +241,9 @@ StorePath RestrictedStore::addToStoreFromDump(
     const StorePathSet & references,
     RepairFlag repair)
 {
+    for (auto & ref : references)
+        if (!goal.isAllowed(ref))
+            throw InvalidPath("cannot add store object with unknown reference '%s' in recursive Nix", printStorePath(ref));
     auto path = next->addToStoreFromDump(dump, name, dumpMethod, hashMethod, hashAlgo, references, repair);
     goal.addDependency(path);
     return path;
