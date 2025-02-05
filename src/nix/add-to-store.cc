@@ -14,6 +14,7 @@ struct CmdAddToStore : MixDryRun, StoreCommand
     std::optional<std::string> namePart;
     ContentAddressMethod caMethod = ContentAddressMethod::Raw::NixArchive;
     HashAlgorithm hashAlgo = HashAlgorithm::SHA256;
+    std::vector<std::string> referencesRaw;
 
     CmdAddToStore()
     {
@@ -31,6 +32,14 @@ struct CmdAddToStore : MixDryRun, StoreCommand
         addFlag(flag::contentAddressMethod(&caMethod));
 
         addFlag(flag::hashAlgo(&hashAlgo));
+
+        addFlag({
+            .longName = "reference",
+            .description = "Make the newly created store object refer to this other store object",
+            .labels = {"reference"},
+            .handler = {&referencesRaw},
+            .experimentalFeature = Xp::DynamicDerivations,
+        });
     }
 
     void run(ref<Store> store) override
@@ -39,11 +48,16 @@ struct CmdAddToStore : MixDryRun, StoreCommand
 
         auto sourcePath = PosixSourceAccessor::createAtRoot(makeParentCanonical(path));
 
+        StorePathSet references;
+        for (auto & raw : referencesRaw) {
+            references.insert(store->parseStorePath(raw));
+        }
+
         auto storePath = dryRun
             ? store->computeStorePath(
-                *namePart, sourcePath, caMethod, hashAlgo, {}).first
+                *namePart, sourcePath, caMethod, hashAlgo, references).first
             : store->addToStoreSlow(
-                *namePart, sourcePath, caMethod, hashAlgo, {}).path;
+                *namePart, sourcePath, caMethod, hashAlgo, references).path;
 
         logger->cout("%s", store->printStorePath(storePath));
     }
