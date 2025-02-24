@@ -38,21 +38,6 @@ GoalPtr upcast_goal(std::shared_ptr<DerivationGoal> subGoal);
 typedef std::chrono::time_point<std::chrono::steady_clock> steady_time_point;
 
 /**
- * The current implementation of impure derivations has
- * `DerivationGoal`s accumulate realisations from their waitees.
- * Unfortunately, `DerivationGoal`s don't directly depend on other
- * goals, but instead depend on `DerivationCreationAndRealisationGoal`s.
- *
- * We try not to share any of the details of any goal type with any
- * other, for sake of modularity and quicker rebuilds. This means we
- * cannot "just" downcast and fish out the field. So as an escape hatch,
- * we have made the function, written in `worker.cc` where all the goal
- * types are visible, and use it instead.
- */
-
-std::optional<std::pair<std::reference_wrapper<const DerivationGoal>, std::reference_wrapper<const SingleDerivedPath>>> tryGetConcreteDrvGoal(GoalPtr waitee);
-
-/**
  * A mapping used to remember for each child process to what goal it
  * belongs, and comm channels for receiving log data and output
  * path creation commands.
@@ -218,7 +203,7 @@ public:
      */
 private:
     std::shared_ptr<DerivationCreationAndRealisationGoal> makeDerivationCreationAndRealisationGoal(
-        ref<SingleDerivedPath> drvPath,
+        ref<const SingleDerivedPath> drvPath,
         const OutputsSpec & wantedOutputs, BuildMode buildMode = bmNormal);
     std::shared_ptr<DerivationGoal> makeDerivationGoalCommon(
         const StorePath & drvPath, const OutputsSpec & wantedOutputs,

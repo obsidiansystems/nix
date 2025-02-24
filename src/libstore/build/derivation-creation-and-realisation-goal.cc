@@ -4,7 +4,7 @@
 namespace nix {
 
 DerivationCreationAndRealisationGoal::DerivationCreationAndRealisationGoal(
-    ref<SingleDerivedPath> drvReq, const OutputsSpec & wantedOutputs, Worker & worker, BuildMode buildMode)
+    ref<const SingleDerivedPath> drvReq, const OutputsSpec & wantedOutputs, Worker & worker, BuildMode buildMode)
     : Goal(worker, DerivedPath::Built{.drvPath = drvReq, .outputs = wantedOutputs})
     , drvReq(drvReq)
     , wantedOutputs(wantedOutputs)

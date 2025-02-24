@@ -30,7 +30,7 @@ struct DerivationCreationAndRealisationGoal : public Goal
     /**
      * How to obtain a store path of the derivation to build.
      */
-    ref<SingleDerivedPath> drvReq;
+    ref<const SingleDerivedPath> drvReq;
 
     /**
      * The path of the derivation, once obtained.
@@ -62,7 +62,7 @@ struct DerivationCreationAndRealisationGoal : public Goal
     BuildMode buildMode;
 
     DerivationCreationAndRealisationGoal(
-        ref<SingleDerivedPath> drvReq,
+        ref<const SingleDerivedPath> drvReq,
         const OutputsSpec & wantedOutputs,
         Worker & worker,
         BuildMode buildMode = bmNormal);

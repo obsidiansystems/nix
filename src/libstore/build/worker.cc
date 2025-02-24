@@ -45,7 +45,7 @@ Worker::~Worker()
 
 
 std::shared_ptr<DerivationCreationAndRealisationGoal> Worker::makeDerivationCreationAndRealisationGoal(
-    ref<SingleDerivedPath> drvReq,
+    ref<const SingleDerivedPath> drvReq,
     const OutputsSpec & wantedOutputs,
     BuildMode buildMode)
 {
@@ -599,19 +599,6 @@ GoalPtr upcast_goal(std::shared_ptr<DrvOutputSubstitutionGoal> subGoal)
 GoalPtr upcast_goal(std::shared_ptr<DerivationGoal> subGoal)
 {
     return subGoal;
-}
-
-std::optional<std::pair<std::reference_wrapper<const DerivationGoal>, std::reference_wrapper<const SingleDerivedPath>>> tryGetConcreteDrvGoal(GoalPtr waitee)
-{
-    auto * odg = dynamic_cast<DerivationCreationAndRealisationGoal *>(&*waitee);
-    if (!odg) return std::nullopt;
-    /* If we failed to obtain the concrete drv, we won't have created
-       the concrete derivation goal. */
-    if (!odg->concreteDrvGoal) return std::nullopt;
-    return {{
-        std::cref(*odg->concreteDrvGoal),
-        std::cref(*odg->drvReq),
-    }};
 }
 
 }
