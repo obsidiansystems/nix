@@ -257,9 +257,30 @@ struct DerivationBuilder : RestrictionContext, virtual DerivationGoalBuilderShar
     bool needsHashRewrite();
 
     /**
+     * Set up build environment / sandbox, acquiring resources (e.g.
+     * locks as needed). After this is run, the builder should be
+     * started.
+     *
+     * @returns true if successful, false if we could not acquire a build
+     * user. In that case, the caller must wait and then try again.
+     */
+    bool prepareBuild();
+
+    /**
      * Start building a derivation.
      */
     void startBuilder();
+
+    /**
+     * Tear down build environment after the builder exits (either on
+     * its own or if it is killed).
+     *
+     * @returns The first case indicates failure during output
+     * processing. A status code and exception are returned, providing
+     * more information. The second case indicates success, and
+     * realisations for each output of the derivation are returned.
+     */
+    std::variant<std::pair<BuildResult::Status, Error>, SingleDrvOutputs> unprepareBuild();
 
     /**
      * Fill in the environment for the builder.
@@ -353,6 +374,11 @@ struct DerivationBuilder : RestrictionContext, virtual DerivationGoalBuilderShar
      */
     virtual void childStarted() = 0;
 
+    /**
+     * @todo this should be reworked
+     */
+    virtual void childTerminated() = 0;
+
     virtual void noteHashMismatch(void) = 0;
     virtual void noteCheckMismatch(void) = 0;
 
@@ -402,6 +428,7 @@ struct LocalDerivationGoal : DerivationGoal, DerivationBuilder
     void killChild() override final;
 
     void childStarted() override;
+    void childTerminated() override;
 
     void noteHashMismatch(void) override;
     void noteCheckMismatch(void) override;
@@ -539,6 +566,10 @@ void LocalDerivationGoal::childStarted()
     worker.childStarted(shared_from_this(), {builderOut.get()}, true, true);
 }
 
+void LocalDerivationGoal::childTerminated()
+{
+    worker.childTerminated(this);
+}
 
 void LocalDerivationGoal::noteHashMismatch()
 {
@@ -570,6 +601,42 @@ Goal::Co LocalDerivationGoal::tryLocalBuild()
         co_return tryToBuild();
     }
 
+    if (!prepareBuild()) {
+        worker.waitForAWhile(shared_from_this());
+        co_await Suspend{};
+        co_return tryLocalBuild();
+    }
+
+    try {
+
+        /* Okay, we have to build. */
+        startBuilder();
+
+    } catch (BuildError & e) {
+        outputLocks.unlock();
+        buildUser.reset();
+        worker.permanentFailure = true;
+        co_return done(BuildResult::InputRejected, {}, std::move(e));
+    }
+
+    started();
+    co_await Suspend{};
+
+    trace("build done");
+
+    auto res = unprepareBuild();
+    // N.B. cannot use `std::visit` with co-routine return
+    if (auto * ste = std::get_if<0>(&res)) {
+        co_return done(std::move(ste->first), {}, std::move(ste->second));
+    } else if (auto * builtOutputs = std::get_if<1>(&res)) {
+        co_return done(BuildResult::Built, std::move(*builtOutputs));
+    } else {
+        unreachable();
+    }
+}
+
+bool DerivationBuilder::prepareBuild()
+{
     assert(derivationType);
 
     /* Are we doing a chroot build? */
@@ -577,7 +644,7 @@ Goal::Co LocalDerivationGoal::tryLocalBuild()
         if (settings.sandboxMode == smEnabled) {
             if (drvOptions->noChroot)
                 throw Error("derivation '%s' has '__noChroot' set, "
-                    "but that's not allowed when 'sandbox' is 'true'", worker.store.printStorePath(drvPath));
+                    "but that's not allowed when 'sandbox' is 'true'", store.printStorePath(drvPath));
 #if __APPLE__
             if (drvOptions->additionalSandboxProfile != "")
                 throw Error("derivation '%s' specifies a sandbox profile, "
@@ -618,32 +685,19 @@ Goal::Co LocalDerivationGoal::tryLocalBuild()
         if (!buildUser) {
             if (!actLock)
                 actLock = std::make_unique<Activity>(*logger, lvlWarn, actBuildWaiting,
-                    fmt("waiting for a free build user ID for '%s'", Magenta(worker.store.printStorePath(drvPath))));
-            worker.waitForAWhile(shared_from_this());
-            co_await Suspend{};
-            co_return tryLocalBuild();
+                    fmt("waiting for a free build user ID for '%s'", Magenta(store.printStorePath(drvPath))));
+            return false;
         }
     }
 
     actLock.reset();
 
-    try {
+    return true;
+}
 
-        /* Okay, we have to build. */
-        startBuilder();
 
-    } catch (BuildError & e) {
-        outputLocks.unlock();
-        buildUser.reset();
-        worker.permanentFailure = true;
-        co_return done(BuildResult::InputRejected, {}, std::move(e));
-    }
-
-    started();
-    co_await Suspend{};
-
-    trace("build done");
-
+std::variant<std::pair<BuildResult::Status, Error>, SingleDrvOutputs> DerivationBuilder::unprepareBuild()
+{
     Finally releaseBuildUser([&](){
         /* Release the build user at the end of this function. We don't do
            it right away because we don't want another build grabbing this
@@ -660,13 +714,13 @@ Goal::Co LocalDerivationGoal::tryLocalBuild()
        kill it. */
     int status = pid.kill();
 
-    debug("builder process for '%s' finished", worker.store.printStorePath(drvPath));
+    debug("builder process for '%s' finished", store.printStorePath(drvPath));
 
-    buildResult.timesBuilt++;
-    buildResult.stopTime = time(0);
+    buildResult_.timesBuilt++;
+    buildResult_.stopTime = time(0);
 
     /* So the child is gone now. */
-    worker.childTerminated(this);
+    childTerminated();
 
     /* Close the read side of the logger pipe. */
     builderOut.close();
@@ -684,12 +738,12 @@ Goal::Co LocalDerivationGoal::tryLocalBuild()
     /* Terminate the recursive Nix daemon. */
     stopDaemon();
 
-    if (buildResult.cpuUser && buildResult.cpuSystem) {
+    if (buildResult_.cpuUser && buildResult_.cpuSystem) {
         debug("builder for '%s' terminated with status %d, user CPU %.3fs, system CPU %.3fs",
-            worker.store.printStorePath(drvPath),
+            store.printStorePath(drvPath),
             status,
-            ((double) buildResult.cpuUser->count()) / 1000000,
-            ((double) buildResult.cpuSystem->count()) / 1000000);
+            ((double) buildResult_.cpuUser->count()) / 1000000,
+            ((double) buildResult_.cpuSystem->count()) / 1000000);
     }
 
     bool diskFull = false;
@@ -702,7 +756,7 @@ Goal::Co LocalDerivationGoal::tryLocalBuild()
             diskFull |= cleanupDecideWhetherDiskFull();
 
             auto msg = fmt("builder for '%s' %s",
-                Magenta(worker.store.printStorePath(drvPath)),
+                Magenta(store.printStorePath(drvPath)),
                 statusToString(status));
 
             appendLogTailErrorMsg(msg);
@@ -721,7 +775,7 @@ Goal::Co LocalDerivationGoal::tryLocalBuild()
         for (auto & [_, output] : builtOutputs)
             outputPaths.insert(output.outPath);
         runPostBuildHook(
-            worker.store,
+            store,
             *logger,
             drvPath,
             outputPaths
@@ -729,7 +783,7 @@ Goal::Co LocalDerivationGoal::tryLocalBuild()
 
         /* Delete unused redirected outputs (when doing hash rewriting). */
         for (auto & i : redirectedOutputs)
-            deletePath(worker.store.Store::toRealPath(i.second));
+            deletePath(store.Store::toRealPath(i.second));
 
         /* Delete the chroot (if we were using one). */
         autoDelChroot.reset(); /* this runs the destructor */
@@ -743,7 +797,7 @@ Goal::Co LocalDerivationGoal::tryLocalBuild()
         outputLocks.setDeletion(true);
         outputLocks.unlock();
 
-        co_return done(BuildResult::Built, std::move(builtOutputs));
+        return std::move(builtOutputs);
 
     } catch (BuildError & e) {
         outputLocks.unlock();
@@ -755,9 +809,11 @@ Goal::Co LocalDerivationGoal::tryLocalBuild()
             !derivationType->isSandboxed() || diskFull ? BuildResult::TransientFailure :
             BuildResult::PermanentFailure;
 
-        co_return done(st, {}, std::move(e));
+
+        return std::pair{std::move(st), std::move(e)};
     }
 }
+
 
 static void chmod_(const Path & path, mode_t mode)
 {
