@@ -142,11 +142,6 @@ struct DerivationBuilder : RestrictionContext, virtual DerivationGoalBuilderShar
     AutoCloseFD builderOut;
 
     /**
-     * Pipe for synchronising updates to the builder namespaces.
-     */
-    Pipe userNamespaceSync;
-
-    /**
      * The mount namespace and user namespace of the builder, used to add additional
      * paths to the sandbox as a result of recursive Nix calls.
      */
@@ -323,7 +318,11 @@ struct DerivationBuilder : RestrictionContext, virtual DerivationGoalBuilderShar
     /**
      * Run the builder's process.
      */
-    void runChild();
+    void runChild(
+#if __linux__
+        Pipe & userNamespaceSync
+#endif
+        );
 
     /**
      * Check that the derivation outputs all exist and register them
@@ -1423,6 +1422,11 @@ void DerivationBuilder::startBuilder()
     /* Fork a child to build the package. */
 
 #if __linux__
+    /**
+     * Pipe for synchronising updates to the builder namespaces.
+     */
+    Pipe userNamespaceSync;
+
     if (useChroot) {
         /* Set up private namespaces for the build:
 
@@ -1490,7 +1494,15 @@ void DerivationBuilder::startBuilder()
                 if (usingUserNamespace)
                     options.cloneFlags |= CLONE_NEWUSER;
 
-                pid_t child = startProcess([&]() { runChild(); }, options);
+                pid_t child = startProcess(
+                    [&]() {
+                        runChild(
+#ifdef __linux__
+                            userNamespaceSync
+#endif
+                        );
+                    },
+                    options);
 
                 writeFull(sendPid.writeSide.get(), fmt("%d\n", child));
                 _exit(0);
@@ -1574,7 +1586,11 @@ void DerivationBuilder::startBuilder()
     {
         pid = startProcess([&]() {
             openSlave();
-            runChild();
+            runChild(
+#if __linux__
+                userNamespaceSync
+#endif
+                );
         });
     }
 
@@ -2001,7 +2017,7 @@ void setupSeccomp()
 }
 
 
-void DerivationBuilder::runChild()
+void DerivationBuilder::runChild(Pipe & userNamespaceSync)
 {
     /* Warning: in the child we should absolutely not make any SQLite
        calls! */
