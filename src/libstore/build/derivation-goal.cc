@@ -38,11 +38,9 @@ namespace nix {
 
 DerivationGoal::DerivationGoal(const StorePath & drvPath,
     const OutputsSpec & wantedOutputs, Worker & worker, BuildMode buildMode)
-    : Goal(worker)
+    : DerivationGoalBuilderShared{worker.store, drvPath, wantedOutputs, buildMode}
+    , Goal(worker)
     , useDerivation(true)
-    , drvPath(drvPath)
-    , wantedOutputs(wantedOutputs)
-    , buildMode(buildMode)
 {
     name = fmt(
         "building of '%s' from .drv file",
@@ -56,11 +54,9 @@ DerivationGoal::DerivationGoal(const StorePath & drvPath,
 
 DerivationGoal::DerivationGoal(const StorePath & drvPath, const BasicDerivation & drv,
     const OutputsSpec & wantedOutputs, Worker & worker, BuildMode buildMode)
-    : Goal(worker)
+    : DerivationGoalBuilderShared{worker.store, drvPath, wantedOutputs, buildMode}
+    , Goal(worker)
     , useDerivation(false)
-    , drvPath(drvPath)
-    , wantedOutputs(wantedOutputs)
-    , buildMode(buildMode)
 {
     this->drv = std::make_unique<Derivation>(drv);
 

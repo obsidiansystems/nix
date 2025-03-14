@@ -63,27 +63,119 @@ void runPostBuildHook(
     const StorePathSet & outputPaths);
 
 /**
+ * Members shared, for now, between `DerivationGoal` and
+ * `DerivationBuilder`.
+ *
+ * This should not depend on any `Goal` infrastructure, because the goal
+ * is for `DerivationBuilder` to be separate from the scheduler / goals.
+ *
+ * There are some virtual members here, but that is to be avoided where
+ * possible, because we would like `DerivationBuilder` to be
+ * self-contained.
+ *
+ * @todo in the long term, `DerivationBuilder` should just do local
+ * building building, some thing else should do remote building, and
+ * `DerivationGoal` should should do scheduling, deciding which method
+ * (local or remote building) to use at the appropriate moment. This
+ * class should go away in that case because there really shouldn't be
+ * so many fields/methods in common worth deduplicating this between the
+ * scheduler and the two ways of building.
+ */
+struct DerivationGoalBuilderShared
+{
+    Store & store;
+
+    /** The path of the derivation. */
+    StorePath drvPath;
+
+    /**
+     * The specific outputs that we need to build.
+     */
+    OutputsSpec wantedOutputs;
+
+    /**
+     * The derivation stored at drvPath.
+     */
+    std::unique_ptr<Derivation> drv;
+
+    std::unique_ptr<ParsedDerivation> parsedDrv;
+    std::unique_ptr<DerivationOptions> drvOptions;
+
+    /**
+     * The remainder is state held during the build.
+     */
+
+    /**
+     * Locks on (fixed) output paths.
+     */
+    PathLocks outputLocks;
+
+    /**
+     * All input paths (that is, the union of FS closures of the
+     * immediate input paths).
+     */
+    StorePathSet inputPaths;
+
+    std::map<std::string, InitialOutput> initialOutputs;
+
+    /**
+     * The sort of derivation we are building.
+     */
+    std::optional<DerivationType> derivationType;
+
+    BuildMode buildMode;
+
+    DerivationGoalBuilderShared(
+        Store & store,
+        StorePath drvPath,
+        OutputsSpec wantedOutputs,
+        BuildMode buildMode)
+        : store{store}
+        , drvPath{drvPath}, wantedOutputs{wantedOutputs}, buildMode{buildMode}
+    { }
+
+    /**
+     * Activity that denotes waiting for a lock.
+     */
+    std::unique_ptr<Activity> actLock;
+
+    /**
+     * Open a log file and a pipe to it.
+     */
+    virtual Path openLogFile() = 0;
+
+    /**
+     * Close the log file.
+     */
+    virtual void closeLogFile() = 0;
+
+    /**
+     * Aborts if any output is not valid or corrupt, and otherwise
+     * returns a 'SingleDrvOutputs' structure containing all outputs.
+     *
+     * @todo Probably should just be in `DerivationGoal`.
+     */
+    virtual SingleDrvOutputs assertPathValidity() = 0;
+
+    virtual void started() = 0;
+
+    virtual void appendLogTailErrorMsg(std::string & msg) = 0;
+};
+
+/**
  * A goal for building some or all of the outputs of a derivation.
  */
-struct DerivationGoal : public Goal
+struct DerivationGoal : public Goal, virtual DerivationGoalBuilderShared
 {
     /**
      * Whether to use an on-disk .drv file.
      */
     bool useDerivation;
 
-    /** The path of the derivation. */
-    StorePath drvPath;
-
     /**
      * The goal for the corresponding resolved derivation
      */
     std::shared_ptr<DerivationGoal> resolvedDrvGoal;
-
-    /**
-     * The specific outputs that we need to build.
-     */
-    OutputsSpec wantedOutputs;
 
     /**
      * See `needRestart`; just for that field.
@@ -139,29 +231,8 @@ struct DerivationGoal : public Goal
     RetrySubstitution retrySubstitution = RetrySubstitution::NoNeed;
 
     /**
-     * The derivation stored at drvPath.
-     */
-    std::unique_ptr<Derivation> drv;
-
-    std::unique_ptr<ParsedDerivation> parsedDrv;
-    std::unique_ptr<DerivationOptions> drvOptions;
-
-    /**
      * The remainder is state held during the build.
      */
-
-    /**
-     * Locks on (fixed) output paths.
-     */
-    PathLocks outputLocks;
-
-    /**
-     * All input paths (that is, the union of FS closures of the
-     * immediate input paths).
-     */
-    StorePathSet inputPaths;
-
-    std::map<std::string, InitialOutput> initialOutputs;
 
     /**
      * File descriptor for the log file.
@@ -191,21 +262,9 @@ struct DerivationGoal : public Goal
     std::unique_ptr<HookInstance> hook;
 #endif
 
-    /**
-     * The sort of derivation we are building.
-     */
-    std::optional<DerivationType> derivationType;
-
-    BuildMode buildMode;
-
     std::unique_ptr<MaintainCount<uint64_t>> mcExpectedBuilds, mcRunningBuilds;
 
     std::unique_ptr<Activity> act;
-
-    /**
-     * Activity that denotes waiting for a lock.
-     */
-    std::unique_ptr<Activity> actLock;
 
     std::map<ActivityId, Activity> builderActivities;
 
@@ -251,12 +310,12 @@ struct DerivationGoal : public Goal
     /**
      * Open a log file and a pipe to it.
      */
-    Path openLogFile();
+    Path openLogFile() override;
 
     /**
      * Close the log file.
      */
-    void closeLogFile();
+    void closeLogFile() override;
 
     virtual bool isReadDesc(Descriptor fd);
 
@@ -287,7 +346,7 @@ struct DerivationGoal : public Goal
      * Aborts if any output is not valid or corrupt, and otherwise
      * returns a 'SingleDrvOutputs' structure containing all outputs.
      */
-    SingleDrvOutputs assertPathValidity();
+    SingleDrvOutputs assertPathValidity() override;
 
     /**
      * Forcibly kill the child process, if any.
@@ -296,14 +355,14 @@ struct DerivationGoal : public Goal
 
     Co repairClosure();
 
-    void started();
+    void started() override;
 
     Done done(
         BuildResult::Status status,
         SingleDrvOutputs builtOutputs = {},
         std::optional<Error> ex = {});
 
-    void appendLogTailErrorMsg(std::string & msg);
+    void appendLogTailErrorMsg(std::string & msg) override;
 
     StorePathSet exportReferences(const StorePathSet & storePaths);
 
