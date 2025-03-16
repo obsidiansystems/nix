@@ -869,11 +869,7 @@ void runPostBuildHook(
 }
 
 
-void appendLogTailErrorMsg(
-    Worker & worker,
-    const StorePath & drvPath,
-    const std::list<std::string> & logTail,
-    std::string & msg)
+void DerivationGoal::appendLogTailErrorMsg(std::string & msg)
 {
     if (!logger->isVerbose() && !logTail.empty()) {
         msg += fmt(";\nlast %d log lines:\n", logTail.size());
@@ -937,7 +933,7 @@ Goal::Co DerivationGoal::hookDone()
             Magenta(worker.store.printStorePath(drvPath)),
             statusToString(status));
 
-        appendLogTailErrorMsg(worker, drvPath, logTail, msg);
+        appendLogTailErrorMsg(msg);
 
         outputLocks.unlock();
 
