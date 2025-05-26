@@ -174,7 +174,7 @@ Goal::Co DerivationGoal::haveDerivation(StorePath drvPath)
 
     auto drvOptions = [&]() -> DerivationOptions {
         try {
-            return DerivationOptions::fromStructuredAttrs(drv->env, drv->structuredAttrs);
+            return DerivationOptions::fromStructuredAttrs(drv->env);
         } catch (Error & e) {
             e.addTrace({}, "while parsing derivation '%s'", worker.store.printStorePath(drvPath));
             throw;

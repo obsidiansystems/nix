@@ -173,11 +173,8 @@ struct DerivationOptions
      * (e.g. JSON) but is necessary for supporting old formats (e.g.
      * ATerm).
      */
-    static DerivationOptions
-    fromStructuredAttrs(const StringMap & env, const StructuredAttrs * parsed, bool shouldWarn = true);
-
-    static DerivationOptions
-    fromStructuredAttrs(const StringMap & env, const std::optional<StructuredAttrs> & parsed, bool shouldWarn = true);
+    static DerivationOptions fromStructuredAttrs(
+        const std::variant<StringPairs, StructuredAttrs> & envOrStructuredAttrs, bool shouldWarn = true);
 
     /**
      * @param drv Must be the same derivation we parsed this from. In

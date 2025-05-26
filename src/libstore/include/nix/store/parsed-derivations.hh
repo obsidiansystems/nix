@@ -32,22 +32,10 @@ struct StructuredAttrs
     static std::optional<StructuredAttrs> tryParse(const StringPairs & env);
 
     /**
-     * Like `tryParse`, but removes the env var which encoded the structured
-     * attrs from the map if one is found.
-     */
-    static std::optional<StructuredAttrs> tryExtract(StringPairs & env);
-
-    /**
      * Opposite of `tryParse`, at least if one makes a map from this
      * single key-value PR.
      */
     std::pair<std::string_view, std::string> unparse() const;
-
-    /**
-     * Ensures that the structured attrs "env var" is not in used, so we
-     * are free to use it instead.
-     */
-    static void checkKeyNotInUse(const StringPairs & env);
 
     nlohmann::json prepareStructuredAttrs(
         Store & store,

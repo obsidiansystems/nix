@@ -409,11 +409,22 @@ static void opQuery(Strings opFlags, Strings opArgs)
             for (auto & i : opArgs) {
                 auto path = useDeriver(store->followLinksToStorePath(i));
                 Derivation drv = store->derivationFromPath(path);
-                StringPairs::iterator j = drv.env.find(bindingName);
-                if (j == drv.env.end())
-                    throw Error("derivation '%s' has no environment binding named '%s'",
-                        store->printStorePath(path), bindingName);
-                cout << fmt("%s\n", j->second);
+                std::visit(overloaded{
+                    [&](const StringPairs & drvEnv) {
+                        auto j = drvEnv.find(bindingName);
+                        if (j == drvEnv.end())
+                            throw Error("derivation '%s' has no environment binding named '%s'",
+                                store->printStorePath(path), bindingName);
+                        cout << fmt("%s\n", j->second);
+                    },
+                    [&](const StructuredAttrs & structuredAttrs) {
+                        auto [k, v] = structuredAttrs.unparse();
+                        if (bindingName != k)
+                            throw Error("derivation '%s' has no environment binding named '%s'",
+                                store->printStorePath(path), bindingName);
+                        cout << fmt("%s\n", v);
+                    },
+                }, drv.env);
             }
             break;
 
@@ -497,8 +508,16 @@ static void opPrintEnv(Strings opFlags, Strings opArgs)
 
     /* Print each environment variable in the derivation in a format
      * that can be sourced by the shell. */
-    for (auto & i : drv.env)
-        logger->cout("export %1%; %1%=%2%\n", i.first, escapeShellArgAlways(i.second));
+    std::visit(overloaded{
+        [&](const StringPairs & drvEnv) {
+            for (auto & i : drvEnv)
+                logger->cout("export %1%; %1%=%2%\n", i.first, escapeShellArgAlways(i.second));
+        },
+        [&](const StructuredAttrs & structuredAttrs) {
+            auto [k, v] = structuredAttrs.unparse();
+            logger->cout("export %1%; %1%=%2%\n", k, escapeShellArgAlways(v));
+        },
+    }, drv.env);
 
     /* Also output the arguments.  This doesn't preserve whitespace in
        arguments. */

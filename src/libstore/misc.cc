@@ -226,7 +226,7 @@ void Store::queryMissing(const std::vector<DerivedPath> & targets,
             try {
                 // FIXME: this is a lot of work just to get the value
                 // of `allowSubstitutes`.
-                drvOptions = DerivationOptions::fromStructuredAttrs(drv->env, drv->structuredAttrs);
+                drvOptions = DerivationOptions::fromStructuredAttrs(drv->env);
             } catch (Error & e) {
                 e.addTrace({}, "while parsing derivation '%s'", printStorePath(drvPath));
                 throw;

@@ -454,13 +454,17 @@ Derivation parseDerivation(
 
     /* Parse the environment variables. */
     expect(str, ",[");
+    StringPairs env;
     while (!endOfList(str)) {
         expect(str, "("); auto name = parseString(str).toOwned();
         expect(str, ","); auto value = parseString(str).toOwned();
         expect(str, ")");
-        drv.env.insert_or_assign(std::move(name), std::move(value));
+        env.insert_or_assign(std::move(name), std::move(value));
     }
-    drv.structuredAttrs = StructuredAttrs::tryExtract(drv.env);
+    if (auto structuredAttrs = StructuredAttrs::tryParse(env))
+        drv.env = std::move(*structuredAttrs);
+    else
+        drv.env = std::move(env);
 
     expect(str, ")");
     return drv;
@@ -652,23 +656,23 @@ std::string Derivation::unparse(const StoreDirConfig & store, bool maskOutputs,
     s += ",[";
     first = true;
 
-    auto unparseEnv = [&](const StringPairs atermEnv) {
-        for (auto & i : atermEnv) {
-            if (first) first = false; else s += ',';
-            s += '('; printString(s, i.first);
-            s += ','; printString(s, maskOutputs && outputs.count(i.first) ? "" : i.second);
+    std::visit(overloaded{
+        [&](const StringPairs & drvEnv) {
+            for (auto & i : drvEnv) {
+                if (first) first = false; else s += ',';
+                s += '('; printString(s, i.first);
+                s += ','; printString(s, maskOutputs && outputs.count(i.first) ? "" : i.second);
+                s += ')';
+            }
+        },
+        [&](const StructuredAttrs & structuredAttrs) {
+            auto [k, v] = structuredAttrs.unparse();
+            s += '('; printString(s, k);
+            // FIXME we are not masking outputs right for structured
+            s += ','; printString(s, maskOutputs && outputs.count(v) ? "" : v);
             s += ')';
-        }
-    };
-
-    StructuredAttrs::checkKeyNotInUse(env);
-    if (structuredAttrs) {
-        StringPairs scratch = env;
-        scratch.insert(structuredAttrs->unparse());
-        unparseEnv(scratch);
-    } else {
-        unparseEnv(env);
-    }
+        },
+    }, env);
 
     s += "])";
 
@@ -961,12 +965,16 @@ Source & readDerivation(Source & in, const StoreDirConfig & store, BasicDerivati
     drv.args = readStrings<Strings>(in);
 
     nr = readNum<size_t>(in);
+    StringPairs env;
     for (size_t n = 0; n < nr; n++) {
         auto key = readString(in);
         auto value = readString(in);
-        drv.env[key] = value;
+        env[key] = value;
     }
-    drv.structuredAttrs = StructuredAttrs::tryExtract(drv.env);
+    if (auto structuredAttrs = StructuredAttrs::tryParse(env))
+        drv.env = std::move(*structuredAttrs);
+    else
+        drv.env = std::move(env);
 
     return in;
 }
@@ -1009,21 +1017,18 @@ void writeDerivation(Sink & out, const StoreDirConfig & store, const BasicDeriva
         CommonProto::WriteConn { .to = out },
         drv.inputSrcs);
     out << drv.platform << drv.builder << drv.args;
-
-    auto writeEnv = [&](const StringPairs atermEnv) {
-        out << atermEnv.size();
-        for (auto & [k, v] : atermEnv)
+    std::visit(overloaded{
+        [&](const StringPairs & drvEnv) {
+            out << drvEnv.size();
+            for (auto & [k, v] : drvEnv)
+                out << k << v;
+        },
+        [&](const StructuredAttrs & structuredAttrs) {
+            auto [k, v] = structuredAttrs.unparse();
+            out << size_t{1};
             out << k << v;
-    };
-
-    StructuredAttrs::checkKeyNotInUse(drv.env);
-    if (drv.structuredAttrs) {
-        StringPairs scratch = drv.env;
-        scratch.insert(drv.structuredAttrs->unparse());
-        writeEnv(scratch);
-    } else {
-        writeEnv(drv.env);
-    }
+        },
+    }, drv.env);
 }
 
 
@@ -1046,24 +1051,27 @@ void BasicDerivation::applyRewrites(const StringMap & rewrites)
     for (auto & arg : args)
         arg = rewriteStrings(arg, rewrites);
 
-    StringPairs newEnv;
-    for (auto & envVar : env) {
-        auto envName = rewriteStrings(envVar.first, rewrites);
-        auto envValue = rewriteStrings(envVar.second, rewrites);
-        newEnv.emplace(envName, envValue);
-    }
-    env = std::move(newEnv);
-
-    if (structuredAttrs) {
-        // TODO rewrite the JSON AST properly, rather than dump parse round trip.
-        auto [k, jsonS] = structuredAttrs->unparse();
-        jsonS = rewriteStrings(jsonS, rewrites);
-        StringPairs newEnv;
-        newEnv.insert(std::pair{k, std::move(jsonS)});
-        auto newStructuredAttrs = StructuredAttrs::tryParse(newEnv);
-        assert(newStructuredAttrs);
-        structuredAttrs = std::move(*newStructuredAttrs);
-    }
+    std::visit(overloaded{
+        [&](StringPairs & drvEnv) {
+            StringPairs newEnv;
+            for (auto & envVar : drvEnv) {
+                auto envName = rewriteStrings(envVar.first, rewrites);
+                auto envValue = rewriteStrings(envVar.second, rewrites);
+                newEnv.emplace(envName, envValue);
+            }
+            drvEnv = std::move(newEnv);
+        },
+        [&](StructuredAttrs & structuredAttrs) {
+            // TODO rewrite the JSON AST properly, rather than dump parse round trip.
+            auto [k, jsonS] = structuredAttrs.unparse();
+            jsonS = rewriteStrings(jsonS, rewrites);
+            StringPairs newEnv;
+            newEnv.insert(std::pair{std::move(k), std::move(jsonS)});
+            auto newStructuredAttrs = StructuredAttrs::tryParse(newEnv);
+            assert(newStructuredAttrs);
+            structuredAttrs = std::move(*newStructuredAttrs);
+        },
+    }, env);
 }
 
 static void rewriteDerivation(Store & store, BasicDerivation & drv, const StringMap & rewrites)
@@ -1078,7 +1086,15 @@ static void rewriteDerivation(Store & store, BasicDerivation & drv, const String
                 throw Error("derivation '%s' output '%s' has no hash (derivations.cc/rewriteDerivation)",
                     drv.name, outputName);
             auto outPath = store.makeOutputPath(outputName, *h, drv.name);
-            drv.env[outputName] = store.printStorePath(outPath);
+            std::visit(overloaded{
+                [&](StringPairs & drvEnv) {
+                    drvEnv[outputName] = store.printStorePath(outPath);
+                },
+                [&](StructuredAttrs & structuredAttrs) {
+                    // FIXME should we do this?
+                    //structuredAttrs[outputName] = store.printStorePath(outPath);
+                },
+            }, drv.env);
             output = DerivationOutput::InputAddressed {
                 .path = std::move(outPath),
             };
@@ -1173,10 +1189,12 @@ void Derivation::checkInvariants(Store & store, const StorePath & drvPath) const
 
     auto envHasRightPath = [&](const StorePath & actual, const std::string & varName)
     {
-        auto j = env.find(varName);
-        if (j == env.end() || store.parseStorePath(j->second) != actual)
-            throw Error("derivation '%s' has incorrect environment variable '%s', should be '%s'",
-                store.printStorePath(drvPath), varName, store.printStorePath(actual));
+        if (auto * drvEnv = std::get_if<StringPairs>(&env)) {
+            auto j = drvEnv->find(varName);
+            if (j == drvEnv->end() || store.parseStorePath(j->second) != actual)
+                throw Error("derivation '%s' has incorrect environment variable '%s', should be '%s'",
+                    store.printStorePath(drvPath), varName, store.printStorePath(actual));
+        }
     };
 
 
@@ -1368,10 +1386,15 @@ nlohmann::json Derivation::toJSON(const StoreDirConfig & store) const
     res["system"] = platform;
     res["builder"] = builder;
     res["args"] = args;
-    res["env"] = env;
 
-    if (structuredAttrs)
-        res["structuredAttrs"] = structuredAttrs->structuredAttrs;
+    std::visit(overloaded{
+        [&](const StringPairs & drvEnv) {
+            res["env"] = drvEnv;
+        },
+        [&](const StructuredAttrs & structuredAttrs) {
+            res["structuredAttrs"] = structuredAttrs.structuredAttrs;
+        },
+    }, env);
 
     return res;
 }
@@ -1437,16 +1460,24 @@ Derivation Derivation::fromJSON(
     res.builder = getString(valueAt(json, "builder"));
     res.args = getStringList(valueAt(json, "args"));
 
-    auto envJson = valueAt(json, "env");
-    try {
-        res.env = getStringMap(envJson);
-    } catch (Error & e) {
-        e.addTrace({}, "while reading key 'env'");
-        throw;
-    }
+    res.env = [&]() -> decltype(res.env) {
+        auto * env = get(json, "env");
+        auto * structuredAttrs = get(json, "structuredAttrs");
 
-    if (auto structuredAttrs = get(json, "structuredAttrs"))
-        res.structuredAttrs = StructuredAttrs{*structuredAttrs};
+        if (env && structuredAttrs)
+            throw Error("cannot use 'env' and 'structuredAttrs' ");
+
+        if (env) {
+            try {
+                return getStringMap(*env);
+            } catch (Error & e) {
+                e.addTrace({}, "while reading key 'env'");
+                throw;
+            }
+        }
+
+        return StructuredAttrs{*structuredAttrs};
+    }();
 
     return res;
 }

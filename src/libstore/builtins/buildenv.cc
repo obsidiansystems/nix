@@ -169,9 +169,15 @@ void buildProfile(const Path & out, Packages && pkgs)
 
 static void builtinBuildenv(const BuiltinBuilderContext & ctx)
 {
+    auto * env_ = std::get_if<StringPairs>(&ctx.drv.env);
+    if (!env_)
+        throw Error("structured attrs is not supported with this builtin builder");
+
+    auto & env = *env_;
+
     auto getAttr = [&](const std::string & name) {
-        auto i = ctx.drv.env.find(name);
-        if (i == ctx.drv.env.end()) throw Error("attribute '%s' missing", name);
+        auto i = env.find(name);
+        if (i == env.end()) throw Error("attribute '%s' missing", name);
         return i->second;
     };
 

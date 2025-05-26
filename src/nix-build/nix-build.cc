@@ -546,7 +546,7 @@ static void main_nix_build(int argc, char * * argv)
 
         DerivationOptions drvOptions;
         try {
-            drvOptions = DerivationOptions::fromStructuredAttrs(drv.env, drv.structuredAttrs);
+            drvOptions = DerivationOptions::fromStructuredAttrs(drv.env);
         } catch (Error & e) {
             e.addTrace({}, "while parsing derivation '%s'", store->printStorePath(packageInfo.requireDrvPath()));
             throw;
@@ -554,18 +554,22 @@ static void main_nix_build(int argc, char * * argv)
 
         int fileNr = 0;
 
-        for (auto & var : drv.env)
-            if (drvOptions.passAsFile.count(var.first)) {
-                auto fn = ".attr-" + std::to_string(fileNr++);
-                Path p = (tmpDir.path() / fn).string();
-                writeFile(p, var.second);
-                env[var.first + "Path"] = p;
-            } else
-                env[var.first] = var.second;
+        if (auto * drvEnv = std::get_if<StringPairs>(&drv.env)) {
+            for (auto & var : *drvEnv) {
+                if (drvOptions.passAsFile.count(var.first)) {
+                    auto fn = ".attr-" + std::to_string(fileNr++);
+                    Path p = (tmpDir.path() / fn).string();
+                    writeFile(p, var.second);
+                    env[var.first + "Path"] = p;
+                } else {
+                    env[var.first] = var.second;
+                }
+            }
+        }
 
         std::string structuredAttrsRC;
 
-        if (drv.structuredAttrs) {
+        if (auto * parsedDrv = std::get_if<StructuredAttrs>(&drv.env)) {
             StorePathSet inputs;
 
             std::function<void(const StorePath &, const DerivedPathMap<StringSet>::ChildNode &)> accumInputClosure;
@@ -583,7 +587,7 @@ static void main_nix_build(int argc, char * * argv)
             for (const auto & [inputDrv, inputNode] : drv.inputDrvs.map)
                 accumInputClosure(inputDrv, inputNode);
 
-            auto json = drv.structuredAttrs->prepareStructuredAttrs(
+            auto json = parsedDrv->prepareStructuredAttrs(
                 *store,
                 drvOptions,
                 inputs,

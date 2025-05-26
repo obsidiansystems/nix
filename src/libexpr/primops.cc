@@ -10,6 +10,7 @@
 #include "nix/store/store-api.hh"
 #include "nix/util/util.hh"
 #include "nix/util/processes.hh"
+#include "nix/util/json-utils.hh"
 #include "nix/expr/value-to-json.hh"
 #include "nix/expr/value-to-xml.hh"
 #include "nix/expr/primops.hh"
@@ -199,7 +200,14 @@ void derivationToValue(EvalState & state, const PosIdx pos, const SourcePath & p
     attrs.alloc(state.sDrvPath).mkString(path2, {
         NixStringContextElem::DrvDeep { .drvPath = storePath },
     });
-    attrs.alloc(state.sName).mkString(drv.env["name"]);
+    attrs.alloc(state.sName).mkString(std::visit(overloaded{
+        [&](const StringPairs & drvEnv) -> const std::string & {
+            return drvEnv.at("name");
+        },
+        [&](const StructuredAttrs & structuredAttrs) -> const std::string & {
+            return getString(valueAt(structuredAttrs.structuredAttrs, "name"));
+        },
+    }, drv.env));
 
     auto list = state.buildList(drv.outputs.size());
     for (const auto & [i, o] : enumerate(drv.outputs)) {
@@ -1372,9 +1380,9 @@ static void derivationStrictInternal(
                the environment. */
             else {
 
-                if (jsonObject) {
-
-                    if (i->name == state.sStructuredAttrs) continue;
+                std::visit(overloaded{
+                  [&](StructuredAttrs & structuredAttrs) {
+                    if (i->name == state.sStructuredAttrs) return;
 
                     jsonObject->structuredAttrs.emplace(key, printValueAsJSON(state, true, *i->value, pos, context));
 
@@ -1411,23 +1419,25 @@ static void derivationStrictInternal(
                         warn("In a derivation named '%s', 'structuredAttrs' disables the effect of the derivation attribute 'maxClosureSize'; use 'outputChecks.<output>.maxClosureSize' instead", drvName);
 
 
-                } else {
+                  },
+                  [&](StringPairs & drvEnv) {
                     auto s = state.coerceToString(pos, *i->value, context, context_below, true).toOwned();
                     if (i->name == state.sJson) {
-                        warn("In a derivation named '%s', setting structured attrs via '__json' is deprecated, and may be removed in a future version of Nix", drvName);
-                        drv.structuredAttrs = StructuredAttrs::parse(s);
+                        state.error<EvalError>("setting structured attrs via '__json' is no longer supported")
+                            .atPos(v)
+                            .debugThrow();
                     } else {
-                        drv.env.emplace(key, s);
+                        drvEnv.emplace(key, s);
                         if (i->name == state.sBuilder) drv.builder = std::move(s);
                         else if (i->name == state.sSystem) drv.platform = std::move(s);
                         else if (i->name == state.sOutputHash) outputHash = std::move(s);
                         else if (i->name == state.sOutputHashAlgo) outputHashAlgo = parseHashAlgoOpt(s);
                         else if (i->name == state.sOutputHashMode) handleHashMode(s);
                         else if (i->name == state.sOutputs)
-                            handleOutputs(tokenizeString<Strings>(s));
+                        handleOutputs(tokenizeString<Strings>(s));
                     }
-                }
-
+                  },
+                }, drv.env);
             }
 
         } catch (Error & e) {
@@ -1438,10 +1448,7 @@ static void derivationStrictInternal(
     }
 
     if (jsonObject) {
-        /* The only other way `drv.structuredAttrs` can be set is when
-           `jsonObject` is not set. */
-        assert(!drv.structuredAttrs);
-        drv.structuredAttrs = std::move(*jsonObject);
+        drv.env = StructuredAttrs{std::move(*jsonObject)};
     }
 
     /* Everything in the context of the strings in the derivation
@@ -1518,7 +1525,8 @@ static void derivationStrictInternal(
             },
         };
 
-        drv.env["out"] = state.store->printStorePath(dof.path(*state.store, drvName, "out"));
+        if (auto * drvEnv = std::get_if<StringPairs>(&drv.env))
+            (*drvEnv)["out"] =  state.store->printStorePath(dof.path(*state.store, drvName, "out"));
         drv.outputs.insert_or_assign("out", std::move(dof));
     }
 
@@ -1531,7 +1539,8 @@ static void derivationStrictInternal(
         auto method = ingestionMethod.value_or(ContentAddressMethod::Raw::NixArchive);
 
         for (auto & i : outputs) {
-            drv.env[i] = hashPlaceholder(i);
+            if (auto * drvEnv = std::get_if<StringPairs>(&drv.env))
+                (*drvEnv)[i] = hashPlaceholder(i);
             if (isImpure)
                 drv.outputs.insert_or_assign(i,
                     DerivationOutput::Impure {
@@ -1555,7 +1564,8 @@ static void derivationStrictInternal(
            that changes in the set of output names do get reflected in
            the hash. */
         for (auto & i : outputs) {
-            drv.env[i] = "";
+            if (auto * drvEnv = std::get_if<StringPairs>(&drv.env))
+                (*drvEnv)[i] = "";
             drv.outputs.insert_or_assign(i,
                 DerivationOutput::Deferred { });
         }
@@ -1571,7 +1581,8 @@ static void derivationStrictInternal(
                         i
                     ).atPos(v).debugThrow();
                 auto outPath = state.store->makeOutputPath(i, *h, drvName);
-                drv.env[i] = state.store->printStorePath(outPath);
+                if (auto * drvEnv = std::get_if<StringPairs>(&drv.env))
+                    (*drvEnv)[i] = state.store->printStorePath(outPath);
                 drv.outputs.insert_or_assign(
                     i,
                     DerivationOutput::InputAddressed {

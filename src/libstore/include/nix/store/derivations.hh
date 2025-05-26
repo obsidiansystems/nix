@@ -296,11 +296,9 @@ struct BasicDerivation
     Path builder;
     Strings args;
     /**
-     * Must not contain the key `__json`, at least in order to serialize to A-Term.
+     * Either a map of environment variables, or structured attrs.
      */
-    StringPairs env;
-    std::optional<StructuredAttrs> structuredAttrs;
-
+    std::variant<StringPairs, StructuredAttrs> env;
     std::string name;
 
     BasicDerivation() = default;

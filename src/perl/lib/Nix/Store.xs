@@ -7,6 +7,7 @@
 #undef do_close
 
 #include "nix/store/derivations.hh"
+#include "nix/store/parsed-derivations.hh"
 #include "nix/store/realisation.hh"
 #include "nix/store/globals.hh"
 #include "nix/store/store-open.hh"
@@ -399,8 +400,15 @@ StoreWrapper::derivationFromPath(char * drvPath)
             hv_stores(hash, "args", newRV((SV *) args));
 
             HV * env = newHV();
-            for (auto & i : drv.env)
-                hv_store(env, i.first.c_str(), i.first.size(), newSVpv(i.second.c_str(), 0), 0);
+            std::visit(overloaded{
+                [&](const StringPairs & drvEnv) {
+                    for (auto & i : drvEnv)
+                        hv_store(env, i.first.c_str(), i.first.size(), newSVpv(i.second.c_str(), 0), 0);
+                },
+                [&](const StructuredAttrs & structuredAttrs) {
+                    // FIXME handle structured attrs case
+                },
+            }, drv.env);
             hv_stores(hash, "env", newRV((SV *) env));
 
             RETVAL = newRV_noinc((SV *)hash);

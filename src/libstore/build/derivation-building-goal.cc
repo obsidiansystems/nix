@@ -34,7 +34,7 @@ DerivationBuildingGoal::DerivationBuildingGoal(const StorePath & drvPath, const 
 
     try {
         drvOptions = std::make_unique<DerivationOptions>(
-            DerivationOptions::fromStructuredAttrs(drv->env, drv->structuredAttrs));
+            DerivationOptions::fromStructuredAttrs(drv->env));
     } catch (Error & e) {
         e.addTrace({}, "while parsing derivation '%s'", worker.store.printStorePath(drvPath));
         throw;

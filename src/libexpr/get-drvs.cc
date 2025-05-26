@@ -3,6 +3,7 @@
 #include "nix/store/derivations.hh"
 #include "nix/store/store-api.hh"
 #include "nix/store/path-with-outputs.hh"
+#include "nix/util/json-utils.hh"
 
 #include <cstring>
 #include <regex>
@@ -33,7 +34,14 @@ PackageInfo::PackageInfo(EvalState & state, ref<Store> store, const std::string 
 
     outputName =
         selectedOutputs.empty()
-        ? getOr(drv.env, "outputName", "out")
+        ? std::visit(overloaded{
+            [&](const StringPairs & drvEnv) -> const std::string {
+                return getOr(drvEnv, "outputName", "out");
+            },
+            [&](const StructuredAttrs & structuredAttrs) -> const std::string {
+                return getString(getOr(getObject(structuredAttrs.structuredAttrs), "outputName", "out"));
+            },
+        }, drv.env)
         : *selectedOutputs.begin();
 
     auto i = drv.outputs.find(outputName);

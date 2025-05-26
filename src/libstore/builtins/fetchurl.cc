@@ -26,9 +26,15 @@ static void builtinFetchurl(const BuiltinBuilderContext & ctx)
     if (!(ctx.drv.type().isFixed() || ctx.drv.type().isImpure()))
         throw Error("'builtin:fetchurl' must be a fixed-output or impure derivation");
 
+    auto * env_ = std::get_if<StringPairs>(&ctx.drv.env);
+    if (!env_)
+        throw Error("structured attrs is not supported with this builtin builder");
+
+    auto & env = *env_;
+
     auto storePath = ctx.outputs.at("out");
-    auto mainUrl = ctx.drv.env.at("url");
-    bool unpack = getOr(ctx.drv.env, "unpack", "") == "1";
+    auto mainUrl = env.at("url");
+    bool unpack = getOr(env, "unpack", "") == "1";
 
     /* Note: have to use a fresh fileTransfer here because we're in
        a forked process. */
@@ -52,8 +58,8 @@ static void builtinFetchurl(const BuiltinBuilderContext & ctx)
         else
             writeFile(storePath, *source);
 
-        auto executable = ctx.drv.env.find("executable");
-        if (executable != ctx.drv.env.end() && executable->second == "1") {
+        auto executable = env.find("executable");
+        if (executable != env.end() && executable->second == "1") {
             if (chmod(storePath.c_str(), 0755) == -1)
                 throw SysError("making '%1%' executable", storePath);
         }

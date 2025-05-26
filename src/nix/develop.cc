@@ -250,27 +250,33 @@ static StorePath getDerivationEnvironment(ref<Store> store, ref<Store> evalStore
 
     drv.args = {store->printStorePath(getEnvShPath)};
 
+    auto * env_ = std::get_if<StringPairs>(&drv.env);
+
+    if (env_)
+        throw Error("'nix develop' doesn't yet support structured attrs");
+    auto & env = *env_;
+
     /* Remove derivation checks. */
-    drv.env.erase("allowedReferences");
-    drv.env.erase("allowedRequisites");
-    drv.env.erase("disallowedReferences");
-    drv.env.erase("disallowedRequisites");
-    drv.env.erase("name");
+    env.erase("allowedReferences");
+    env.erase("allowedRequisites");
+    env.erase("disallowedReferences");
+    env.erase("disallowedRequisites");
+    env.erase("name");
 
     /* Rehash and write the derivation. FIXME: would be nice to use
        'buildDerivation', but that's privileged. */
     drv.name += "-env";
-    drv.env.emplace("name", drv.name);
+    env.emplace("name", drv.name);
     drv.inputSrcs.insert(std::move(getEnvShPath));
     if (experimentalFeatureSettings.isEnabled(Xp::CaDerivations)) {
         for (auto & output : drv.outputs) {
             output.second = DerivationOutput::Deferred {},
-            drv.env[output.first] = hashPlaceholder(output.first);
+            env[output.first] = hashPlaceholder(output.first);
         }
     } else {
         for (auto & output : drv.outputs) {
             output.second = DerivationOutput::Deferred { };
-            drv.env[output.first] = "";
+            env[output.first] = "";
         }
         auto hashesModulo = hashDerivationModulo(*evalStore, drv, true);
 
@@ -280,7 +286,7 @@ static StorePath getDerivationEnvironment(ref<Store> store, ref<Store> evalStore
             output.second = DerivationOutput::InputAddressed {
                 .path = outPath,
             };
-            drv.env[output.first] = store->printStorePath(outPath);
+            env[output.first] = store->printStorePath(outPath);
         }
     }
 

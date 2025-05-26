@@ -935,7 +935,7 @@ void DerivationBuilderImpl::startBuilder()
     writeStructuredAttrs();
 
     /* Handle exportReferencesGraph(), if set. */
-    if (!drv.structuredAttrs) {
+    if (std::holds_alternative<StringPairs>(drv.env)) {
         for (auto & [fileName, ss] : drvOptions.exportReferencesGraph) {
             StorePathSet storePathSet;
             for (auto & storePathS : ss) {
@@ -1177,8 +1177,9 @@ void DerivationBuilderImpl::startBuilder()
     /* Run the builder. */
     printMsg(lvlChatty, "executing builder '%1%'", drv.builder);
     printMsg(lvlChatty, "using builder args '%1%'", concatStringsSep(" ", drv.args));
-    for (auto & i : drv.env)
-        printMsg(lvlVomit, "setting builder env variable '%1%'='%2%'", i.first, i.second);
+    if (auto * drvEnv = std::get_if<StringPairs>(&drv.env))
+        for (auto & i : *drvEnv)
+            printMsg(lvlVomit, "setting builder env variable '%1%'='%2%'", i.first, i.second);
 
     /* Create the log file. */
     [[maybe_unused]] Path logFile = miscMethods->openLogFile();
@@ -1439,8 +1440,8 @@ void DerivationBuilderImpl::initTmpDir()
     /* In non-structured mode, set all bindings either directory in the
        environment or via a file, as specified by
        `DerivationOptions::passAsFile`. */
-    if (!drv.structuredAttrs) {
-        for (auto & i : drv.env) {
+    if (auto * drvEnv = std::get_if<StringPairs>(&drv.env)) {
+        for (auto & i : *drvEnv) {
             if (drvOptions.passAsFile.find(i.first) == drvOptions.passAsFile.end()) {
                 env[i.first] = i.second;
             } else {
@@ -1540,8 +1541,8 @@ void DerivationBuilderImpl::initEnv()
 
 void DerivationBuilderImpl::writeStructuredAttrs()
 {
-    if (drv.structuredAttrs) {
-        auto json = drv.structuredAttrs->prepareStructuredAttrs(
+    if (auto * parsedDrv =std::get_if<StructuredAttrs>(&drv.env)) {
+        auto json = parsedDrv->prepareStructuredAttrs(
             store,
             drvOptions,
             inputPaths,

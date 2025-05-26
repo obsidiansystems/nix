@@ -31,27 +31,9 @@ std::optional<StructuredAttrs> StructuredAttrs::tryParse(const StringPairs & env
         return {};
 }
 
-std::optional<StructuredAttrs> StructuredAttrs::tryExtract(StringPairs & env)
-{
-    /* Parse the __json attribute, if any. */
-    auto jsonAttr = env.find(envVarName);
-    if (jsonAttr != env.end()) {
-        auto encoded = std::move(jsonAttr->second);
-        env.erase(jsonAttr);
-        return parse(encoded);
-    } else
-        return {};
-}
-
 std::pair<std::string_view, std::string> StructuredAttrs::unparse() const
 {
     return {envVarName, structuredAttrs.dump()};
-}
-
-void StructuredAttrs::checkKeyNotInUse(const StringPairs & env)
-{
-    if (env.count(envVarName))
-        throw Error("Cannot have an environment variable named '__json'. This key is reserved for encoding structured attrs");
 }
 
 static std::regex shVarName("[A-Za-z_][A-Za-z0-9_]*");
