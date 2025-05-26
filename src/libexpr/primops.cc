@@ -1419,6 +1419,8 @@ static void derivationStrictInternal(
                     else if (i->name == state.sOutputHashMode) handleHashMode(s);
                     else if (i->name == state.sOutputs)
                         handleOutputs(tokenizeString<Strings>(s));
+                    else if (i->name == state.sJson)
+                        warn("In a derivation named '%s', setting structured attrs via '__json' is deprecated, and may be removed in a future version of Nix", drvName);
                 }
 
             }

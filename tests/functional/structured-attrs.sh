@@ -45,6 +45,9 @@ test "$(<<<"$jsonOut" jq '.variables.outputs.value.out' -r)" = "$(<<<"$jsonOut" 
 
 hackyExpr='derivation { name = "a"; system = "foo"; builder = "/bin/sh"; __json = builtins.toJSON { a = 1; }; }'
 
+# Check for deprecation message
+expectStderr 0 nix-instantiate --expr "$hackyExpr" --eval --strict | grepQuiet "In a derivation named 'a', setting structured attrs via '__json' is deprecated, and may be removed in a future version of Nix"
+
 # Check it works with the expected structured attrs
 hacky=$(nix-instantiate --expr "$hackyExpr")
 nix derivation show "$hacky" | jq --exit-status '."'"$hacky"'".env.__json | fromjson | . == {"a": 1}'
