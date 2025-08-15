@@ -113,8 +113,8 @@ nlohmann::json StructuredAttrs::prepareStructuredAttrs(
     json["outputs"] = std::move(outputsJson);
 
     /* Handle exportReferencesGraph. */
-    for (auto & [key, storePaths] : drvOptions.getParsedExportReferencesGraph(store)) {
-        json[key] = pathInfoToJSON(store, store.exportReferences(storePaths, storePaths));
+    for (auto & [key, closure] : drvOptions.getParsedExpandedExportReferencesGraph(store, inputPaths)) {
+        json[key] = pathInfoToJSON(store, closure);
     }
 
     return json;

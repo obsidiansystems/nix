@@ -800,11 +800,9 @@ void DerivationBuilderImpl::startBuilder()
 
     /* Handle exportReferencesGraph(), if set. */
     if (!drv.structuredAttrs) {
-        for (auto & [fileName, storePaths] : drvOptions.getParsedExportReferencesGraph(store)) {
+        for (auto & [fileName, closure] : drvOptions.getParsedExpandedExportReferencesGraph(store, inputPaths)) {
             /* Write closure info to <fileName>. */
-            writeFile(
-                tmpDir + "/" + fileName,
-                store.makeValidityRegistration(store.exportReferences(storePaths, inputPaths), false, false));
+            writeFile(tmpDir + "/" + fileName, store.makeValidityRegistration(closure, false, false));
         }
     }
 

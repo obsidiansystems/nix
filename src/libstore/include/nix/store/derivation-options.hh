@@ -123,7 +123,10 @@ struct DerivationOptions
      * `exportReferencesGraph` should all be store paths (with possible
      * suffix paths, but those are discarded).
      *
-     * @return The parsed path set for for each key in the map.
+     * Parse those paths, and then expand them into their closures in
+     * the way that is expected at build time.
+     *
+     * @return The expanded path set for for each key in the map.
      *
      * @todo Ideally, `exportReferencesGraph` would just store
      * `StorePath`s for this, but we can't just do that, because for CA
@@ -133,7 +136,7 @@ struct DerivationOptions
      * too, but that is a longer project.
      */
     std::map<std::string, StorePathSet>
-    getParsedExportReferencesGraph(const StoreDirConfig & store) const;
+    getParsedExpandedExportReferencesGraph(Store & store, const StorePathSet & inputWhitelist) const;
 
     /**
      * env: __sandboxProfile

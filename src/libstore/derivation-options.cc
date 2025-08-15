@@ -256,7 +256,7 @@ DerivationOptions::fromStructuredAttrs(const StringMap & env, const StructuredAt
 }
 
 std::map<std::string, StorePathSet>
-DerivationOptions::getParsedExportReferencesGraph(const StoreDirConfig & store) const
+DerivationOptions::getParsedExpandedExportReferencesGraph(Store & store, const StorePathSet & inputWhitelist) const
 {
     std::map<std::string, StorePathSet> res;
 
@@ -267,7 +267,7 @@ DerivationOptions::getParsedExportReferencesGraph(const StoreDirConfig & store) 
                 throw BuildError("'exportReferencesGraph' contains a non-store path '%1%'", storePathS);
             storePaths.insert(store.toStorePath(storePathS).first);
         }
-        res.insert_or_assign(fileName, storePaths);
+        res.insert_or_assign(fileName, store.exportReferences(storePaths, inputWhitelist));
     }
 
     return res;
