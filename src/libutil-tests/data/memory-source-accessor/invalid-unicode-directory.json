@@ -1,0 +1,18 @@
+{
+  "contents": {
+    "QULwkIBDRO+/vUVG": {
+      "contents": "file with invalid unicode name",
+      "executable": false,
+      "format": "raw",
+      "type": "regular"
+    },
+    "dmFsaWRuYW1l": {
+      "contents": "valid content",
+      "executable": false,
+      "format": "raw",
+      "type": "regular"
+    }
+  },
+  "format": "base64",
+  "type": "directory"
+}

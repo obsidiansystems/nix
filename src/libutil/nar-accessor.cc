@@ -294,16 +294,16 @@ static ListNarResult<deep> listNarImpl(SourceAccessor & accessor, const CanonPat
         typename ListNarResult<deep>::Directory dir;
         for (const auto & [name, type] : accessor.readDirectory(path)) {
             if constexpr (deep) {
-                dir.entries.emplace(name, listNarImpl<true>(accessor, path / name));
+                dir.entries.emplace(to_owned(as_bytes(name)), listNarImpl<true>(accessor, path / name));
             } else {
-                dir.entries.emplace(name, fso::Opaque{});
+                dir.entries.emplace(to_owned(as_bytes(name)), fso::Opaque{});
             }
         }
         return dir;
     }
     case SourceAccessor::Type::tSymlink:
         return typename ListNarResult<deep>::Symlink{
-            .target = accessor.readLink(path),
+            .target = to_owned(as_bytes(accessor.readLink(path))),
         };
     case SourceAccessor::Type::tBlock:
     case SourceAccessor::Type::tChar:

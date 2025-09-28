@@ -1,6 +1,7 @@
 #pragma once
 ///@file
 
+#include "nix/util/bytes.hh"
 #include "nix/util/configuration.hh"
 #include "nix/util/types.hh"
 #include "nix/util/serialise.hh"
@@ -148,10 +149,23 @@ public:
 Hash newHashAllowEmpty(std::string_view hashStr, std::optional<HashAlgorithm> ha);
 
 /**
- * Compute the hash of the given string.
+ * Compute the hash of the given bytes.
  */
-Hash hashString(
-    HashAlgorithm ha, std::string_view s, const ExperimentalFeatureSettings & xpSettings = experimentalFeatureSettings);
+Hash hashBytes(
+    HashAlgorithm ha, BytesView s, const ExperimentalFeatureSettings & xpSettings = experimentalFeatureSettings);
+
+/**
+ * Compute the hash of the given string.
+ *
+ * Just a thing wrapper around `hashBytes` for convenience.
+ *
+ * The string should be UTF-8.
+ */
+inline Hash hashString(
+    HashAlgorithm ha, std::string_view s, const ExperimentalFeatureSettings & xpSettings = experimentalFeatureSettings)
+{
+    return hashBytes(ha, as_bytes(s), xpSettings);
+}
 
 /**
  * Compute the hash of the given file, hashing its contents directly.

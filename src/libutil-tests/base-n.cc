@@ -2,11 +2,12 @@
 #include <numeric>
 
 #include "nix/util/base-n.hh"
+#include "nix/util/bytes.hh"
 #include "nix/util/error.hh"
 
 namespace nix {
 
-static const std::span<const std::byte> stringToByteSpan(const std::string_view s)
+static const BytesView stringToByteSpan(const std::string_view s)
 {
     return {(const std::byte *) s.data(), s.size()};
 }
@@ -31,7 +32,7 @@ TEST(base64Encode, encodeAndDecode)
     auto encoded = base64::encode(stringToByteSpan(s));
     auto decoded = base64::decode(encoded);
 
-    ASSERT_EQ(decoded, s);
+    ASSERT_EQ(as_str(decoded), s);
 }
 
 TEST(base64Encode, encodeAndDecodeNonPrintable)
@@ -42,8 +43,8 @@ TEST(base64Encode, encodeAndDecodeNonPrintable)
     auto encoded = base64::encode(std::as_bytes(std::span<const char>{std::string_view{s}}));
     auto decoded = base64::decode(encoded);
 
-    EXPECT_EQ(decoded.length(), 255u);
-    ASSERT_EQ(decoded, s);
+    EXPECT_EQ(decoded.size(), 255u);
+    ASSERT_EQ(as_str(decoded), std::string_view(s, 255));
 }
 
 /* ----------------------------------------------------------------------------
@@ -52,12 +53,12 @@ TEST(base64Encode, encodeAndDecodeNonPrintable)
 
 TEST(base64Decode, emptyString)
 {
-    ASSERT_EQ(base64::decode(""), "");
+    ASSERT_TRUE(base64::decode("").empty());
 }
 
 TEST(base64Decode, decodeAString)
 {
-    ASSERT_EQ(base64::decode("cXVvZCBlcmF0IGRlbW9uc3RyYW5kdW0="), "quod erat demonstrandum");
+    ASSERT_EQ(as_str(base64::decode("cXVvZCBlcmF0IGRlbW9uc3RyYW5kdW0=")), "quod erat demonstrandum");
 }
 
 TEST(base64Decode, decodeThrowsOnInvalidChar)
@@ -66,7 +67,7 @@ TEST(base64Decode, decodeThrowsOnInvalidChar)
 }
 
 // A SHA-512 hash. Hex encoded to be clearer / distinct from the Base64 test case.
-const std::string expectedDecoded = base16::decode(
+const Bytes expectedDecoded = base16::decode(
     "ee0f754c1bd8a18428ad14eaa3ead80ff8b96275af5012e7a8384f1f10490da056eec9ae3cc791a7a13a24e16e54df5bccdd109c7d53a14534bbd7360a300b11");
 
 struct Base64TrailingParseCase

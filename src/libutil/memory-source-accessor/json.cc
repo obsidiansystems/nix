@@ -1,12 +1,91 @@
 #include "nix/util/memory-source-accessor.hh"
 #include "nix/util/nar-accessor.hh"
 #include "nix/util/json-utils.hh"
+#include "nix/util/base-n.hh"
 
 #include <nlohmann/json.hpp>
 
 namespace nlohmann {
 
 using namespace nix;
+
+enum struct FsoJsonFormat {
+    Raw,
+    Base64,
+};
+
+template<>
+struct adl_serializer<FsoJsonFormat>
+{
+    static FsoJsonFormat from_json(const json & json)
+    {
+        auto str = getString(json);
+        if (str == "raw") {
+            return FsoJsonFormat::Raw;
+        } else if (str == "base64") {
+            return FsoJsonFormat::Base64;
+        } else {
+            throw Error("unknown format '%s'", str);
+        }
+    }
+
+    static void to_json(json & json, FsoJsonFormat format)
+    {
+        switch (format) {
+        case FsoJsonFormat::Raw:
+            json = "raw";
+            break;
+        case FsoJsonFormat::Base64:
+            json = "base64";
+            break;
+        }
+    }
+};
+
+/**
+ * Check if bytes contain valid UTF-8.
+ * Uses nlohmann/json's validation by attempting strict serialization.
+ *
+ * @return true if valid UTF-8, false otherwise
+ */
+static bool isValidUtf8(BytesView data)
+{
+    auto str = as_str(data);
+    try {
+        // Try to create and serialize a JSON string with strict UTF-8 validation
+        json test = str;
+        test.dump(-1, ' ', false, json::error_handler_t::strict);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+static Bytes decodeWithFormat(std::string_view data, FsoJsonFormat format)
+{
+    switch (format) {
+    case FsoJsonFormat::Raw:
+        return to_owned(as_bytes(data));
+    case FsoJsonFormat::Base64:
+        return base64::decode(data);
+    }
+}
+
+static std::string encodeWithFormat(BytesView data, FsoJsonFormat format)
+{
+    switch (format) {
+    case FsoJsonFormat::Raw:
+        return std::string(as_str(data));
+    case FsoJsonFormat::Base64:
+        return base64::encode(data);
+    }
+}
+
+static std::pair<std::string, FsoJsonFormat> encodeWithFormat(BytesView data)
+{
+    auto format = isValidUtf8(data) ? FsoJsonFormat::Raw : FsoJsonFormat::Base64;
+    return {encodeWithFormat(data, format), format};
+}
 
 // fso::Regular<RegularContents>
 template<>
@@ -15,7 +94,7 @@ MemorySourceAccessor::File::Regular adl_serializer<MemorySourceAccessor::File::R
     auto & obj = getObject(json);
     return MemorySourceAccessor::File::Regular{
         .executable = getBoolean(valueAt(obj, "executable")),
-        .contents = getString(valueAt(obj, "contents")),
+        .contents = decodeWithFormat(getString(valueAt(obj, "contents")), valueAt(obj, "format")),
     };
 }
 
@@ -23,9 +102,11 @@ template<>
 void adl_serializer<MemorySourceAccessor::File::Regular>::to_json(
     json & json, const MemorySourceAccessor::File::Regular & r)
 {
+    auto [contents, format] = encodeWithFormat(r.contents);
     json = {
         {"executable", r.executable},
-        {"contents", r.contents},
+        {"contents", std::move(contents)},
+        {"format", format},
     };
 }
 
@@ -60,16 +141,43 @@ void adl_serializer<NarListing::Regular>::to_json(json & j, const NarListing::Re
 template<typename Child>
 void adl_serializer<fso::DirectoryT<Child>>::to_json(json & j, const fso::DirectoryT<Child> & d)
 {
-    j["entries"] = d.entries;
+    /* Can only use raw names if every entry in this directory is valid UTF-8. */
+    auto format =
+        std::ranges::all_of(d.entries | std::views::keys, isValidUtf8) ? FsoJsonFormat::Raw : FsoJsonFormat::Base64;
+
+    j = {
+        {
+            "entries",
+            [&]() {
+                json::object_t entries;
+                for (const auto & [name, child] : d.entries) {
+                    entries[encodeWithFormat(name, format)] = child;
+                }
+                return entries;
+            }(),
+        },
+        {
+            "format",
+            format,
+        },
+    };
 }
 
 template<typename Child>
 fso::DirectoryT<Child> adl_serializer<fso::DirectoryT<Child>>::from_json(const json & json)
 {
     auto & obj = getObject(json);
-    return fso::DirectoryT<Child>{
-        .entries = valueAt(obj, "entries"),
-    };
+    auto & contentsObj = getObject(valueAt(obj, "entries"));
+    FsoJsonFormat format = valueAt(obj, "format");
+
+    fso::DirectoryT<Child> result;
+
+    for (const auto & [key, value] : contentsObj) {
+        auto decoded = decodeWithFormat(key, format);
+        result.entries.insert_or_assign(decoded, value.template get<Child>());
+    }
+
+    return result;
 }
 
 // fso::Symlink
@@ -77,14 +185,16 @@ fso::Symlink adl_serializer<fso::Symlink>::from_json(const json & json)
 {
     auto & obj = getObject(json);
     return fso::Symlink{
-        .target = getString(valueAt(obj, "target")),
+        .target = decodeWithFormat(getString(valueAt(obj, "target")), valueAt(obj, "format")),
     };
 }
 
 void adl_serializer<fso::Symlink>::to_json(json & json, const fso::Symlink & s)
 {
+    auto [target, format] = encodeWithFormat(s.target);
     json = {
-        {"target", s.target},
+        {"target", std::move(target)},
+        {"format", format},
     };
 }
 

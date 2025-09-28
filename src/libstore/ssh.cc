@@ -8,7 +8,7 @@
 
 namespace nix {
 
-static std::string parsePublicHostKey(std::string_view host, std::string_view sshPublicHostKey)
+static Bytes parsePublicHostKey(std::string_view host, std::string_view sshPublicHostKey)
 {
     try {
         return base64::decode(sshPublicHostKey);
@@ -98,7 +98,7 @@ void SSHMaster::addCommonSSHOpts(Strings & args)
         args.insert(args.end(), {"-i", keyFile});
     if (!sshPublicHostKey.empty()) {
         std::filesystem::path fileName = tmpDir->path() / "host-key";
-        writeFile(fileName.string(), authority.host + " " + sshPublicHostKey + "\n");
+        writeFile(fileName.string(), authority.host + " " + as_str(sshPublicHostKey) + "\n");
         args.insert(args.end(), {"-oUserKnownHostsFile=" + fileName.string()});
     }
     if (compress)

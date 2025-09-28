@@ -2,6 +2,7 @@
 
 #include "nix/util/file-system.hh"
 #include "nix/util/base-n.hh"
+#include "nix/util/bytes.hh"
 #include "nix/util/util.hh"
 #include <sodium.h>
 
@@ -20,17 +21,17 @@ Key::Key(std::string_view s, bool sensitiveValue)
     auto ss = BorrowedCryptoValue::parse(s);
 
     name = ss.name;
-    key = ss.payload;
+    auto payload = ss.payload;
 
     try {
-        if (name == "" || key == "")
+        if (name == "" || payload == "")
             throw FormatError("key is corrupt");
 
-        key = base64::decode(key);
+        key = base64::decode(payload);
     } catch (Error & e) {
         std::string extra;
         if (!sensitiveValue)
-            extra = fmt(" with raw value '%s'", key);
+            extra = fmt(" with raw value '%s'", payload);
         e.addTrace({}, "while decoding key named '%s'%s", name, extra);
         throw;
     }
@@ -38,7 +39,7 @@ Key::Key(std::string_view s, bool sensitiveValue)
 
 std::string Key::to_string() const
 {
-    return name + ":" + base64::encode(std::as_bytes(std::span<const char>{key}));
+    return name + ":" + base64::encode(key);
 }
 
 SecretKey::SecretKey(std::string_view s)
@@ -60,7 +61,7 @@ PublicKey SecretKey::toPublicKey() const
 {
     unsigned char pk[crypto_sign_PUBLICKEYBYTES];
     crypto_sign_ed25519_sk_to_pk(pk, (unsigned char *) key.data());
-    return PublicKey(name, std::string((char *) pk, crypto_sign_PUBLICKEYBYTES));
+    return PublicKey(name, to_owned(std::as_bytes(std::span{pk})));
 }
 
 SecretKey SecretKey::generate(std::string_view name)
@@ -70,7 +71,7 @@ SecretKey SecretKey::generate(std::string_view name)
     if (crypto_sign_keypair(pk, sk) != 0)
         throw Error("key generation failed");
 
-    return SecretKey(name, std::string((char *) sk, crypto_sign_SECRETKEYBYTES));
+    return SecretKey(name, to_owned(std::as_bytes(std::span{sk})));
 }
 
 PublicKey::PublicKey(std::string_view s)
@@ -92,7 +93,7 @@ bool PublicKey::verifyDetached(std::string_view data, std::string_view sig) cons
 
 bool PublicKey::verifyDetachedAnon(std::string_view data, std::string_view sig) const
 {
-    std::string sig2;
+    Bytes sig2;
     try {
         sig2 = base64::decode(sig);
     } catch (Error & e) {

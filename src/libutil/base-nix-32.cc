@@ -17,7 +17,7 @@ constexpr const std::array<unsigned char, 256> BaseNix32::reverseMap = [] {
     return map;
 }();
 
-std::string BaseNix32::encode(std::span<const std::byte> bs)
+std::string BaseNix32::encode(BytesView bs)
 {
     if (bs.size() == 0)
         return {};
@@ -39,9 +39,9 @@ std::string BaseNix32::encode(std::span<const std::byte> bs)
     return s;
 }
 
-std::string BaseNix32::decode(std::string_view s)
+Bytes BaseNix32::decode(std::string_view s)
 {
-    std::string res;
+    Bytes res;
     res.reserve((s.size() * 5 + 7) / 8); // ceiling(size * 5/8)
 
     for (unsigned int n = 0; n < s.size(); ++n) {
@@ -59,11 +59,11 @@ std::string BaseNix32::decode(std::string_view s)
 
         // Ensure res has enough space
         res.resize(i + 1);
-        res[i] |= digit << j;
+        res[i] = std::byte{uint8_t(uint8_t(res[i]) | (digit << j))};
 
         if (digit >> (8 - j)) {
             res.resize(i + 2);
-            res[i + 1] |= digit >> (8 - j);
+            res[i + 1] = std::byte{uint8_t(uint8_t(res[i + 1]) | (digit >> (8 - j)))};
         }
     }
 

@@ -1,6 +1,7 @@
 #pragma once
 ///@file
 
+#include "nix/util/bytes.hh"
 #include "nix/util/ref.hh"
 #include "nix/util/sync.hh"
 #include "nix/util/url.hh"
@@ -22,7 +23,7 @@ private:
     /**
      * Raw bytes, not Base64 encoding.
      */
-    const std::string sshPublicHostKey;
+    const Bytes sshPublicHostKey;
     const bool useMaster;
     const bool compress;
     const Descriptor logFD;

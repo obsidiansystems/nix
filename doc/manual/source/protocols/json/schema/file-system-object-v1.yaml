@@ -15,10 +15,22 @@ properties:
 # Enforce conditional structure based on `type`
 anyOf:
   - $ref: "#/$defs/regular"
-    required: ["type", "contents"]
+    required:
+      - "type"
+      - "format"
+      - "contents"
 
   - $ref: "#/$defs/directory"
-    required: ["type", "entries"]
+    required:
+      - "type"
+      - "format"
+      - "entries"
+
+  - $ref: "#/$defs/symlink"
+    required:
+      - "type"
+      - "format"
+      - "target"
 
   - $ref: "#/$defs/symlink"
     required: ["type", "target"]
@@ -28,24 +40,36 @@ anyOf:
     title: Regular File
     description: |
       See [Regular File](@docroot@/store/file-system-object.md#regular) in the manual for details.
-    required: ["contents"]
+    required:
+      - "contents"
+      - "format"
     properties:
       type:
         const: "regular"
       contents:
         type: string
-        description: File contents
+        description: File contents, encoded according to `format`.
       executable:
         type: boolean
         description: Whether the file is executable.
         default: false
+      format:
+        enum:
+          - "base64"
+          - "raw"
+        description: |
+          Whether `target` is encoded with base64 or as it.
+
+          `raw` can only be used if the string is valid unicode.
     additionalProperties: false
 
   directory:
     title: Directory
     description: |
       See [Directory](@docroot@/store/file-system-object.md#directory) in the manual for details.
-    required: ["entries"]
+    required:
+      - "entries"
+      - "format"
     properties:
       type:
         const: "directory"
@@ -53,19 +77,39 @@ anyOf:
         type: object
         description: |
           Map of names to nested file system objects (for type=directory)
+
+          Names are encoded according to `format`.
         additionalProperties:
           $ref: "#"
+      format:
+        enum:
+          - "base64"
+          - "raw"
+        description: |
+          Whether the keys of `contents` are encoded with base64 or as it.
+
+          `raw` can only be used if the string is valid unicode.
     additionalProperties: false
 
   symlink:
     title: Symbolic Link
     description: |
       See [Symbolic Link](@docroot@/store/file-system-object.md#symlink) in the manual for details.
-    required: ["target"]
+    required:
+      - "target"
+      - "format"
     properties:
       type:
         const: "symlink"
       target:
         type: string
-        description: Target path of the symlink.
+        description: Target path of the symlink, encoded according to `format`.
+      format:
+        enum:
+          - "base64"
+          - "raw"
+        description: |
+          Whether `target` is encoded with base64 or as it.
+
+          `raw` can only be used if the string is valid unicode.
     additionalProperties: false

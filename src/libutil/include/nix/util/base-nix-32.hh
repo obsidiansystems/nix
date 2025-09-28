@@ -5,9 +5,9 @@
 #include <cstdint>
 #include <optional>
 #include <string>
-#include <span>
 
 #include "nix/util/array-from-string-literal.hh"
+#include "nix/util/bytes.hh"
 
 namespace nix {
 
@@ -39,9 +39,9 @@ public:
         return (originalLength * 8 - 1) / 5 + 1;
     }
 
-    static std::string encode(std::span<const std::byte> originalData);
+    static std::string encode(BytesView originalData);
 
-    static std::string decode(std::string_view s);
+    static Bytes decode(std::string_view s);
 };
 
 } // namespace nix

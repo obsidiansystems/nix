@@ -10,7 +10,7 @@ namespace nix {
 
 constexpr static const std::array<char, 16> base16Chars = "0123456789abcdef"_arrayNoNull;
 
-std::string base16::encode(std::span<const std::byte> b)
+std::string base16::encode(BytesView b)
 {
     std::string buf;
     buf.reserve(b.size() * 2);
@@ -21,7 +21,7 @@ std::string base16::encode(std::span<const std::byte> b)
     return buf;
 }
 
-std::string base16::decode(std::string_view s)
+Bytes base16::decode(std::string_view s)
 {
     auto parseHexDigit = [&](char c) {
         if (c >= '0' && c <= '9')
@@ -36,11 +36,11 @@ std::string base16::decode(std::string_view s)
     assert(s.size() % 2 == 0);
     auto decodedSize = s.size() / 2;
 
-    std::string res;
+    Bytes res;
     res.reserve(decodedSize);
 
     for (unsigned int i = 0; i < decodedSize; i++) {
-        res.push_back(parseHexDigit(s[i * 2]) << 4 | parseHexDigit(s[i * 2 + 1]));
+        res.push_back(std::byte{uint8_t(parseHexDigit(s[i * 2]) << 4 | parseHexDigit(s[i * 2 + 1]))});
     }
 
     return res;
@@ -49,7 +49,7 @@ std::string base16::decode(std::string_view s)
 constexpr static const std::array<char, 64> base64Chars =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"_arrayNoNull;
 
-std::string base64::encode(std::span<const std::byte> s)
+std::string base64::encode(BytesView s)
 {
     std::string res;
     res.reserve((s.size() + 2) / 3 * 4);
@@ -72,7 +72,7 @@ std::string base64::encode(std::span<const std::byte> s)
     return res;
 }
 
-std::string base64::decode(std::string_view s)
+Bytes base64::decode(std::string_view s)
 {
     constexpr char npos = -1;
     constexpr std::array<char, 256> base64DecodeChars = [&] {
@@ -84,7 +84,7 @@ std::string base64::decode(std::string_view s)
         return result;
     }();
 
-    std::string res;
+    Bytes res;
     // Some sequences are missing the padding consisting of up to two '='.
     //                    vvv
     res.reserve((s.size() + 2) / 4 * 3);
@@ -103,7 +103,7 @@ std::string base64::decode(std::string_view s)
         bits += 6;
         d = d << 6 | digit;
         if (bits >= 8) {
-            res.push_back(d >> (bits - 8) & 0xff);
+            res.push_back(std::byte{uint8_t(d >> (bits - 8) & 0xff)});
             bits -= 8;
         }
     }

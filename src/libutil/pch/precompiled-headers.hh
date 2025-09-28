@@ -1,3 +1,4 @@
+#include "nix/util/bytes.hh"
 #include "nix/util/util.hh"
 #include "nix/util/file-system.hh"
 #include "nix/util/serialise.hh"

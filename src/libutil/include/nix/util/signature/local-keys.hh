@@ -2,6 +2,7 @@
 ///@file
 
 #include "nix/util/types.hh"
+#include "nix/util/bytes.hh"
 
 #include <map>
 
@@ -30,7 +31,7 @@ struct BorrowedCryptoValue
 struct Key
 {
     std::string name;
-    std::string key;
+    Bytes key;
 
     std::string to_string() const;
 
@@ -45,7 +46,7 @@ protected:
      */
     Key(std::string_view s, bool sensitiveValue);
 
-    Key(std::string_view name, std::string && key)
+    Key(std::string_view name, Bytes && key)
         : name(name)
         , key(std::move(key))
     {
@@ -68,7 +69,7 @@ struct SecretKey : Key
     static SecretKey generate(std::string_view name);
 
 private:
-    SecretKey(std::string_view name, std::string && key)
+    SecretKey(std::string_view name, Bytes && key)
         : Key(name, std::move(key))
     {
     }
@@ -94,7 +95,7 @@ struct PublicKey : Key
     bool verifyDetachedAnon(std::string_view data, std::string_view sigs) const;
 
 private:
-    PublicKey(std::string_view name, std::string && key)
+    PublicKey(std::string_view name, Bytes && key)
         : Key(name, std::move(key))
     {
     }

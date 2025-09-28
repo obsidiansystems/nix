@@ -1,4 +1,6 @@
 #include "nix/util/memory-source-accessor.hh"
+#include "nix/util/base-n.hh"
+#include "nix/util/bytes.hh"
 #include "nix/util/json-utils.hh"
 
 namespace nix {
@@ -30,7 +32,7 @@ MemorySourceAccessor::File * MemorySourceAccessor::open(const CanonPath & path, 
             return nullptr;
         auto & curDir = *curDirP;
 
-        auto i = curDir.entries.find(name);
+        auto i = curDir.entries.find(as_bytes(name));
         if (i == curDir.entries.end()) {
             if (!create)
                 return nullptr;
@@ -39,7 +41,7 @@ MemorySourceAccessor::File * MemorySourceAccessor::open(const CanonPath & path, 
                 i = curDir.entries.insert(
                     i,
                     {
-                        std::string{name},
+                        to_owned(as_bytes(name)),
                         File::Directory{},
                     });
             }
@@ -59,7 +61,7 @@ std::string MemorySourceAccessor::readFile(const CanonPath & path)
     if (!f)
         throw Error("file '%s' does not exist", path);
     if (auto * r = std::get_if<File::Regular>(&f->raw))
-        return r->contents;
+        return std::string{as_str(r->contents)};
     else
         throw Error("file '%s' is not a regular file", path);
 }
@@ -109,7 +111,7 @@ MemorySourceAccessor::DirEntries MemorySourceAccessor::readDirectory(const Canon
     if (auto * d = std::get_if<File::Directory>(&f->raw)) {
         DirEntries res;
         for (auto & [name, file] : d->entries)
-            res.insert_or_assign(name, file.lstat().type);
+            res.insert_or_assign(std::string(as_str(name)), file.lstat().type);
         return res;
     } else
         throw Error("file '%s' is not a directory", path);
@@ -122,12 +124,12 @@ std::string MemorySourceAccessor::readLink(const CanonPath & path)
     if (!f)
         throw Error("file '%s' does not exist", path);
     if (auto * s = std::get_if<File::Symlink>(&f->raw))
-        return s->target;
+        return std::string{as_str(s->target)};
     else
         throw Error("file '%s' is not a symbolic link", path);
 }
 
-SourcePath MemorySourceAccessor::addFile(CanonPath path, std::string && contents)
+SourcePath MemorySourceAccessor::addFile(CanonPath path, Bytes && contents)
 {
     // Create root directory automatically if necessary as a convenience.
     if (!root && !path.isRoot())
@@ -142,6 +144,11 @@ SourcePath MemorySourceAccessor::addFile(CanonPath path, std::string && contents
         throw Error("file '%s' is not a regular file", path);
 
     return SourcePath{ref(shared_from_this()), path};
+}
+
+SourcePath MemorySourceAccessor::addFile(CanonPath path, std::string_view contents)
+{
+    return addFile(path, to_owned(as_bytes(contents)));
 }
 
 using File = MemorySourceAccessor::File;
@@ -192,9 +199,10 @@ void CreateMemoryRegularFile::preallocateContents(uint64_t len)
     regularFile.contents.reserve(len);
 }
 
-void CreateMemoryRegularFile::operator()(std::string_view data)
+void CreateMemoryRegularFile::operator()(std::string_view data_)
 {
-    regularFile.contents += data;
+    auto data = as_bytes(data_);
+    regularFile.contents.insert(regularFile.contents.end(), data.begin(), data.end());
 }
 
 void MemorySink::createSymlink(const CanonPath & path, const std::string & target)
@@ -203,7 +211,7 @@ void MemorySink::createSymlink(const CanonPath & path, const std::string & targe
     if (!f)
         throw Error("file '%s' cannot be made because some parent file is not a directory", path);
     if (auto * s = std::get_if<File::Symlink>(&f->raw))
-        s->target = target;
+        s->target = to_owned(as_bytes(target));
     else
         throw Error("file '%s' is not a symbolic link", path);
 }

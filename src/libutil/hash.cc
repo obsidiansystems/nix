@@ -149,17 +149,21 @@ static Hash parseLowLevel(
     const ExperimentalFeatureSettings & xpSettings = experimentalFeatureSettings)
 {
     Hash res{algo, xpSettings};
-    std::string d;
+    Bytes decoded;
     try {
-        d = pair.decode(rest);
+        decoded = pair.decode(rest);
     } catch (Error & e) {
         e.addTrace({}, "While decoding hash '%s'", rest);
     }
-    if (d.size() != res.hashSize)
+    if (decoded.size() != res.hashSize)
         throw BadHash(
-            "invalid %s hash '%s', length %d != expected length %d", pair.encodingName, rest, d.size(), res.hashSize);
+            "invalid %s hash '%s', length %d != expected length %d",
+            pair.encodingName,
+            rest,
+            decoded.size(),
+            res.hashSize);
     assert(res.hashSize);
-    memcpy(res.hash, d.data(), res.hashSize);
+    memcpy(res.hash, decoded.data(), res.hashSize);
 
     return res;
 }
@@ -346,12 +350,12 @@ static void finish(HashAlgorithm ha, Hash::Ctx & ctx, unsigned char * hash)
         SHA512_Final(hash, &ctx.sha512);
 }
 
-Hash hashString(HashAlgorithm ha, std::string_view s, const ExperimentalFeatureSettings & xpSettings)
+Hash hashBytes(HashAlgorithm ha, BytesView s, const ExperimentalFeatureSettings & xpSettings)
 {
     Hash::Ctx ctx;
     Hash hash(ha, xpSettings);
     start(ha, ctx);
-    update(ha, ctx, s);
+    update(ha, ctx, as_str(s));
     finish(ha, ctx, hash.hash);
     return hash;
 }

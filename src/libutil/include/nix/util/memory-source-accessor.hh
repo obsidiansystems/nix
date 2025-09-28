@@ -31,9 +31,12 @@ struct Regular
 template<typename Child>
 struct DirectoryT
 {
-    using Name = std::string;
+    /**
+     * Must not contain `/` or `\0`, everything else is fine.
+     */
+    using Name = Bytes;
 
-    std::map<Name, Child, std::less<>> entries;
+    std::map<Name, Child, BytesCompare> entries;
 
     inline bool operator==(const DirectoryT &) const noexcept;
     inline std::strong_ordering operator<=>(const DirectoryT &) const noexcept;
@@ -41,7 +44,10 @@ struct DirectoryT
 
 struct Symlink
 {
-    std::string target;
+    /**
+     * Must not `\0`, everything else is fine.
+     */
+    Bytes target;
 
     auto operator<=>(const Symlink &) const = default;
 };
@@ -108,7 +114,7 @@ VariantT<RegularContents, recur>::operator<=>(const VariantT<RegularContents, re
  */
 struct MemorySourceAccessor : virtual SourceAccessor
 {
-    using File = fso::VariantT<std::string, true>;
+    using File = fso::VariantT<Bytes, true>;
 
     std::optional<File> root;
 
@@ -138,7 +144,13 @@ struct MemorySourceAccessor : virtual SourceAccessor
      */
     File * open(const CanonPath & path, std::optional<File> create);
 
-    SourcePath addFile(CanonPath path, std::string && contents);
+    SourcePath addFile(CanonPath path, Bytes && contents);
+
+    /**
+     * Small wrapper of the other `addFile`, purely for convenience when
+     * the file in question to be added is a string.
+     */
+    SourcePath addFile(CanonPath path, std::string_view contents);
 };
 
 /**

@@ -2,7 +2,7 @@
 ///@file
 
 #include <string>
-#include <span>
+#include "nix/util/bytes.hh"
 
 namespace nix {
 
@@ -19,12 +19,12 @@ namespace base16 {
 /**
  * Encode arbitrary bytes as Base16.
  */
-std::string encode(std::span<const std::byte> b);
+std::string encode(BytesView b);
 
 /**
  * Decode arbitrary Base16 string to bytes.
  */
-std::string decode(std::string_view s);
+Bytes decode(std::string_view s);
 
 } // namespace base16
 
@@ -41,12 +41,12 @@ namespace base64 {
 /**
  * Encode arbitrary bytes as Base64.
  */
-std::string encode(std::span<const std::byte> b);
+std::string encode(BytesView b);
 
 /**
  * Decode arbitrary Base64 string to bytes.
  */
-std::string decode(std::string_view s);
+Bytes decode(std::string_view s);
 
 } // namespace base64
 

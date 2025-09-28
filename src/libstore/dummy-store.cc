@@ -1,5 +1,6 @@
 #include "nix/store/store-registration.hh"
 #include "nix/util/archive.hh"
+#include "nix/util/bytes.hh"
 #include "nix/util/callback.hh"
 #include "nix/util/memory-source-accessor.hh"
 #include "nix/util/json-utils.hh"
@@ -160,7 +161,7 @@ struct DummyStoreImpl : DummyStore
                     .method = ContentAddressMethod::Raw::Text,
                     .hash = hashString(
                         HashAlgorithm::SHA256,
-                        std::get<MemorySourceAccessor::File::Regular>(accessor->root->raw).contents),
+                        as_str(std::get<MemorySourceAccessor::File::Regular>(accessor->root->raw).contents)),
                 };
                 callback(std::move(info));
                 return;
@@ -359,7 +360,7 @@ struct DummyStoreImpl : DummyStore
                 /* compute path info on demand */
                 auto res2 = make_ref<MemorySourceAccessor>();
                 res2->root = MemorySourceAccessor::File::Regular{
-                    .contents = kv.second.unparse(*this, false),
+                    .contents = to_owned(as_bytes(kv.second.unparse(*this, false))),
                 };
                 res = std::move(res2).get_ptr();
             });

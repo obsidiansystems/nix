@@ -5,20 +5,25 @@
         "baz": {
           "contents": "good day,\n\u0000\n\tworld!",
           "executable": true,
+          "format": "raw",
           "type": "regular"
         },
         "quux": {
+          "format": "raw",
           "target": "/over/there",
           "type": "symlink"
         }
       },
+      "format": "raw",
       "type": "directory"
     },
     "foo": {
       "contents": "hello\n\u0000\n\tworld!",
       "executable": false,
+      "format": "raw",
       "type": "regular"
     }
   },
+  "format": "raw",
   "type": "directory"
 }
