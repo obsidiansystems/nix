@@ -23,6 +23,26 @@ description: |
 
   -->
 
+  <!--
+
+  See the remainder of this discription for a more high-level discussion of the problem and possible solutions.
+
+  When creating the store path of a content-addressed store object, the `hash` from this will be combined with the references of the store object in order to create a content-address that is properly sensitive to the entirety of the store object — file system objects and references alike.
+  So it is that store path that is arguably the *true* content-address for content-addressed store paths, not this data type.
+
+  The only problem with that is that store paths are truncated in various ways from the underlying hashes, so their cryptographic strength can be reasonably doubted.
+  Given that uncertain cryptographic strength, we do need something else.
+  Currently this in conjunction with the reference list captures all the content securely, more concisely.
+  (Though the reference list is still arbitrarily-sized, it is presumably in practice still way smaller than the file system object data).
+
+  > **Note**
+  >
+  > A hypothetical hash of both of those which is *not* so truncated would be even better, as it would be secure and fixed-size.
+  > A hypothetical method content-addressing store objects where we compute the store paths just from such a hash, so we don't need to "dereference" the hash to get the underlying reference list and rehash it, would be better still.
+  > Perhaps only a new method of content-addressing would achieve this, or perhaps we can reimagine the current formats to reveal this sort hash just prior to truncation.
+
+  -->
+
 type: object
 properties:
   method:
