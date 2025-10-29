@@ -35,6 +35,10 @@ oneOf:
 
 $defs:
   base:
+    $ref: "#/$defs/baseFields"
+    additionalProperties: false
+
+  baseFields:
     title: Store Object Info
     description: |
       Basic store object metadata containing only intrinsic properties.
@@ -101,32 +105,25 @@ $defs:
           If the store object is [content-addressed](@docroot@/store/store-object/content-address.md),
           this is the content address of this store object's file system object, used to compute its store path.
           Otherwise (i.e. if it is [input-addressed](@docroot@/glossary.md#gloss-input-addressed-store-object)), this is `null`.
-    additionalProperties: false
 
   impure:
-    title: Store Object Info with Impure Fields
+    allOf:
+      - $ref: "#/$defs/baseFields"
+      - $ref: "#/$defs/impureFields"
+    additionalProperties: false
+
+  impureFields:
+    title: Impure Fields
     description: |
-      Store object metadata including impure fields that are not *intrinsic* properties.
+      Additional fields that are not *intrinsic* properties.
       In other words, the same store object in different stores could have different values for these impure fields.
     type: object
     required:
-      - version
-      - narHash
-      - narSize
-      - references
-      - ca
-      # impure
       - deriver
       - registrationTime
       - ultimate
       - signatures
     properties:
-      version: { $ref: "#/$defs/base/properties/version" }
-      path: { $ref: "#/$defs/base/properties/path" }
-      narHash: { $ref: "#/$defs/base/properties/narHash" }
-      narSize: { $ref: "#/$defs/base/properties/narSize" }
-      references: { $ref: "#/$defs/base/properties/references" }
-      ca: { $ref: "#/$defs/base/properties/ca" }
       deriver:
         type: ["string", "null"]
         title: Deriver
@@ -174,44 +171,28 @@ $defs:
           The total size of this store object and every other object in its [closure](@docroot@/glossary.md#gloss-closure).
 
           > This field is not stored at all, but computed by traversing the other fields across all the store objects in a closure.
-    additionalProperties: false
 
   narInfo:
-    title: Store Object Info with Impure fields and NAR Info
+    allOf:
+      - $ref: "#/$defs/baseFields"
+      - $ref: "#/$defs/impureFields"
+      - $ref: "#/$defs/narInfoFields"
+    additionalProperties: false
+
+  narInfoFields:
+    title: NAR Info Fields
     description: |
-      The store object info in the "binary cache" family of Nix store type contain extra information pertaining to *downloads* of the store object in question.
-      (This store info is called "NAR info", since the downloads take the form of [Nix Archives](@docroot@/store/file-system-object/content-address.md#serial-nix-archive, and the metadata is served in a file with a `.narinfo` extension.)
+      Additional fields for binary cache stores that contain extra information pertaining to *downloads* of the store object.
+      (This store info is called "NAR info", since the downloads take the form of [Nix Archives](@docroot@/store/file-system-object/content-address.md#serial-nix-archive), and the metadata is served in a file with a `.narinfo` extension.)
 
       This download information, being specific to how the store object happens to be stored and transferred, is also considered to be non-intrinsic / impure.
     type: object
     required:
-      - version
-      - narHash
-      - narSize
-      - references
-      - ca
-      # impure
-      - deriver
-      - registrationTime
-      - ultimate
-      - signatures
-      # nar
       - url
       - compression
       - downloadHash
       - downloadSize
     properties:
-      version: { $ref: "#/$defs/base/properties/version" }
-      path: { $ref: "#/$defs/base/properties/path" }
-      narHash: { $ref: "#/$defs/base/properties/narHash" }
-      narSize: { $ref: "#/$defs/base/properties/narSize" }
-      references: { $ref: "#/$defs/base/properties/references" }
-      ca: { $ref: "#/$defs/base/properties/ca" }
-      deriver: { $ref: "#/$defs/impure/properties/deriver" }
-      registrationTime: { $ref: "#/$defs/impure/properties/registrationTime" }
-      ultimate: { $ref: "#/$defs/impure/properties/ultimate" }
-      signatures: { $ref: "#/$defs/impure/properties/signatures" }
-      closureSize: { $ref: "#/$defs/impure/properties/closureSize" }
       url:
         type: string
         title: URL
@@ -255,4 +236,3 @@ $defs:
           > This is an impure "`.narinfo`" field that may not be included in certain contexts.
 
           > This field is not stored at all, but computed by traversing the other fields across all the store objects in a closure.
-    additionalProperties: false
