@@ -444,6 +444,12 @@ bool nix_has_attr_byname(nix_c_context * context, const nix_value * value, EvalS
 nix_value *
 nix_get_attr_byidx(nix_c_context * context, nix_value * value, EvalState * state, unsigned int i, const char ** name);
 
+struct nix_pascal_string
+{
+    size_t len;
+    char data[0];
+};
+
 /** @brief Get an attribute by index, without forcing evaluation of the attribute's value
  * @ingroup value_extract
  *
@@ -471,7 +477,7 @@ nix_get_attr_byidx(nix_c_context * context, nix_value * value, EvalState * state
  * @return value, NULL in case of errors
  */
 nix_value * nix_get_attr_byidx_lazy(
-    nix_c_context * context, nix_value * value, EvalState * state, unsigned int i, const char ** name);
+    nix_c_context * context, nix_value * value, EvalState * state, unsigned int i, const nix_pascal_string ** name);
 
 /** @brief Get an attribute name by index
  * @ingroup value_extract

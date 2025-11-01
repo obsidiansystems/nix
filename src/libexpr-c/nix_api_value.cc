@@ -447,8 +447,13 @@ nix_get_attr_byidx(nix_c_context * context, nix_value * value, EvalState * state
     NIXC_CATCH_ERRS_NULL
 }
 
+static const nix_pascal_string * castStringData(const nix::StringData * s)
+{
+    return reinterpret_cast<const nix_pascal_string *>(s);
+};
+
 nix_value * nix_get_attr_byidx_lazy(
-    nix_c_context * context, nix_value * value, EvalState * state, unsigned int i, const char ** name)
+    nix_c_context * context, nix_value * value, EvalState * state, unsigned int i, const nix_pascal_string ** name)
 {
     if (context)
         context->last_err_code = NIX_OK;
@@ -460,7 +465,7 @@ nix_value * nix_get_attr_byidx_lazy(
             return nullptr;
         }
         const nix::Attr & a = (*v.attrs())[i];
-        *name = state->state.symbols[a.name].c_str();
+        *name = castStringData(state->state.symbols[a.name].string_data());
         nix_gc_incref(nullptr, a.value);
         // Note: intentionally NOT calling forceValue() to keep the attribute lazy
         return as_nix_value_ptr(a.value);

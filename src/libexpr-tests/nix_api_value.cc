@@ -527,13 +527,13 @@ TEST_F(nix_api_expr_test, nix_get_attr_byidx_lazy)
 
     // Gather all attributes into a map (proper contract usage)
     std::map<std::string, nix_value *> attrMap;
-    const char * name;
+    const nix_pascal_string * name;
 
     for (unsigned int i = 0; i < attrCount; i++) {
         nix_value * attr = nix_get_attr_byidx_lazy(ctx, value, state, i, &name);
         assert_ctx_ok();
         ASSERT_NE(nullptr, attr);
-        attrMap[std::string(name)] = attr;
+        attrMap[std::string(name->data, name->len)] = attr;
     }
 
     // Now test the gathered attributes
