@@ -50,4 +50,4 @@ However, if \\(b\\) and \\(c\\)'s entries can be combined in isolation, there wi
 
 [derivation]: ./derivation/index.md
 [output]: ./derivation/outputs/index.md
-[store object]: @docroot@/store/store-object.md
+[store object]: @docroot@/store/store-object/index.md

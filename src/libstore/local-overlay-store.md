@@ -90,7 +90,7 @@ The parts of a local overlay store are as follows:
     (This allows us to use the same SQL Schema as the [local store]'s SQLite database, as foreign keys in that schema enforce closure metadata to be self-contained in this way.)
 
 [file system object]: @docroot@/store/file-system-object.md
-[store object]: @docroot@/store/store-object.md
+[store object]: @docroot@/store/store-object/index.md
 
 
 ### Example filesystem layout

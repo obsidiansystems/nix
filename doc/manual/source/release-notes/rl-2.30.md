@@ -89,7 +89,7 @@ This release has a number performance improvements, in particular:
   In practice, however, we doubt even more building is very likely to happen.
   Remote stores that are missing dependencies in arbitrary ways (e.g. corruption) don't seem to be very common.
 
-  On the contrary, when remote stores fail to implement the [closure property](@docroot@/store/store-object.md#closure-property), it is usually an *intentional* choice on the part of the remote store, because it wishes to serve as an "overlay" store over another store, such as `https://cache.nixos.org`.
+  On the contrary, when remote stores fail to implement the [closure property](@docroot@/store/store-object/index.md#closure-property), it is usually an *intentional* choice on the part of the remote store, because it wishes to serve as an "overlay" store over another store, such as `https://cache.nixos.org`.
   If an "incomplete closure" is encountered in that situation, the right fix is not to do some sort of "franken-building" as this feature implemented, but instead to make sure both substituters are enabled in the settings.
 
   (In the future, we should make it easier for remote stores to indicate this to clients, to catch settings that won't work in general before a missing dependency is actually encountered.)

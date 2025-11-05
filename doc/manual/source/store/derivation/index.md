@@ -114,7 +114,7 @@ Nix can schedule builds such that it automatically builds on other platforms by 
 
 [content-addressing derivation]: @docroot@/glossary.md#gloss-content-addressing-derivation
 [realise]: @docroot@/glossary.md#gloss-realise
-[store object]: @docroot@/store/store-object.md
+[store object]: @docroot@/store/store-object/index.md
 [store path]: @docroot@/store/store-path.md
 
 ### Process creation fields {#process-creation-fields}

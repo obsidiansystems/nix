@@ -29,7 +29,7 @@ If no substitutes are available and no store derivation is given, realisation fa
 [valid]: @docroot@/glossary.md#gloss-validity
 [store derivation]: @docroot@/glossary.md#gloss-store-derivation
 [output paths]: @docroot@/glossary.md#gloss-output-path
-[store objects]: @docroot@/store/store-object.md
+[store objects]: @docroot@/store/store-object/index.md
 [closure]: @docroot@/glossary.md#gloss-closure
 [substituters]: @docroot@/command-ref/conf-file.md#conf-substituters
 [content-addressing derivations]: @docroot@/development/experimental-features.md#xp-feature-ca-derivations

@@ -159,7 +159,7 @@ Please observe these guidelines to ease reviews:
   ```
   A [store object] contains a [file system object] and [references] to other store objects.
 
-  [store object]: @docroot@/store/store-object.md
+  [store object]: @docroot@/store/store-object/index.md
   [file system object]: @docroot@/architecture/file-system-object.md
   [references]: @docroot@/glossary.md#gloss-reference
   ```

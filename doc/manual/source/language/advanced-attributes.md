@@ -133,7 +133,7 @@ See the [corresponding section in the derivation output page](@docroot@/store/de
     [`disallowedReferences`](#adv-attr-disallowedReferences) and [`disallowedRequisites`](#adv-attr-disallowedRequisites),
     the following attributes are available:
 
-    - `maxSize` defines the maximum size of the resulting [store object](@docroot@/store/store-object.md).
+    - `maxSize` defines the maximum size of the resulting [store object](@docroot@/store/store-object/index.md).
     - `maxClosureSize` defines the maximum size of the output's closure.
     - `ignoreSelfRefs` controls whether self-references should be considered when
       checking for allowed references/requisites.
@@ -369,6 +369,6 @@ Here is more information on the `output*` attributes, and what values they may b
 
 [fixed-output derivation]: @docroot@/glossary.md#gloss-fixed-output-derivation
 [file system object]: @docroot@/store/file-system-object.md
-[store object]: @docroot@/store/store-object.md
+[store object]: @docroot@/store/store-object/index.md
 [xp-feature-dynamic-derivations]: @docroot@/development/experimental-features.md#xp-feature-dynamic-derivations
 [xp-feature-git-hashing]: @docroot@/development/experimental-features.md#xp-feature-git-hashing

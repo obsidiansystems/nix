@@ -212,7 +212,7 @@ And those derivations need *not* be resolved.
 It is those dynamic non-resolved derivations which are the source of non-termination.
 By the same token, they are also the reason why dynamic derivations offer greater expressive power.
 
-[store object]: @docroot@/store/store-object.md
+[store object]: @docroot@/store/store-object/index.md
 [inputs]: @docroot@/store/derivation/index.md#inputs
 [build trace]: @docroot@/store/build-trace.md
 [deriving-path]: @docroot@/store/derivation/index.md#deriving-path

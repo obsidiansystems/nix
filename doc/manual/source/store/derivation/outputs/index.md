@@ -1,7 +1,7 @@
 # Derivation Outputs and Types of Derivations
 
 As stated on the [main pages on derivations](../index.md#store-derivation),
-a derivation produces [store objects](@docroot@/store/store-object.md), which are known as the *outputs* of the derivation.
+a derivation produces [store objects](@docroot@/store/store-object/index.md), which are known as the *outputs* of the derivation.
 Indeed, the entire point of derivations is to produce these outputs, and to reliably and reproducibly produce these derivations each time the derivation is run.
 
 One of the parts of a derivation is its *outputs specification*, which specifies certain information about the outputs the derivation produces when run.
@@ -24,7 +24,7 @@ However, an output spec named "out" describes and output store object whose name
 >
 > - The store path of `dev` will be: `/nix/store/<hash>-hello-dev`.
 
-The outputs are the derivations are the [store objects](@docroot@/store/store-object.md) it is obligated to produce.
+The outputs are the derivations are the [store objects](@docroot@/store/store-object/index.md) it is obligated to produce.
 
 > **Note**
 >

@@ -2,7 +2,7 @@
 "$id": "https://nix.dev/manual/nix/latest/protocols/json/schema/store-object-info-v1.json"
 title: Store Object Info
 description: |
-  Information about a [store object](@docroot@/store/store-object.md).
+  Information about a [store object](@docroot@/store/store-object/index.md).
 
   This schema describes the JSON representation of store object metadata as returned by commands like [`nix path-info --json`](@docroot@/command-ref/new-cli/nix3-path-info.md).
 

@@ -137,7 +137,7 @@ It outputs an attribute set, and produces a [store derivation] as a side effect 
 
   By default, a derivation produces a single output called `out`.
   However, derivations can produce multiple outputs.
-  This allows the associated [store objects](@docroot@/store/store-object.md) and their [closures](@docroot@/glossary.md#gloss-closure) to be copied or garbage-collected separately.
+  This allows the associated [store objects](@docroot@/store/store-object/index.md) and their [closures](@docroot@/glossary.md#gloss-closure) to be copied or garbage-collected separately.
 
   > **Example**
   >

@@ -85,4 +85,4 @@ $ nix-collect-garbage -d
 ```
 
 [profiles]: @docroot@/command-ref/files/profiles.md
-[store objects]: @docroot@/store/store-object.md
+[store objects]: @docroot@/store/store-object/index.md

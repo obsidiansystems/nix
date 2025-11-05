@@ -157,7 +157,7 @@
   A store object consists of a [file system object], [references][reference] to other store objects, and other metadata.
   It can be referred to by a [store path].
 
-  See [Store Object](@docroot@/store/store-object.md) for details.
+  See [Store Object](@docroot@/store/store-object/index.md) for details.
 
   [store object]: #gloss-store-object
 
@@ -239,18 +239,18 @@
 
   An edge from one [store object] to another.
 
-  See [References](@docroot@/store/store-object.md#references) for details.
+  See [References](@docroot@/store/store-object/index.md#references) for details.
 
   [reference]: #gloss-reference
 
-  See [References](@docroot@/store/store-object.md#references) for details.
+  See [References](@docroot@/store/store-object/index.md#references) for details.
 
 - [reachable]{#gloss-reachable}
 
   A store path `Q` is reachable from another store path `P` if `Q`
   is in the *closure* of the *references* relation.
 
-  See [References](@docroot@/store/store-object.md#references) for details.
+  See [References](@docroot@/store/store-object/index.md#references) for details.
 
 - [closure]{#gloss-closure}
 
@@ -268,7 +268,7 @@
   to a store object at path `Q`, then `Q` is in the closure of `P`. Further, if `Q`
   references `R` then `R` is also in the closure of `P`.
 
-  See [References](@docroot@/store/store-object.md#references) for details.
+  See [References](@docroot@/store/store-object/index.md#references) for details.
 
   [closure]: #gloss-closure
 
@@ -277,7 +277,7 @@
   A store object [reachable] by a path (chain of references) from a given [store object].
   The [closure] is the set of requisites.
 
-  See [References](@docroot@/store/store-object.md#references) for details.
+  See [References](@docroot@/store/store-object/index.md#references) for details.
 
 - [referrer]{#gloss-reference}
 

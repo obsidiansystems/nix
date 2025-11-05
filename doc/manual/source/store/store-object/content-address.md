@@ -17,7 +17,7 @@ of the store object, and not any other information, which would not be an intrin
 For the full specification of the algorithms involved, see the [specification of store path digests][sp-spec].
 
 [File System Object]: ../file-system-object.md
-[Store Object]: ../store-object.md
+[Store Object]: ../store-object/index.md
 [Store Path]: ../store-path.md
 
 ## Content addressing each part of a store object
