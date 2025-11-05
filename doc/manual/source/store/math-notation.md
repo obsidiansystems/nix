@@ -6,6 +6,7 @@ The following grammar and assignment of metavariables to syntactic categories is
 
 \\begin{align}
 s, t &\in \text{store-path} \\\\
+x, y, z &\in \text{store-object} \\\\
 o &\in \text{output-name} \\\\
 i, p &\in \text{deriving-path} \\\\
 d &\in \text{derivation}
