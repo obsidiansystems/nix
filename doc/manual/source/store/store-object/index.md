@@ -156,7 +156,7 @@ A (globally coherent) store can only contain a store object if it also contains 
 > The "closure property" isn't meant to prohibit, for example, [lazy loading](https://en.wikipedia.org/wiki/Lazy_loading) of store objects.
 > However, the "closure property" and immutability in conjunction imply that any such lazy loading ought to be deterministic.
 
-## "Franken-closures" and integrity model
+## "Franken-closures" and integrity model { #integrity }
 
 Suppose that one does want to combine two store object closures that disagree on references.
 Can the store objects be modified so that coherence is preserved?

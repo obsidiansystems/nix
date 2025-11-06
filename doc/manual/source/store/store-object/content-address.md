@@ -2,9 +2,15 @@
 
 Just [like][fso-ca] [File System Objects][File System Object],
 [Store Objects][Store Object] can also be [content-addressed](@docroot@/glossary.md#gloss-content-addressed),
-unless they are [input-addressed](@docroot@/glossary.md#gloss-input-addressed-store-object).
+unless they are [input-addressed].
 
-For store objects, the content address we produce will take the form of a [Store Path] rather than regular hash.
+Actually, in some sense, store objects are *always* content-addressed.
+For a very long time, the file system objects of all store objects were all given "[NAR][Nix Archive] Hashes".
+More recently, they are also all secured with "closure digests", which, unlike the "NAR Hash", accounts for the entire store object.
+That does fit the technical definition of a content address.
+
+However, in most contexts, store objects are *addressed* not via these hashes, but with the [Store Path] that has been assigned to them.
+We thus term store object content-addresed if the store path is determined from its content.
 In particular, the content-addressing scheme will ensure that the digest of the store path is solely computed from the
 
 - file system object graph (the root one and its children, if it has any)
@@ -97,7 +103,7 @@ Prefer another method if possible.
 
 ### Nix Archive { #method-nix-archive }
 
-This uses the corresponding [Nix Archive](../file-system-object/content-address.md#serial-nix-archive) method of file system object content addressing.
+This uses the corresponding [Nix Archive] method of file system object content addressing.
 
 References (to other store objects and self-references alike) are supported so long as the hash algorithm is SHA-256, but not (neither kind) otherwise.
 
@@ -115,6 +121,36 @@ Only SHA-1 is supported at this time.
 If [SHA-256-based Git](https://git-scm.com/docs/hash-function-transition)
 becomes more widespread, this restriction will be revisited.
 
+### Derivation 2 { #method-drv2 }
+
+This is a special hasing format just for certain newer types of derivations.
+Rather than processing the file system object and references separately, the derivation is processes directly, since it contains its own reference information (as part of its [inputs](@docroot@/store/derivation/index.md#inputs)).
+
+The FSO object these derivations are serialized to is actually undefined, because these derivations need never actually be materilized as independent files.
+(They can, in the case of the [local store](@docroot@/store/types/local-store.md), for example, instead live in the database.
+In essence, this constitutes a generalization of the store model to also account for non-file-with-references store objects, that nonetheless still have the same reference structure and so can meaningfully participate in store object graphs accordingly.
+
+The exact format for has yet to be determined.
+
+## Shallowness of store object content-addressing
+
+Note that none of these methods, except for "Derivation 2", currently account for the closure digest parts of the store object's references.
+They instead just treat the references as a set of store objects, taking the keys and discarding the values of the map.
+For a store object closure which is entirely content-addressed, this makes no difference, as all information in the closure will affect the store path content-address of the root store object.
+However, when the closure contains an [input-addressed] store object, it starts to matter.
+
+Such non-content-address store paths may be associated with many possible store objects --- the content of the mapped store object is *not* secured by the non-content-address store path.
+As such, the content-address store path of the root object does determine that there is *some* store object at such a store object, and which other (content-address-reachable) store objects in the closure reference it, but it does *not* determine what thatstore path is mapped to.
+
+Following the discussion on [store object closure integrity](#integrity), this is considered actually a feature, and not a bug.
+The expectation for input-addressed store objects is that it is at least possible to mix-and-match them in unsafe ways.
+If changing the contents of a store object mapped to an input address store path affected downstream ([referrer](@docroot@/glossary.md#gloss-referrer) store objects, this would severely curtail --- if not remove outright --- the ability to mix and max input-addressed store objects.
+
+The *closure digest* still always exists is a supplementary content hash which, contrary to the above, *will* be sensative to the mappings of input-addressed store objects.
+It can therefore be used instead to pin the the exact mapping of input-addressed store paths, and thus pin down exact closures, compensating for the ambiguity of content address store paths described above.
+
+[input-addressed]: @docroot@/glossary.md#gloss-input-addressed-store-object
 [fso-ca]: ../file-system-object/content-address.md
+[Nix Archive]: ../file-system-object/content-address.md#serial-nix-archive
 [sp-spec]: @docroot@/protocols/store-path.md
 [xp-feature-git-hashing]: @docroot@/development/experimental-features.md#xp-feature-git-hashing
