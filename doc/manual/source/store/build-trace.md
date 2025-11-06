@@ -13,13 +13,17 @@ Concretely, that means it maps [derivations][derivation] to maps of [output] nam
 In general the derivations used as a key should be [*resolved*](./resolution.md).
 A build trace with all-resolved-derivation keys is also called a *base build trace* for extra clarity.
 If all the resolved inputs of a derivation are content-addressed, that means the inputs will be fully determined, leaving no ambiguity for what build was performed.
-(Input-addressed inputs however are still ambiguous. They too should be locked down, but this is left as future work.)
 
 Accordingly, to look up an unresolved derivation, one must first resolve it to get a resolved derivation.
 Resolving itself involves looking up entries in the build trace, so this is a mutually recursive process that will end up inspecting possibly many entries.
 
-Except for the issue with input-addressed paths called out above, base build traces are trivially *coherent* -- incoherence is not possible.
+Additionally *locked* resolved derivations should be used in order to exactly specify the inputs used during the build.
+As discussed elsewhere, closure digests are needed to disambiguate non-content address store paths in the closure, precisely pinning down what they are mapped to.
+
+Base build traces are trivially *coherent* -- incoherence is not possible.
 That means that the claims that each key-value base build try entry makes are independent, and no mapping invalidates another mapping.
+Note that this is even true when derivations used as keys only differ in their store path -> store object mappings.
+(This is the case when two different locked derivations, when unlocked (closure digests discarded) become the same (unlocked) derivation.)
 
 Whether the mappings are *true*, i.e. the faithful recording of actual builds performed, is another matter.
 Coherence is about the multiple claims of the build trace being mutually consistent, not about whether the claims are individually true or false.

@@ -85,6 +85,50 @@ We can use an output deriving path to refer to such an output, instead of the st
 [deriving path]: #deriving-path
 [validity]: @docroot@/glossary.md#gloss-validity
 
+### Deriving path integrity {#deriving-path-integrity}
+
+Just as was the case with [store object] references, [store paths][store path] alone are not sufficient to identify a store object uniquely, because in the non-content-addressed case, the same store path could be potentially mapped to many different store objects.
+And just as the solution there to pair every store path with the closure digest for the store object it maps to, so the solution here is that also:
+
+```typescript
+type ConstantPathT<Ref> = {
+  path: Ref;
+};
+
+type OutputPathT<Ref> = {
+  drvPath: Ref;
+  output: OutputName;
+};
+
+type DerivingPathT<Ref> = ConstantPath<Ref> | OutputPath<Ref>;
+
+type DerivingPath = DerivingPath<StorePath>;
+
+type LockedDerivingPath = DerivingPath<[StorePath, ClosureDigest]>;
+```
+
+Additionally, when we have set of such `LockedDerivingPath`s, we will usually want them to be coherent in an analogous way, never mapping two the same store path to two different closure digests.
+
+> **Remark**
+>
+> We can enforce the first layer of coherency side condition by using a different type that is isomorphic to a coherent set of deriving paths.
+>
+> First, observe how `DerivingPath<StorePath>`, is isomorphic to `[StorePath, DerivingPath<{}>]`.
+> Then, likewise observe that `Set<DerivingPath<[StorePath, ClosureDigest]>>` is isomorphic to `Set<[StorePath, ClosureDigest, DerivingPath<{}>]>`.
+> Now, observe that this can be [curried](https://en.wikipedia.org/wiki/Currying) into the isomorphic:
+>
+> ```typescript
+> Map<[StorePath, ClosureDigest], NonEmptySet<DerivingPathT<{}>>>
+> ```
+>
+> Now, we can make a slight change to a *not* isomorphic type to also require coherence of the store path mappings, by construction:
+>
+> ```typescript
+> Map<StorePath, [ClosureDigest, NonEmptySet<DerivingPathT<{}>>]>
+> ```
+>
+> Note that whether the underlying closures (unioned together) are coherent is still not enforced by this.
+
 ## Parts of a derivation
 
 A derivation is constructed from the parts documented in the following subsections.
@@ -99,6 +143,35 @@ The [process creation fields] will presumably include many [store paths][store p
  - The arguments and environment variables likely contain many other store paths.
 
 But rather than somehow scanning all the other fields for inputs, Nix requires that all inputs be explicitly collected in the inputs field. It is instead the responsibility of the creator of a derivation (e.g. the evaluator) to ensure that every store object referenced in another field (e.g. referenced by store path) is included in this inputs field.
+
+#### Inputs integrity
+
+Per the above section on [deriving path integrity](#deriving-path-integrity), to make a derivation's inputs unambiguous, we will also want specify closure digests for every store path in the inputs in a coherent manner.
+
+For this reason, it is used to think of `Derivation` as actually a family of data structure, parameterized with the source of the types of inputs:
+
+```typescript
+type DerivationT<Inputs> = ...;
+
+type Derivation = DerivationT<Set<DerivingPath>>;
+
+type LockedDerivation = DerivationT<Set<LockedDerivingPath>>;
+```
+
+A derivation that is serialized to a store object with references for the inputs must include such information not in the derivation itself, but in the references.
+For this reason it is useful to consider the operation of converting between this pair
+```typescript
+{
+  drv: Derivation,
+  references: Map<StorePath, ClosureDigest>,
+}
+```
+and a `LockedDerivation`.
+The latter can always be turned into the former.
+And the former can be turned into the latter if the store paths in the Derivation are with the domain of the references map.
+(And if those two sets are equal, the combining direction is injective, too.)
+
+Taking advantage of the above isomorphism (only considering references maps where the inputs have the extra right domain), a `StoreObject` is sufficent to identify a `Derivation`, but a `StoreObject` and `ClosureDigest` together should be used to identify a `LockedDerivation`.
 
 ### System {#system}
 
