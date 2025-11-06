@@ -121,20 +121,9 @@ Only SHA-1 is supported at this time.
 If [SHA-256-based Git](https://git-scm.com/docs/hash-function-transition)
 becomes more widespread, this restriction will be revisited.
 
-### Derivation 2 { #method-drv2 }
-
-This is a special hasing format just for certain newer types of derivations.
-Rather than processing the file system object and references separately, the derivation is processes directly, since it contains its own reference information (as part of its [inputs](@docroot@/store/derivation/index.md#inputs)).
-
-The FSO object these derivations are serialized to is actually undefined, because these derivations need never actually be materilized as independent files.
-(They can, in the case of the [local store](@docroot@/store/types/local-store.md), for example, instead live in the database.
-In essence, this constitutes a generalization of the store model to also account for non-file-with-references store objects, that nonetheless still have the same reference structure and so can meaningfully participate in store object graphs accordingly.
-
-The exact format for has yet to be determined.
-
 ## Shallowness of store object content-addressing
 
-Note that none of these methods, except for "Derivation 2", currently account for the closure digest parts of the store object's references.
+Note that none of these methods currently account for the closure digest parts of the store object's references.
 They instead just treat the references as a set of store objects, taking the keys and discarding the values of the map.
 For a store object closure which is entirely content-addressed, this makes no difference, as all information in the closure will affect the store path content-address of the root store object.
 However, when the closure contains an [input-addressed] store object, it starts to matter.
