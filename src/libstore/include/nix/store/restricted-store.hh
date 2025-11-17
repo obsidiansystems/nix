@@ -57,6 +57,18 @@ struct RestrictionContext
     bool isAllowed(const DerivedPath & id);
 
     /**
+     * Whether mounting dependencies inside the sandbox should happen,
+     * or if it should be entirely skipped.
+     */
+    virtual bool shouldModifySandbox() = 0;
+
+    /**
+     * Register a store path to an output name
+     * For builder-rpc-v0
+     */
+    virtual void submitOutput(const SingleDerivedPath & path, const OutputName & output) = 0;
+
+    /**
      * Add 'path' to the set of paths that may be referenced by the
      * outputs, and make it appear in the sandbox.
      */
@@ -84,7 +96,8 @@ struct RestrictionContext
         }
 
         try {
-            addDependencyImpl(path);
+            if (shouldModifySandbox())
+                addDependencyImpl(path);
             promise.set_value();
         } catch (...) {
             /* Notify all other waiters that we are done. */

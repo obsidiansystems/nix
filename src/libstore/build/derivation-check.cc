@@ -1,7 +1,9 @@
 #include <queue>
 
+#include "nix/store/derivations.hh"
 #include "nix/store/store-api.hh"
 #include "nix/store/build-result.hh"
+#include "nix/util/hash.hh"
 
 #include "derivation-check.hh"
 
@@ -10,10 +12,13 @@ namespace nix {
 void checkOutputs(
     Store & store,
     const StorePath & drvPath,
-    const decltype(Derivation::outputs) & drvOutputs,
+    const BasicDerivation & drv,
     const decltype(DerivationOptions<StorePath>::outputChecks) & outputChecks,
     const std::map<std::string, ValidPathInfo> & outputs)
 {
+    // Only needed for errors, but generated here to reduce duplication
+    std::string outputsListing = concatMapStringsSep(", ", outputs, [](auto & o) { return o.first; });
+
     std::map<StorePath, const ValidPathInfo &> outputsByPath;
     for (auto & output : outputs)
         outputsByPath.emplace(output.second.path, output.second);
@@ -24,15 +29,42 @@ void checkOutputs(
         const std::string & outputName = pair.first;
         const auto & info = pair.second;
 
-        auto * outputSpec = get(drvOutputs, outputName);
-        assert(outputSpec);
+        auto * outputSpec = get(drv.outputs, outputName);
+        if (!outputSpec) {
+            throw BuildError(
+                BuildResult::Failure::OutputRejected,
+                "builder for '%s' submitted unknown output '%s' (Valid outputs are [%s])",
+                store.printStorePath(drvPath),
+                outputName,
+                outputsListing);
+        }
+
+        if (outputPathName(drv.name, outputName) != info.path.name()) {
+            throw BuildError(
+                BuildResult::Failure::OutputRejected,
+                "derivation '%s' output '%s' (at '%s') was named '%s', expected '%s'",
+                store.printStorePath(drvPath),
+                outputName,
+                store.printStorePath(info.path),
+                info.path.name(),
+                outputPathName(drv.name, outputName));
+        }
 
         if (const auto * dof = std::get_if<DerivationOutput::CAFixed>(&outputSpec->raw)) {
             auto & wanted = dof->ca.hash;
 
+            if (!info.ca.has_value()) {
+                throw BuildError(
+                    BuildResult::Failure::OutputRejected,
+                    "fixed content-addressing derivation '%s' output '%s' (at '%s') was not content-addressed",
+                    store.printStorePath(drvPath),
+                    outputName,
+                    store.printStorePath(info.path));
+            }
+
             /* Check wanted hash */
-            assert(info.ca);
             auto & got = info.ca->hash;
+            // Inhrently checks algorithm, no need to duplicate checks
             if (wanted != got) {
                 /* Throw an error after registering the path as
                    valid. */
@@ -51,6 +83,35 @@ void checkOutputs(
                     store.printStorePath(drvPath),
                     numViolations,
                     store.printStorePath(*info.references.begin()));
+            }
+        } else if (const auto * doi = std::get_if<DerivationOutput::CAFloating>(&outputSpec->raw)) {
+            if (!info.ca.has_value()) {
+                throw BuildError(
+                    BuildResult::Failure::OutputRejected,
+                    "floating content-addressing derivation '%s' output '%s' (at '%s') was not content-addressed",
+                    store.printStorePath(drvPath),
+                    outputName,
+                    store.printStorePath(info.path));
+            }
+            if (info.ca->method != doi->method) {
+                throw BuildError(
+                    BuildResult::Failure::OutputRejected,
+                    "content-addressing derivation '%s' output '%s' (at '%s') was hashed with method '%s', expected '%s'",
+                    store.printStorePath(drvPath),
+                    outputName,
+                    store.printStorePath(info.path),
+                    info.ca->method.render(),
+                    doi->method.render());
+            }
+            if (info.ca->hash.algo != doi->hashAlgo) {
+                throw BuildError(
+                    BuildResult::Failure::OutputRejected,
+                    "content-addressing derivation '%s' output '%s' (at '%s') was hashed with algorithm '%s', expected '%s'",
+                    store.printStorePath(drvPath),
+                    outputName,
+                    store.printStorePath(info.path),
+                    printHashAlgo(info.ca->hash.algo),
+                    printHashAlgo(doi->hashAlgo));
             }
         }
 
@@ -118,8 +179,6 @@ void checkOutputs(
                                 if (auto output = get(outputs, refOutputName))
                                     spec.insert(output->path);
                                 else {
-                                    std::string outputsListing =
-                                        concatMapStringsSep(", ", outputs, [](auto & o) { return o.first; });
                                     throw BuildError(
                                         BuildResult::Failure::OutputRejected,
                                         "derivation '%s' output check for '%s' contains output name '%s',"

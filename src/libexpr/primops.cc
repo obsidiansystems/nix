@@ -11,6 +11,7 @@
 #include "nix/store/path-references.hh"
 #include "nix/store/store-api.hh"
 #include "nix/util/mounted-source-accessor.hh"
+#include "nix/util/strings.hh"
 #include "nix/util/util.hh"
 #include "nix/util/os-string.hh"
 #include "nix/util/processes.hh"
@@ -1500,6 +1501,7 @@ static void derivationStrictInternal(EvalState & state, std::string_view drvName
 
     bool contentAddressed = false;
     bool isImpure = false;
+    bool isSubmittingOutputs = false;
     std::optional<std::string> outputHash;
     std::optional<HashAlgorithm> outputHashAlgo;
     std::optional<ContentAddressMethod> ingestionMethod;
@@ -1622,6 +1624,17 @@ static void derivationStrictInternal(EvalState & state, std::string_view drvName
                         handleOutputs(ss);
                         break;
                     }
+                    case EvalState::s.requiredSystemFeatures.getId(): {
+                        state.forceList(*i->value, pos, context_below);
+                        for (auto elem : i->value->listView()) {
+                            auto name = state.forceStringNoCtx(*elem, pos, context_below);
+                            if (name == "builder-rpc-v0") {
+                                isSubmittingOutputs = true;
+                                break;
+                            }
+                        }
+                        break;
+                    }
                     default:
                         break;
                     }
@@ -1689,6 +1702,14 @@ static void derivationStrictInternal(EvalState & state, std::string_view drvName
                         case EvalState::s.outputs.getId():
                             handleOutputs(tokenizeString<Strings>(s));
                             break;
+                        case EvalState::s.requiredSystemFeatures.getId(): {
+                            // Technically this was allowed to be a space-separated list or a list, keep the previous
+                            // behaviour
+                            auto features = tokenizeString<StringSet>(s);
+                            if (features.contains("builder-rpc-v0"))
+                                isSubmittingOutputs = true;
+                            break;
+                        }
                         default:
                             break;
                         }
@@ -1785,7 +1806,8 @@ static void derivationStrictInternal(EvalState & state, std::string_view drvName
                 },
         };
 
-        drv.env["out"] = state.store->printStorePath(dof.path(*state.store, drvName, "out"));
+        if (!isSubmittingOutputs)
+            drv.env["out"] = state.store->printStorePath(dof.path(*state.store, drvName, "out"));
         drv.outputs.insert_or_assign("out", std::move(dof));
     }
 
@@ -1797,7 +1819,8 @@ static void derivationStrictInternal(EvalState & state, std::string_view drvName
         auto method = ingestionMethod.value_or(ContentAddressMethod::Raw::NixArchive);
 
         for (auto & i : outputs) {
-            drv.env[i] = hashPlaceholder(i);
+            if (!isSubmittingOutputs)
+                drv.env[i] = hashPlaceholder(i);
             if (isImpure)
                 drv.outputs.insert_or_assign(
                     i,

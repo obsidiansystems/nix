@@ -180,6 +180,7 @@ suites = [
       'symlinks.sh',
       'external-builders.sh',
       'delete-no-keep.sh',
+      'submit-failure.sh',
     ],
     'workdir' : meson.current_source_dir(),
   },
