@@ -31,7 +31,7 @@ void deleteLockFile(const std::filesystem::path & path, Descriptor desc)
        other processes waiting on this lock that the lock is stale
        (deleted). */
     unlink(path.c_str());
-    writeFull(desc, "d");
+    writeFull(desc, as_bytes(std::string_view("d")));
     /* Note that the result of unlink() is ignored; removing the lock
        file is an optimisation, not a necessity. */
 }

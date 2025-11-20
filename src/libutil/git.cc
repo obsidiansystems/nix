@@ -33,11 +33,11 @@ std::optional<Mode> decodeMode(RawMode m)
 static std::string getStringUntil(Source & source, char byte)
 {
     std::string s;
-    char n[1] = {0};
-    source(std::string_view{n, 1});
-    while (*n != byte) {
-        s += *n;
-        source(std::string_view{n, 1});
+    std::byte n[1] = {std::byte{0}};
+    source(MutableBytesView{n, 1});
+    while (std::to_integer<char>(n[0]) != byte) {
+        s += std::to_integer<char>(n[0]);
+        source(MutableBytesView{n, 1});
     }
     return s;
 }
@@ -46,7 +46,7 @@ static std::string getString(Source & source, int n)
 {
     std::string v;
     v.resize(n);
-    source(v);
+    source(MutableBytesView{reinterpret_cast<std::byte *>(v.data()), v.size()});
     return v;
 }
 
@@ -69,14 +69,14 @@ void parseBlob(
             crf.preallocateContents(size);
 
             unsigned long long left = size;
-            std::string buf;
+            Bytes buf;
             buf.reserve(65536);
 
             while (left) {
                 checkInterrupt();
                 buf.resize(std::min((unsigned long long) buf.capacity(), left));
-                source(buf);
-                crf(buf);
+                source(MutableBytesView{buf.data(), buf.size()});
+                crf(BytesView{buf.data(), buf.size()});
                 left -= buf.size();
             }
         });

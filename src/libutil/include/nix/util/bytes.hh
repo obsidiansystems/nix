@@ -17,6 +17,11 @@ using Bytes = std::vector<std::byte>;
  */
 using BytesView = std::span<const std::byte>;
 
+/**
+ * Arbitrary bytes, a mutable view.
+ */
+using MutableBytesView = std::span<std::byte>;
+
 inline BytesView as_bytes(std::string_view sv) noexcept
 {
     return BytesView{

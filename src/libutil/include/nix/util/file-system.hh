@@ -165,10 +165,10 @@ std::filesystem::path readLink(const std::filesystem::path & path);
 Descriptor openDirectory(const std::filesystem::path & path);
 
 /**
- * Read the contents of a file into a string.
+ * Read the contents of a file into Bytes.
  */
-std::string readFile(const Path & path);
-std::string readFile(const std::filesystem::path & path);
+Bytes readFile(const Path & path);
+Bytes readFile(const std::filesystem::path & path);
 void readFile(const Path & path, Sink & sink, bool memory_map = true);
 
 enum struct FsSync { Yes, No };

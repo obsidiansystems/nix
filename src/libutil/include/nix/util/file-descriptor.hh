@@ -3,6 +3,7 @@
 
 #include "nix/util/canon-path.hh"
 #include "nix/util/types.hh"
+#include "nix/util/bytes.hh"
 #include "nix/util/error.hh"
 
 #ifdef _WIN32
@@ -66,15 +67,15 @@ static inline int fromDescriptorReadOnly(Descriptor fd)
 /**
  * Read the contents of a resource into a string.
  */
-std::string readFile(Descriptor fd);
+Bytes readFile(Descriptor fd);
 
 /**
  * Wrappers around read()/write() that read/write exactly the
- * requested number of bytes.
+ * requested number of bytes (`buf.size()`).
  */
-void readFull(Descriptor fd, char * buf, size_t count);
+void readFull(Descriptor fd, MutableBytesView buf);
 
-void writeFull(Descriptor fd, std::string_view s, bool allowInterrupts = true);
+void writeFull(Descriptor fd, BytesView s, bool allowInterrupts = true);
 
 /**
  * Read a line from a file descriptor.
@@ -89,12 +90,12 @@ std::string readLine(Descriptor fd, bool eofOk = false);
 /**
  * Write a line to a file descriptor.
  */
-void writeLine(Descriptor fd, std::string s);
+void writeLine(Descriptor fd, std::string_view s);
 
 /**
  * Read a file descriptor until EOF occurs.
  */
-std::string drainFD(Descriptor fd, bool block = true, const size_t reserveSize = 0);
+Bytes drainFD(Descriptor fd, bool block = true, const size_t reserveSize = 0);
 
 /**
  * The Windows version is always blocking.

@@ -136,15 +136,15 @@ static void parseContents(CreateRegularFileSink & sink, Source & source)
     }
 
     uint64_t left = size;
-    std::array<char, 65536> buf;
+    std::array<std::byte, 65536> buf;
 
     while (left) {
         checkInterrupt();
         auto n = buf.size();
         if ((uint64_t) n > left)
             n = left;
-        source(buf.data(), n);
-        sink({buf.data(), n});
+        source(MutableBytesView{buf.data(), n});
+        sink(BytesView{buf.data(), n});
         left -= n;
     }
 

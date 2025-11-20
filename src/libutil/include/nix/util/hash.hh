@@ -237,7 +237,7 @@ public:
     HashSink(HashAlgorithm ha);
     HashSink(const HashSink & h);
     ~HashSink();
-    void writeUnbuffered(std::string_view data) override;
+    void writeUnbuffered(BytesView data) override;
     HashResult finish() override;
     HashResult currentHash();
 };

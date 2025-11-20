@@ -281,7 +281,7 @@ std::pair<int, std::string> runProgram(RunOptions && options)
         status = e.status;
     }
 
-    return {status, std::move(sink.s)};
+    return {status, std::string(as_str(sink.s))};
 }
 
 void runProgram2(const RunOptions & options)
@@ -294,7 +294,7 @@ void runProgram2(const RunOptions & options)
     Source * source = options.standardIn;
 
     if (options.input) {
-        source_ = std::make_unique<StringSource>(*options.input);
+        source_ = std::make_unique<StringSource>(as_bytes(*options.input));
         source = source_.get();
     }
 
@@ -367,15 +367,15 @@ void runProgram2(const RunOptions & options)
         in.readSide.close();
         writerThread = std::thread([&] {
             try {
-                std::vector<char> buf(8 * 1024);
+                std::vector<std::byte> buf(8 * 1024);
                 while (true) {
                     size_t n;
                     try {
-                        n = source->read(buf.data(), buf.size());
+                        n = source->read(MutableBytesView{buf.data(), buf.size()});
                     } catch (EndOfFile &) {
                         break;
                     }
-                    writeFull(in.writeSide.get(), {buf.data(), n});
+                    writeFull(in.writeSide.get(), BytesView{buf.data(), n});
                 }
                 promise.set_value();
             } catch (...) {

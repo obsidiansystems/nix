@@ -52,7 +52,8 @@ struct CharacterizationTest : virtual ::testing::Test
         if (testAccept()) {
             GTEST_SKIP() << "Cannot read golden master " << file << "because another test is also updating it";
         } else {
-            test(readFile(file));
+            auto bytes = readFile(file);
+            test(std::string(reinterpret_cast<const char *>(bytes.data()), bytes.size()));
         }
     }
 
@@ -86,7 +87,10 @@ struct CharacterizationTest : virtual ::testing::Test
         writeTest(
             testStem,
             test,
-            [](const std::filesystem::path & f) -> std::string { return readFile(f); },
+            [](const std::filesystem::path & f) -> std::string {
+                auto bytes = readFile(f);
+                return std::string(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+            },
             [](const std::filesystem::path & f, const std::string & c) { return writeFile(f, c); });
     }
 };

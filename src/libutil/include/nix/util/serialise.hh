@@ -4,6 +4,7 @@
 #include <memory>
 #include <type_traits>
 
+#include "nix/util/bytes.hh"
 #include "nix/util/types.hh"
 #include "nix/util/util.hh"
 #include "nix/util/file-descriptor.hh"
@@ -21,7 +22,7 @@ struct Sink
 {
     virtual ~Sink() {}
 
-    virtual void operator()(std::string_view data) = 0;
+    virtual void operator()(BytesView data) = 0;
 
     virtual bool good()
     {
@@ -34,7 +35,7 @@ struct Sink
  */
 struct NullSink : Sink
 {
-    void operator()(std::string_view data) override {}
+    void operator()(BytesView data) override {}
 };
 
 struct FinishSink : virtual Sink
@@ -49,7 +50,7 @@ struct FinishSink : virtual Sink
 struct BufferedSink : virtual Sink
 {
     size_t bufSize, bufPos;
-    std::unique_ptr<char[]> buffer;
+    std::unique_ptr<std::byte[]> buffer;
 
     BufferedSink(size_t bufSize = 32 * 1024)
         : bufSize(bufSize)
@@ -58,13 +59,13 @@ struct BufferedSink : virtual Sink
     {
     }
 
-    void operator()(std::string_view data) override;
+    void operator()(BytesView data) override;
 
     void flush();
 
 protected:
 
-    virtual void writeUnbuffered(std::string_view data) = 0;
+    virtual void writeUnbuffered(BytesView data) = 0;
 };
 
 /**
@@ -75,19 +76,18 @@ struct Source
     virtual ~Source() {}
 
     /**
-     * Store exactly ‘len’ bytes in the buffer pointed to by ‘data’.
-     * It blocks until all the requested data is available, or throws
-     * an error if it is not going to be available.
+     * Store exactly `data.size()` bytes in the buffer pointed to by
+     * `data`. It blocks until all the requested data is available, or
+     * throws an error if it is not going to be available.
      */
-    void operator()(char * data, size_t len);
-    void operator()(std::string_view data);
+    void operator()(MutableBytesView data);
 
     /**
-     * Store up to ‘len’ in the buffer pointed to by ‘data’, and
-     * return the number of bytes stored.  It blocks until at least
-     * one byte is available.
+     * Store up to `data.size()` in the buffer pointed to by `data`, and
+     * return the number of bytes stored. It blocks until at least one
+     * byte is available.
      */
-    virtual size_t read(char * data, size_t len) = 0;
+    virtual size_t read(MutableBytesView data) = 0;
 
     virtual bool good()
     {
@@ -108,7 +108,7 @@ struct Source
 struct BufferedSource : virtual Source
 {
     size_t bufSize, bufPosIn, bufPosOut;
-    std::unique_ptr<char[]> buffer;
+    std::unique_ptr<std::byte[]> buffer;
 
     BufferedSource(size_t bufSize = 32 * 1024)
         : bufSize(bufSize)
@@ -118,7 +118,7 @@ struct BufferedSource : virtual Source
     {
     }
 
-    size_t read(char * data, size_t len) override;
+    size_t read(MutableBytesView data) override;
 
     /**
      * Return true if the buffer is not empty.
@@ -129,7 +129,7 @@ protected:
     /**
      * Underlying read call, to be overridden.
      */
-    virtual size_t readUnbuffered(char * data, size_t len) = 0;
+    virtual size_t readUnbuffered(MutableBytesView data) = 0;
 };
 
 /**
@@ -171,7 +171,7 @@ struct FdSink : BufferedSink
 
     ~FdSink();
 
-    void writeUnbuffered(std::string_view data) override;
+    void writeUnbuffered(BytesView data) override;
 
     bool good() override;
 
@@ -215,17 +215,17 @@ struct FdSource : BufferedSource, RestartableSource
     void skip(size_t len) override;
 
 protected:
-    size_t readUnbuffered(char * data, size_t len) override;
+    size_t readUnbuffered(MutableBytesView data) override;
 private:
     bool _good = true;
 };
 
 /**
- * A sink that writes data to a string.
+ * A sink that writes data to a Bytes vector.
  */
 struct StringSink : Sink
 {
-    std::string s;
+    Bytes s;
 
     StringSink() {}
 
@@ -234,9 +234,10 @@ struct StringSink : Sink
         s.reserve(reservedSize);
     };
 
-    StringSink(std::string && s)
+    StringSink(Bytes && s)
         : s(std::move(s)) {};
-    void operator()(std::string_view data) override;
+
+    void operator()(BytesView data) override;
 };
 
 /**
@@ -244,26 +245,26 @@ struct StringSink : Sink
  */
 struct StringSource : RestartableSource
 {
-    std::string_view s;
+    BytesView s;
     size_t pos;
 
     // NOTE: Prevent unintentional dangling views when an implicit conversion
     // from std::string -> std::string_view occurs when the string is passed
     // by rvalue.
-    StringSource(std::string &&) = delete;
+    StringSource(Bytes &&) = delete;
 
-    StringSource(std::string_view s)
-        : s(s)
+    StringSource(BytesView s)
+        : s{s}
         , pos(0)
     {
     }
 
-    StringSource(const std::string & str)
-        : StringSource(std::string_view(str))
+    StringSource(const Bytes & str)
+        : StringSource(BytesView{str})
     {
     }
 
-    size_t read(char * data, size_t len) override;
+    size_t read(MutableBytesView data) override;
 
     void skip(size_t len) override;
 
@@ -283,7 +284,7 @@ struct StringSource : RestartableSource
 struct CompressedSource : RestartableSource
 {
 private:
-    std::string compressedData;
+    Bytes compressedData;
     std::string compressionMethod;
     StringSource stringSource;
 
@@ -296,9 +297,9 @@ public:
      */
     CompressedSource(RestartableSource & source, const std::string & compressionMethod);
 
-    size_t read(char * data, size_t len) override
+    size_t read(MutableBytesView data) override
     {
-        return stringSource.read(data, len);
+        return stringSource.read(data);
     }
 
     void restart() override
@@ -330,7 +331,7 @@ struct TeeSink : Sink
     {
     }
 
-    virtual void operator()(std::string_view data) override
+    virtual void operator()(BytesView data) override
     {
         sink1(data);
         sink2(data);
@@ -351,10 +352,10 @@ struct TeeSource : Source
     {
     }
 
-    size_t read(char * data, size_t len) override
+    size_t read(MutableBytesView data) override
     {
-        size_t n = orig.read(data, len);
-        sink({data, n});
+        size_t n = orig.read(data);
+        sink(data.subspan(0, n));
         return n;
     }
 };
@@ -373,13 +374,13 @@ struct SizedSource : Source
     {
     }
 
-    size_t read(char * data, size_t len) override
+    size_t read(MutableBytesView data) override
     {
         if (this->remain <= 0) {
             throw EndOfFile("sized: unexpected end-of-file");
         }
-        len = std::min(len, this->remain);
-        size_t n = this->orig.read(data, len);
+        size_t len = std::min(data.size(), this->remain);
+        size_t n = this->orig.read(data.subspan(0, len));
         this->remain -= n;
         return n;
     }
@@ -389,10 +390,10 @@ struct SizedSource : Source
      */
     size_t drainAll()
     {
-        std::vector<char> buf(8192);
+        std::vector<std::byte> buf(8192);
         size_t sum = 0;
         while (this->remain > 0) {
-            size_t n = read(buf.data(), buf.size());
+            size_t n = read(MutableBytesView{buf});
             sum += n;
         }
         return sum;
@@ -406,7 +407,7 @@ struct LengthSink : Sink
 {
     uint64_t length = 0;
 
-    void operator()(std::string_view data) override
+    void operator()(BytesView data) override
     {
         length += data.size();
     }
@@ -426,9 +427,9 @@ struct LengthSource : Source
 
     uint64_t total = 0;
 
-    size_t read(char * data, size_t len) override
+    size_t read(MutableBytesView data) override
     {
-        auto n = next.read(data, len);
+        auto n = next.read(data);
         total += n;
         return n;
     }
@@ -439,7 +440,7 @@ struct LengthSource : Source
  */
 struct LambdaSink : Sink
 {
-    typedef std::function<void(std::string_view data)> data_t;
+    typedef std::function<void(BytesView data)> data_t;
     typedef std::function<void()> cleanup_t;
 
     data_t dataFun;
@@ -457,7 +458,7 @@ struct LambdaSink : Sink
         cleanupFun();
     }
 
-    void operator()(std::string_view data) override
+    void operator()(BytesView data) override
     {
         dataFun(data);
     }
@@ -468,7 +469,7 @@ struct LambdaSink : Sink
  */
 struct LambdaSource : Source
 {
-    typedef std::function<size_t(char *, size_t)> lambda_t;
+    typedef std::function<size_t(MutableBytesView)> lambda_t;
 
     lambda_t lambda;
 
@@ -477,9 +478,9 @@ struct LambdaSource : Source
     {
     }
 
-    size_t read(char * data, size_t len) override
+    size_t read(MutableBytesView data) override
     {
-        return lambda(data, len);
+        return lambda(data);
     }
 };
 
@@ -498,7 +499,7 @@ struct ChainSource : Source
     {
     }
 
-    size_t read(char * data, size_t len) override;
+    size_t read(MutableBytesView data) override;
 };
 
 std::unique_ptr<FinishSink> sourceToSink(std::function<void(Source &)> fun);
@@ -515,16 +516,16 @@ void writeString(std::string_view s, Sink & sink);
 
 inline Sink & operator<<(Sink & sink, uint64_t n)
 {
-    unsigned char buf[8];
-    buf[0] = n & 0xff;
-    buf[1] = (n >> 8) & 0xff;
-    buf[2] = (n >> 16) & 0xff;
-    buf[3] = (n >> 24) & 0xff;
-    buf[4] = (n >> 32) & 0xff;
-    buf[5] = (n >> 40) & 0xff;
-    buf[6] = (n >> 48) & 0xff;
-    buf[7] = (unsigned char) (n >> 56) & 0xff;
-    sink({(char *) buf, sizeof(buf)});
+    std::byte buf[8];
+    buf[0] = std::byte(n & 0xff);
+    buf[1] = std::byte((n >> 8) & 0xff);
+    buf[2] = std::byte((n >> 16) & 0xff);
+    buf[3] = std::byte((n >> 24) & 0xff);
+    buf[4] = std::byte((n >> 32) & 0xff);
+    buf[5] = std::byte((n >> 40) & 0xff);
+    buf[6] = std::byte((n >> 48) & 0xff);
+    buf[7] = std::byte((n >> 56) & 0xff);
+    sink(BytesView{buf});
     return sink;
 }
 
@@ -538,10 +539,10 @@ MakeError(SerialisationError, Error);
 template<typename T>
 T readNum(Source & source)
 {
-    unsigned char buf[8];
-    source((char *) buf, sizeof(buf));
+    std::byte buf[8];
+    source(MutableBytesView{buf, sizeof(buf)});
 
-    auto n = readLittleEndian<uint64_t>(buf);
+    auto n = readLittleEndian<uint64_t>(reinterpret_cast<unsigned char *>(buf));
 
     if (n > (uint64_t) std::numeric_limits<T>::max())
         throw SerialisationError("serialised integer %d is too large for type '%s'", n, typeid(T).name());
@@ -595,9 +596,9 @@ struct StreamToSourceAdapter : Source
     {
     }
 
-    size_t read(char * data, size_t len) override
+    size_t read(MutableBytesView data) override
     {
-        if (!istream->read(data, len)) {
+        if (!istream->read(reinterpret_cast<char *>(data.data()), data.size())) {
             if (istream->eof()) {
                 if (istream->gcount() == 0)
                     throw EndOfFile("end of file");
@@ -620,7 +621,7 @@ struct FramedSource : Source
 {
     Source & from;
     bool eof = false;
-    std::vector<char> pending;
+    Bytes pending;
     size_t pos = 0;
 
     FramedSource(Source & from)
@@ -636,8 +637,8 @@ struct FramedSource : Source
                     auto n = readInt(from);
                     if (!n)
                         break;
-                    std::vector<char> data(n);
-                    from(data.data(), n);
+                    Bytes data(n);
+                    from(MutableBytesView{data});
                 }
             }
         } catch (...) {
@@ -645,7 +646,7 @@ struct FramedSource : Source
         }
     }
 
-    size_t read(char * data, size_t len) override
+    size_t read(MutableBytesView data) override
     {
         if (eof)
             throw EndOfFile("reached end of FramedSource");
@@ -656,13 +657,13 @@ struct FramedSource : Source
                 eof = true;
                 return 0;
             }
-            pending = std::vector<char>(len);
+            pending = Bytes(len);
             pos = 0;
-            from(pending.data(), len);
+            from(MutableBytesView{pending.data(), len});
         }
 
-        auto n = std::min(len, pending.size() - pos);
-        memcpy(data, pending.data() + pos, n);
+        auto n = std::min(data.size(), pending.size() - pos);
+        memcpy(data.data(), pending.data() + pos, n);
         pos += n;
         return n;
     }
@@ -695,7 +696,7 @@ struct FramedSink : nix::BufferedSink
         }
     }
 
-    void writeUnbuffered(std::string_view data) override
+    void writeUnbuffered(BytesView data) override
     {
         /* Don't send more data if an error has occurred. */
         checkError();

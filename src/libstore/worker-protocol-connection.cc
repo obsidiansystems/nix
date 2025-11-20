@@ -51,15 +51,16 @@ WorkerProto::BasicClientConnection::processStderrReturn(Sink * sink, Source * so
             auto s = readString(from);
             if (!sink)
                 throw Error("no sink");
-            (*sink)(s);
+            (*sink)(as_bytes(s));
         }
 
         else if (msg == STDERR_READ) {
             if (!source)
                 throw Error("no source");
             size_t len = readNum<size_t>(from);
-            auto buf = std::make_unique<char[]>(len);
-            writeString({(const char *) buf.get(), source->read(buf.get(), len)}, to);
+            auto buf = std::make_unique<std::byte[]>(len);
+            auto n = source->read(MutableBytesView{buf.get(), len});
+            writeString({reinterpret_cast<const char *>(buf.get()), n}, to);
             to.flush();
         }
 

@@ -73,7 +73,7 @@ StorePaths importPaths(Store & store, Source & source, CheckSigsFlag checkSigs)
 
         auto references = CommonProto::Serialise<StorePathSet>::read(store, CommonProto::ReadConn{.from = source});
         auto deriver = readString(source);
-        auto narHash = hashString(HashAlgorithm::SHA256, saved.s);
+        auto narHash = hashBytes(HashAlgorithm::SHA256, saved.s);
 
         ValidPathInfo info{path, narHash};
         if (deriver != "")

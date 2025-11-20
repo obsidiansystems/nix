@@ -11,13 +11,14 @@
 
 namespace nix {
 
-void writeLine(Descriptor fd, std::string s)
+void writeLine(Descriptor fd, std::string_view s)
 {
-    s += '\n';
-    writeFull(fd, s);
+    std::string line{s};
+    line += '\n';
+    writeFull(fd, as_bytes(line));
 }
 
-std::string drainFD(Descriptor fd, bool block, const size_t reserveSize)
+Bytes drainFD(Descriptor fd, bool block, const size_t reserveSize)
 {
     // the parser needs two extra bytes to append terminating characters, other users will
     // not care very much about the extra memory.

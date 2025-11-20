@@ -38,7 +38,7 @@ void pollFD(int fd, int events)
 }
 } // namespace
 
-std::string readFile(int fd)
+Bytes readFile(int fd)
 {
     struct stat st;
     if (fstat(fd, &st) == -1)
@@ -117,7 +117,7 @@ std::string readLine(int fd, bool eofOk)
         } else {
             if (ch == '\n')
                 return s;
-            s += ch;
+            s.push_back(ch);
         }
     }
 }
@@ -140,7 +140,7 @@ void drainFD(int fd, Sink & sink, bool block)
         }
     });
 
-    std::vector<unsigned char> buf(64 * 1024);
+    std::vector<std::byte> buf(64 * 1024);
     while (1) {
         checkInterrupt();
         ssize_t rd = read(fd, buf.data(), buf.size());
@@ -152,7 +152,7 @@ void drainFD(int fd, Sink & sink, bool block)
         } else if (rd == 0)
             break;
         else
-            sink({reinterpret_cast<char *>(buf.data()), (size_t) rd});
+            sink(BytesView{buf.data(), (size_t) rd});
     }
 }
 

@@ -45,12 +45,12 @@ public:
         narMember.stat.narOffset = pos;
     }
 
-    void operator()(std::string_view data) override {}
+    void operator()(BytesView data) override {}
 };
 
 struct NarAccessor : public SourceAccessor
 {
-    std::optional<const std::string> nar;
+    std::optional<const Bytes> nar;
 
     GetNarBytes getNarBytes;
 
@@ -119,16 +119,16 @@ struct NarAccessor : public SourceAccessor
             createMember(path, NarMember{.stat = {.type = Type::tSymlink}, .target = target});
         }
 
-        size_t read(char * data, size_t len) override
+        size_t read(MutableBytesView data) override
         {
-            auto n = source.read(data, len);
+            auto n = source.read(data);
             pos += n;
             return n;
         }
     };
 
-    NarAccessor(std::string && _nar)
-        : nar(_nar)
+    NarAccessor(Bytes && _nar)
+        : nar(std::move(_nar))
     {
         StringSource source(*nar);
         NarIndexer indexer(*this, source);
@@ -222,7 +222,7 @@ struct NarAccessor : public SourceAccessor
             return getNarBytes(*i.stat.narOffset, *i.stat.fileSize);
 
         assert(nar);
-        return std::string(*nar, *i.stat.narOffset, *i.stat.fileSize);
+        return std::string(reinterpret_cast<const char *>(nar->data() + *i.stat.narOffset), *i.stat.fileSize);
     }
 
     std::string readLink(const CanonPath & path) override
@@ -234,7 +234,7 @@ struct NarAccessor : public SourceAccessor
     }
 };
 
-ref<SourceAccessor> makeNarAccessor(std::string && nar)
+ref<SourceAccessor> makeNarAccessor(Bytes && nar)
 {
     return make_ref<NarAccessor>(std::move(nar));
 }
@@ -266,7 +266,7 @@ GetNarBytes seekableGetNarBytes(const Path & path)
             throw SysError("seeking in '%s'", path);
 
         std::string buf(length, 0);
-        readFull(fd.get(), buf.data(), length);
+        readFull(fd.get(), MutableBytesView{reinterpret_cast<std::byte *>(buf.data()), length});
 
         return buf;
     };

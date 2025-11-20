@@ -255,7 +255,7 @@ Path readLink(const Path & path)
     return readLink(std::filesystem::path{path}).string();
 }
 
-std::string readFile(const Path & path)
+Bytes readFile(const Path & path)
 {
     AutoCloseFD fd = toDescriptor(open(
         path.c_str(),
@@ -270,7 +270,7 @@ std::string readFile(const Path & path)
     return readFile(fd.get());
 }
 
-std::string readFile(const std::filesystem::path & path)
+Bytes readFile(const std::filesystem::path & path)
 {
     return readFile(os_string_to_string(PathViewNG{path}));
 }
@@ -282,7 +282,7 @@ void readFile(const Path & path, Sink & sink, bool memory_map)
         try {
             boost::iostreams::mapped_file_source mmap(path);
             if (mmap.is_open()) {
-                sink({mmap.data(), mmap.size()});
+                sink(BytesView{reinterpret_cast<const std::byte *>(mmap.data()), mmap.size()});
                 return;
             }
         } catch (const boost::exception & e) {
@@ -328,7 +328,7 @@ void writeFile(AutoCloseFD & fd, const Path & origPath, std::string_view s, mode
 {
     assert(fd);
     try {
-        writeFull(fd.get(), s);
+        writeFull(fd.get(), as_bytes(s));
 
         if (sync == FsSync::Yes)
             fd.fsync();
@@ -353,13 +353,13 @@ void writeFile(const Path & path, Source & source, mode_t mode, FsSync sync)
     if (!fd)
         throw SysError("opening file '%1%'", path);
 
-    std::array<char, 64 * 1024> buf;
+    std::array<std::byte, 64 * 1024> buf;
 
     try {
         while (true) {
             try {
-                auto n = source.read(buf.data(), buf.size());
-                writeFull(fd.get(), {buf.data(), n});
+                auto n = source.read(MutableBytesView{buf.data(), buf.size()});
+                writeFull(fd.get(), BytesView{buf.data(), n});
             } catch (EndOfFile &) {
                 break;
             }

@@ -124,7 +124,7 @@ struct FileTransferRequest
     struct UploadData
     {
         UploadData(StringSource & s)
-            : sizeHint(s.s.length())
+            : sizeHint(s.s.size())
             , source(&s)
         {
         }

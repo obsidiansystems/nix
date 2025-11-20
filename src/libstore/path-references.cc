@@ -106,7 +106,7 @@ void scanForReferencesDeep(
 
             // Scan symlink target for references
             auto target = accessor.readLink(path);
-            sink(std::string_view(target));
+            sink(as_bytes(target));
 
             // Get the references found in this symlink target
             auto foundRefs = sink.getResultPaths();

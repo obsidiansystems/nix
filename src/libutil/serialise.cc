@@ -19,10 +19,10 @@
 
 namespace nix {
 
-void BufferedSink::operator()(std::string_view data)
+void BufferedSink::operator()(BytesView data)
 {
     if (!buffer)
-        buffer = decltype(buffer)(new char[bufSize]);
+        buffer = decltype(buffer)(new std::byte[bufSize]);
 
     while (!data.empty()) {
         /* Optimisation: bypass the buffer if the data exceeds the
@@ -36,7 +36,7 @@ void BufferedSink::operator()(std::string_view data)
            when it's full. */
         size_t n = bufPos + data.size() > bufSize ? bufSize - bufPos : data.size();
         memcpy(buffer.get() + bufPos, data.data(), n);
-        data.remove_prefix(n);
+        data = data.subspan(n);
         bufPos += n;
         if (bufPos == bufSize)
             flush();
@@ -49,7 +49,7 @@ void BufferedSink::flush()
         return;
     size_t n = bufPos;
     bufPos = 0; // don't trigger the assert() in ~BufferedSink()
-    writeUnbuffered({buffer.get(), n});
+    writeUnbuffered(BytesView{buffer.get(), n});
 }
 
 FdSink::~FdSink()
@@ -61,7 +61,7 @@ FdSink::~FdSink()
     }
 }
 
-void FdSink::writeUnbuffered(std::string_view data)
+void FdSink::writeUnbuffered(BytesView data)
 {
     written += data.size();
     try {
@@ -77,27 +77,21 @@ bool FdSink::good()
     return _good;
 }
 
-void Source::operator()(char * data, size_t len)
+void Source::operator()(MutableBytesView data)
 {
-    while (len) {
-        size_t n = read(data, len);
-        data += n;
-        len -= n;
+    while (!data.empty()) {
+        size_t n = read(data);
+        data = data.subspan(n);
     }
-}
-
-void Source::operator()(std::string_view data)
-{
-    (*this)((char *) data.data(), data.size());
 }
 
 void Source::drainInto(Sink & sink)
 {
-    std::array<char, 8192> buf;
+    std::array<std::byte, 8192> buf;
     while (true) {
         try {
-            auto n = read(buf.data(), buf.size());
-            sink({buf.data(), n});
+            auto n = read(MutableBytesView{buf});
+            sink(BytesView{buf.data(), n});
         } catch (EndOfFile &) {
             break;
         }
@@ -108,30 +102,30 @@ std::string Source::drain()
 {
     StringSink s;
     drainInto(s);
-    return std::move(s.s);
+    return std::string(as_str(s.s));
 }
 
 void Source::skip(size_t len)
 {
-    std::array<char, 8192> buf;
+    std::array<std::byte, 8192> buf;
     while (len) {
-        auto n = read(buf.data(), std::min(len, buf.size()));
+        auto n = read(MutableBytesView{buf.data(), std::min(len, buf.size())});
         assert(n <= len);
         len -= n;
     }
 }
 
-size_t BufferedSource::read(char * data, size_t len)
+size_t BufferedSource::read(MutableBytesView data)
 {
     if (!buffer)
-        buffer = decltype(buffer)(new char[bufSize]);
+        buffer = decltype(buffer)(new std::byte[bufSize]);
 
     if (!bufPosIn)
-        bufPosIn = readUnbuffered(buffer.get(), bufSize);
+        bufPosIn = readUnbuffered(MutableBytesView{buffer.get(), bufSize});
 
     /* Copy out the data in the buffer. */
-    auto n = std::min(len, bufPosIn - bufPosOut);
-    memcpy(data, buffer.get() + bufPosOut, n);
+    auto n = std::min(data.size(), bufPosIn - bufPosOut);
+    memcpy(data.data(), buffer.get() + bufPosOut, n);
     bufPosOut += n;
     if (bufPosIn == bufPosOut)
         bufPosIn = bufPosOut = 0;
@@ -143,12 +137,12 @@ bool BufferedSource::hasData()
     return bufPosOut < bufPosIn;
 }
 
-size_t FdSource::readUnbuffered(char * data, size_t len)
+size_t FdSource::readUnbuffered(MutableBytesView data)
 {
 #ifdef _WIN32
     DWORD n;
     checkInterrupt();
-    if (!::ReadFile(fd, data, len, &n, NULL)) {
+    if (!::ReadFile(fd, data.data(), data.size(), &n, NULL)) {
         _good = false;
         throw windows::WinError("ReadFile when FdSource::readUnbuffered");
     }
@@ -156,7 +150,7 @@ size_t FdSource::readUnbuffered(char * data, size_t len)
     ssize_t n;
     do {
         checkInterrupt();
-        n = ::read(fd, data, len);
+        n = ::read(fd, data.data(), data.size());
     } while (n == -1 && errno == EINTR);
     if (n == -1) {
         _good = false;
@@ -245,11 +239,12 @@ void FdSource::skip(size_t len)
         BufferedSource::skip(len);
 }
 
-size_t StringSource::read(char * data, size_t len)
+size_t StringSource::read(MutableBytesView data)
 {
     if (pos == s.size())
         throw EndOfFile("end of string reached");
-    size_t n = s.copy(data, len, pos);
+    size_t n = std::min(data.size(), s.size() - pos);
+    memcpy(data.data(), s.data() + pos, n);
     pos += n;
     return n;
 }
@@ -291,9 +286,9 @@ std::unique_ptr<FinishSink> sourceToSink(std::function<void(Source &)> fun)
         {
         }
 
-        std::string_view cur;
+        BytesView cur;
 
-        void operator()(std::string_view in) override
+        void operator()(BytesView in) override
         {
             if (in.empty())
                 return;
@@ -301,15 +296,16 @@ std::unique_ptr<FinishSink> sourceToSink(std::function<void(Source &)> fun)
 
             if (!coro) {
                 coro = coro_t::push_type([&](coro_t::pull_type & yield) {
-                    LambdaSource source([&](char * out, size_t out_len) {
+                    LambdaSource source([&](MutableBytesView out) {
                         if (cur.empty()) {
                             yield();
                             if (yield.get())
                                 throw EndOfFile("coroutine has finished");
                         }
 
-                        size_t n = cur.copy(out, out_len);
-                        cur.remove_prefix(n);
+                        size_t n = std::min(out.size(), cur.size());
+                        memcpy(out.data(), cur.data(), n);
+                        cur = cur.subspan(n);
                         return n;
                     });
                     fun(source);
@@ -339,7 +335,7 @@ std::unique_ptr<Source> sinkToSource(std::function<void(Sink &)> fun, std::funct
 {
     struct SinkToSource : Source
     {
-        typedef boost::coroutines2::coroutine<std::string_view> coro_t;
+        typedef boost::coroutines2::coroutine<BytesView> coro_t;
 
         std::function<void(Sink &)> fun;
         std::function<void()> eof;
@@ -351,14 +347,14 @@ std::unique_ptr<Source> sinkToSource(std::function<void(Sink &)> fun, std::funct
         {
         }
 
-        std::string_view cur;
+        BytesView cur;
 
-        size_t read(char * data, size_t len) override
+        size_t read(MutableBytesView data) override
         {
             bool hasCoro = coro.has_value();
             if (!hasCoro) {
                 coro = coro_t::pull_type([&](coro_t::push_type & yield) {
-                    LambdaSink sink([&](std::string_view data) {
+                    LambdaSink sink([&](BytesView data) {
                         if (!data.empty()) {
                             yield(data);
                         }
@@ -380,8 +376,9 @@ std::unique_ptr<Source> sinkToSource(std::function<void(Sink &)> fun, std::funct
                 }
             }
 
-            size_t n = cur.copy(data, len);
-            cur.remove_prefix(n);
+            size_t n = std::min(data.size(), cur.size());
+            memcpy(data.data(), cur.data(), n);
+            cur = cur.subspan(n);
 
             return n;
         }
@@ -393,16 +390,15 @@ std::unique_ptr<Source> sinkToSource(std::function<void(Sink &)> fun, std::funct
 void writePadding(size_t len, Sink & sink)
 {
     if (len % 8) {
-        char zero[8];
-        memset(zero, 0, sizeof(zero));
-        sink({zero, 8 - (len % 8)});
+        std::byte zero[8] = {};
+        sink(BytesView{zero, 8 - (len % 8)});
     }
 }
 
 void writeString(std::string_view data, Sink & sink)
 {
     sink << data.size();
-    sink(data);
+    sink(as_bytes(data));
     writePadding(data.size(), sink);
 }
 
@@ -448,11 +444,11 @@ Sink & operator<<(Sink & sink, const Error & ex)
 void readPadding(size_t len, Source & source)
 {
     if (len % 8) {
-        char zero[8];
+        std::byte zero[8];
         size_t n = 8 - (len % 8);
-        source(zero, n);
+        source(MutableBytesView{zero, n});
         for (unsigned int i = 0; i < n; i++)
-            if (zero[i])
+            if (zero[i] != std::byte{0})
                 throw SerialisationError("non-zero padding");
     }
 }
@@ -462,7 +458,7 @@ size_t readString(char * buf, size_t max, Source & source)
     auto len = readNum<size_t>(source);
     if (len > max)
         throw SerialisationError("string is too long");
-    source(buf, len);
+    source(MutableBytesView{reinterpret_cast<std::byte *>(buf), len});
     readPadding(len, source);
     return len;
 }
@@ -473,7 +469,7 @@ std::string readString(Source & source, size_t max)
     if (len > max)
         throw SerialisationError("string is too long");
     std::string res(len, 0);
-    source(res.data(), len);
+    source(MutableBytesView{reinterpret_cast<std::byte *>(res.data()), len});
     readPadding(len, source);
     return res;
 }
@@ -519,21 +515,21 @@ Error readError(Source & source)
     return Error(std::move(info));
 }
 
-void StringSink::operator()(std::string_view data)
+void StringSink::operator()(BytesView data)
 {
-    s.append(data);
+    s.insert(s.end(), data.begin(), data.end());
 }
 
-size_t ChainSource::read(char * data, size_t len)
+size_t ChainSource::read(MutableBytesView data)
 {
     if (useSecond) {
-        return source2.read(data, len);
+        return source2.read(data);
     } else {
         try {
-            return source1.read(data, len);
+            return source1.read(data);
         } catch (EndOfFile &) {
             useSecond = true;
-            return this->read(data, len);
+            return this->read(data);
         }
     }
 }

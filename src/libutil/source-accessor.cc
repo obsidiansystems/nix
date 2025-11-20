@@ -51,14 +51,14 @@ std::string SourceAccessor::readFile(const CanonPath & path)
     std::optional<uint64_t> size;
     readFile(path, sink, [&](uint64_t _size) { size = _size; });
     assert(size && *size == sink.s.size());
-    return std::move(sink.s);
+    return std::string(as_str(sink.s));
 }
 
 void SourceAccessor::readFile(const CanonPath & path, Sink & sink, std::function<void(uint64_t)> sizeCallback)
 {
     auto s = readFile(path);
     sizeCallback(s.size());
-    sink(s);
+    sink(as_bytes(s));
 }
 
 Hash SourceAccessor::hashPath(const CanonPath & path, PathFilter & filter, HashAlgorithm ha)

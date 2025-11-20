@@ -21,7 +21,7 @@ ssize_t callback_read(struct archive * archive, void * _self, const void ** buff
     *buffer = self->buffer.data();
 
     try {
-        return self->source->read((char *) self->buffer.data(), self->buffer.size());
+        return self->source->read(MutableBytesView{reinterpret_cast<std::byte *>(self->buffer.data()), self->buffer.size()});
     } catch (EndOfFile &) {
         return 0;
     } catch (std::exception & err) {
@@ -221,8 +221,8 @@ time_t unpackTarfileToSink(TarArchive & archive, ExtendedFileSystemObjectSink & 
                         checkLibArchive(archive.archive, n, "cannot read file from tarball: %s");
                     if (n == 0)
                         break;
-                    crf(std::string_view{
-                        (const char *) buf.data(),
+                    crf(BytesView{
+                        reinterpret_cast<const std::byte *>(buf.data()),
                         (size_t) n,
                     });
                 }

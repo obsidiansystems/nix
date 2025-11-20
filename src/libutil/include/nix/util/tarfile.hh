@@ -11,7 +11,7 @@ struct TarArchive
 {
     struct archive * archive;
     Source * source;
-    std::vector<unsigned char> buffer;
+    Bytes buffer;
 
     void check(int err, const std::string & reason = "failed to extract archive (%s)");
 

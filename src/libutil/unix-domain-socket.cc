@@ -78,15 +78,16 @@ bindConnectProcHelper(std::string_view operationName, auto && operation, Socket 
                 memcpy(addr.sun_path, base.c_str(), base.size() + 1);
                 if (operation(fd, psaddr, sizeof(addr)) == -1)
                     throw SysError("cannot %s to socket at '%s'", operationName, path);
-                writeFull(pipe.writeSide.get(), "0\n");
+                writeFull(pipe.writeSide.get(), as_bytes("0\n"));
             } catch (SysError & e) {
-                writeFull(pipe.writeSide.get(), fmt("%d\n", e.errNo));
+                auto msg = fmt("%d\n", e.errNo);
+                writeFull(pipe.writeSide.get(), as_bytes(msg));
             } catch (...) {
-                writeFull(pipe.writeSide.get(), "-1\n");
+                writeFull(pipe.writeSide.get(), as_bytes("-1\n"));
             }
         });
         pipe.writeSide.close();
-        auto errNo = string2Int<int>(chomp(drainFD(pipe.readSide.get())));
+        auto errNo = string2Int<int>(chomp(as_str(drainFD(pipe.readSide.get()))));
         if (!errNo || *errNo == -1)
             throw Error("cannot %s to socket at '%s'", operationName, path);
         else if (*errNo > 0) {

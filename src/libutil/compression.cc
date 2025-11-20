@@ -21,17 +21,17 @@ struct ChunkedCompressionSink : CompressionSink
 {
     uint8_t outbuf[32 * 1024];
 
-    void writeUnbuffered(std::string_view data) override
+    void writeUnbuffered(BytesView data) override
     {
         const size_t CHUNK_SIZE = sizeof(outbuf) << 2;
         while (!data.empty()) {
             size_t n = std::min(CHUNK_SIZE, data.size());
-            writeInternal(data.substr(0, n));
-            data.remove_prefix(n);
+            writeInternal(data.subspan(0, n));
+            data = data.subspan(n);
         }
     }
 
-    virtual void writeInternal(std::string_view data) = 0;
+    virtual void writeInternal(BytesView data) = 0;
 };
 
 struct ArchiveDecompressionSource : Source
@@ -48,8 +48,10 @@ struct ArchiveDecompressionSource : Source
 
     ~ArchiveDecompressionSource() override {}
 
-    size_t read(char * data, size_t len) override
+    size_t read(MutableBytesView data) override
     {
+        size_t len = data.size();
+        char * dataPtr = reinterpret_cast<char *>(data.data());
         struct archive_entry * ae;
         if (!archive) {
             archive = std::make_unique<TarArchive>(src, /*raw*/ true, compressionMethod);
@@ -58,7 +60,7 @@ struct ArchiveDecompressionSource : Source
                 throw CompressionError("input compression not recognized");
             }
         }
-        ssize_t result = archive_read_data(this->archive->archive, data, len);
+        ssize_t result = archive_read_data(this->archive->archive, dataPtr, len);
         if (result > 0)
             return result;
         if (result == 0) {
@@ -114,9 +116,9 @@ struct ArchiveCompressionSink : CompressionSink
             throw Error(reason, archive_error_string(this->archive));
     }
 
-    void writeUnbuffered(std::string_view data) override
+    void writeUnbuffered(BytesView data) override
     {
-        ssize_t result = archive_write_data(archive, data.data(), data.length());
+        ssize_t result = archive_write_data(archive, data.data(), data.size());
         if (result <= 0)
             check(result);
     }
@@ -134,7 +136,7 @@ private:
     static ssize_t callback_write(struct archive * archive, void * _self, const void * buffer, size_t length)
     {
         auto self = (ArchiveCompressionSink *) _self;
-        self->nextSink({(const char *) buffer, length});
+        self->nextSink(BytesView{reinterpret_cast<const std::byte *>(buffer), length});
         return length;
     }
 };
@@ -155,7 +157,7 @@ struct NoneSink : CompressionSink
         flush();
     }
 
-    void writeUnbuffered(std::string_view data) override
+    void writeUnbuffered(BytesView data) override
     {
         nextSink(data);
     }
@@ -186,9 +188,9 @@ struct BrotliDecompressionSink : ChunkedCompressionSink
         writeInternal({});
     }
 
-    void writeInternal(std::string_view data) override
+    void writeInternal(BytesView data) override
     {
-        auto next_in = (const uint8_t *) data.data();
+        auto next_in = reinterpret_cast<const uint8_t *>(data.data());
         size_t avail_in = data.size();
         uint8_t * next_out = outbuf;
         size_t avail_out = sizeof(outbuf);
@@ -200,7 +202,7 @@ struct BrotliDecompressionSink : ChunkedCompressionSink
                 throw CompressionError("error while decompressing brotli file");
 
             if (avail_out < sizeof(outbuf) || avail_in == 0) {
-                nextSink({(char *) outbuf, sizeof(outbuf) - avail_out});
+                nextSink(BytesView{reinterpret_cast<const std::byte *>(outbuf), sizeof(outbuf) - avail_out});
                 next_out = outbuf;
                 avail_out = sizeof(outbuf);
             }
@@ -214,9 +216,9 @@ std::string decompress(const std::string & method, std::string_view in)
 {
     StringSink ssink;
     auto sink = makeDecompressionSink(method, ssink);
-    (*sink)(in);
+    (*sink)(as_bytes(in));
     sink->finish();
-    return std::move(ssink.s);
+    return std::string(as_str(ssink.s));
 }
 
 std::unique_ptr<FinishSink> makeDecompressionSink(const std::string & method, Sink & nextSink)
@@ -258,9 +260,9 @@ struct BrotliCompressionSink : ChunkedCompressionSink
         writeInternal({});
     }
 
-    void writeInternal(std::string_view data) override
+    void writeInternal(BytesView data) override
     {
-        auto next_in = (const uint8_t *) data.data();
+        auto next_in = reinterpret_cast<const uint8_t *>(data.data());
         size_t avail_in = data.size();
         uint8_t * next_out = outbuf;
         size_t avail_out = sizeof(outbuf);
@@ -279,7 +281,7 @@ struct BrotliCompressionSink : ChunkedCompressionSink
                 throw CompressionError("error while compressing brotli compression");
 
             if (avail_out < sizeof(outbuf) || avail_in == 0) {
-                nextSink({(const char *) outbuf, sizeof(outbuf) - avail_out});
+                nextSink(BytesView{reinterpret_cast<const std::byte *>(outbuf), sizeof(outbuf) - avail_out});
                 next_out = outbuf;
                 avail_out = sizeof(outbuf);
             }
@@ -304,7 +306,7 @@ ref<CompressionSink> makeCompressionSink(const std::string & method, Sink & next
         throw UnknownCompressionMethod("unknown compression method '%s'", method);
 }
 
-std::string compress(const std::string & method, std::string_view in, const bool parallel, int level)
+Bytes compress(const std::string & method, BytesView in, const bool parallel, int level)
 {
     StringSink ssink;
     auto sink = makeCompressionSink(method, ssink, parallel, level);

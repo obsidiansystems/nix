@@ -34,58 +34,67 @@ static void search(std::string_view s, StringSet & hashes, StringSet & seen)
     }
 }
 
-void RefScanSink::operator()(std::string_view data)
+void RefScanSink::operator()(BytesView data)
 {
     /* It's possible that a reference spans the previous and current
        fragment, so search in the concatenation of the tail of the
        previous fragment and the start of the current fragment. */
-    auto s = tail;
+    Bytes s(tail);
     auto tailLen = std::min(data.size(), refLength);
-    s.append(data.data(), tailLen);
-    search(s, hashes, seen);
+    s.insert(s.end(), data.begin(), data.begin() + tailLen);
+    search(as_str(s), hashes, seen);
 
-    search(data, hashes, seen);
+    search(as_str(data), hashes, seen);
 
     auto rest = refLength - tailLen;
     if (rest < tail.size())
-        tail = tail.substr(tail.size() - rest);
-    tail.append(data.data() + data.size() - tailLen, tailLen);
+        tail = Bytes(tail.begin() + (tail.size() - rest), tail.end());
+    auto tailData = data.subspan(data.size() - tailLen);
+    tail.insert(tail.end(), tailData.begin(), tailData.end());
 }
 
-RewritingSink::RewritingSink(const std::string & from, const std::string & to, Sink & nextSink)
-    : RewritingSink({{from, to}}, nextSink)
+RewritingSink::RewritingSink(BytesView from, BytesView to, Sink & nextSink)
+    : RewritingSink(std::map<Bytes, Bytes>{{Bytes(from.begin(), from.end()), Bytes(to.begin(), to.end())}}, nextSink)
 {
 }
 
-RewritingSink::RewritingSink(const StringMap & rewrites, Sink & nextSink)
-    : rewrites(rewrites)
+RewritingSink::RewritingSink(std::map<Bytes, Bytes> && rewrites, Sink & nextSink)
+    : rewrites(std::move(rewrites))
     , nextSink(nextSink)
 {
-    std::string::size_type maxRewriteSize = 0;
-    for (auto & [from, to] : rewrites) {
+    Bytes::size_type maxRewriteSize = 0;
+    for (auto & [from, to] : this->rewrites) {
         assert(from.size() == to.size());
         maxRewriteSize = std::max(maxRewriteSize, from.size());
     }
     this->maxRewriteSize = maxRewriteSize;
 }
 
-void RewritingSink::operator()(std::string_view data)
+void RewritingSink::operator()(BytesView data)
 {
-    std::string s(prev);
-    s.append(data);
+    Bytes s(prev);
+    s.insert(s.end(), data.begin(), data.end());
 
-    s = rewriteStrings(s, rewrites);
+    // Rewrite bytes
+    for (auto & [from, to] : rewrites) {
+        size_t pos = 0;
+        while ((pos = std::search(s.begin() + pos, s.end(), from.begin(), from.end()) - s.begin()) < s.size()) {
+            std::copy(to.begin(), to.end(), s.begin() + pos);
+            matches.push_back(this->pos + pos);
+            pos += from.size();
+        }
+    }
 
     prev = s.size() < maxRewriteSize ? s
-           : maxRewriteSize == 0     ? ""
-                                     : std::string(s, s.size() - maxRewriteSize + 1, maxRewriteSize - 1);
+           : maxRewriteSize == 0     ? Bytes{}
+                                     : Bytes(s.begin() + (s.size() - maxRewriteSize + 1), s.end());
 
     auto consumed = s.size() - prev.size();
 
     pos += consumed;
 
     if (consumed)
-        nextSink(s.substr(0, consumed));
+        nextSink(BytesView{s.data(), consumed});
 }
 
 void RewritingSink::flush()
@@ -97,13 +106,13 @@ void RewritingSink::flush()
     prev.clear();
 }
 
-HashModuloSink::HashModuloSink(HashAlgorithm ha, const std::string & modulus)
+HashModuloSink::HashModuloSink(HashAlgorithm ha, BytesView modulus)
     : hashSink(ha)
-    , rewritingSink(modulus, std::string(modulus.size(), 0), hashSink)
+    , rewritingSink(modulus, Bytes(modulus.size(), std::byte{0}), hashSink)
 {
 }
 
-void HashModuloSink::operator()(std::string_view data)
+void HashModuloSink::operator()(BytesView data)
 {
     rewritingSink(data);
 }
@@ -117,7 +126,7 @@ HashResult HashModuloSink::finish()
        self-references already zeroed out do not produce a hash
        collision. FIXME: proof. */
     for (auto & pos : rewritingSink.matches)
-        hashSink(fmt("|%d", pos));
+        hashSink(as_bytes(fmt("|%d", pos)));
 
     auto h = hashSink.finish();
     return {.hash = h.hash, .numBytesDigested = rewritingSink.pos};

@@ -23,7 +23,7 @@ class RemoteFSAccessor : public SourceAccessor
 
     Path makeCacheFile(std::string_view hashPart, const std::string & ext);
 
-    ref<SourceAccessor> addToCache(std::string_view hashPart, std::string && nar);
+    ref<SourceAccessor> addToCache(std::string_view hashPart, Bytes && nar);
 
 public:
 

@@ -23,12 +23,12 @@ Path RemoteFSAccessor::makeCacheFile(std::string_view hashPart, const std::strin
     return fmt("%s/%s.%s", cacheDir, hashPart, ext);
 }
 
-ref<SourceAccessor> RemoteFSAccessor::addToCache(std::string_view hashPart, std::string && nar)
+ref<SourceAccessor> RemoteFSAccessor::addToCache(std::string_view hashPart, Bytes && nar)
 {
     if (cacheDir != "") {
         try {
             /* FIXME: do this asynchronously. */
-            writeFile(makeCacheFile(hashPart, "nar"), nar);
+            writeFile(makeCacheFile(hashPart, "nar"), as_str(nar));
         } catch (...) {
             ignoreExceptionExceptInterrupt();
         }

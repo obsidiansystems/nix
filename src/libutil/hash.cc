@@ -310,7 +310,7 @@ const size_t blake3TbbThreshold = 128000;
 // Decide which BLAKE3 update strategy to use based on some heuristics. Currently this just checks the data size but in
 // the future it might also take into consideration available system resources or the presence of a shared-memory
 // capable GPU for a heterogenous compute implementation.
-void blake3_hasher_update_with_heuristics(blake3_hasher * blake3, std::string_view data)
+void blake3_hasher_update_with_heuristics(blake3_hasher * blake3, BytesView data)
 {
 #ifdef BLAKE3_USE_TBB
     if (data.size() >= blake3TbbThreshold) {
@@ -322,7 +322,7 @@ void blake3_hasher_update_with_heuristics(blake3_hasher * blake3, std::string_vi
     }
 }
 
-static void update(HashAlgorithm ha, Hash::Ctx & ctx, std::string_view data)
+static void update(HashAlgorithm ha, Hash::Ctx & ctx, BytesView data)
 {
     if (ha == HashAlgorithm::BLAKE3)
         blake3_hasher_update_with_heuristics(&ctx.blake3, data);
@@ -355,7 +355,7 @@ Hash hashBytes(HashAlgorithm ha, BytesView s, const ExperimentalFeatureSettings 
     Hash::Ctx ctx;
     Hash hash(ha, xpSettings);
     start(ha, ctx);
-    update(ha, ctx, as_str(s));
+    update(ha, ctx, s);
     finish(ha, ctx, hash.hash);
     return hash;
 }
@@ -381,7 +381,7 @@ HashSink::~HashSink()
     delete ctx;
 }
 
-void HashSink::writeUnbuffered(std::string_view data)
+void HashSink::writeUnbuffered(BytesView data)
 {
     bytes += data.size();
     update(ha, *ctx, data);

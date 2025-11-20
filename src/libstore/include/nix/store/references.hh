@@ -10,7 +10,7 @@ class RefScanSink : public Sink
     StringSet hashes;
     StringSet seen;
 
-    std::string tail;
+    Bytes tail;
 
 public:
 
@@ -24,23 +24,23 @@ public:
         return seen;
     }
 
-    void operator()(std::string_view data) override;
+    void operator()(BytesView data) override;
 };
 
 struct RewritingSink : Sink
 {
-    const StringMap rewrites;
-    std::string::size_type maxRewriteSize;
-    std::string prev;
+    const std::map<Bytes, Bytes> rewrites;
+    Bytes::size_type maxRewriteSize;
+    Bytes prev;
     Sink & nextSink;
     uint64_t pos = 0;
 
     std::vector<uint64_t> matches;
 
-    RewritingSink(const std::string & from, const std::string & to, Sink & nextSink);
-    RewritingSink(const StringMap & rewrites, Sink & nextSink);
+    RewritingSink(BytesView from, BytesView to, Sink & nextSink);
+    RewritingSink(std::map<Bytes, Bytes> && rewrites, Sink & nextSink);
 
-    void operator()(std::string_view data) override;
+    void operator()(BytesView data) override;
 
     void flush();
 };
@@ -50,9 +50,9 @@ struct HashModuloSink : AbstractHashSink
     HashSink hashSink;
     RewritingSink rewritingSink;
 
-    HashModuloSink(HashAlgorithm ha, const std::string & modulus);
+    HashModuloSink(HashAlgorithm ha, BytesView modulus);
 
-    void operator()(std::string_view data) override;
+    void operator()(BytesView data) override;
 
     HashResult finish() override;
 };

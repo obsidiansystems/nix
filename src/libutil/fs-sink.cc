@@ -142,7 +142,7 @@ struct RestoreRegularFile : CreateRegularFileSink
             fd.startFsync();
     }
 
-    void operator()(std::string_view data) override;
+    void operator()(BytesView data) override;
     void isExecutable() override;
     void preallocateContents(uint64_t size) override;
 };
@@ -210,7 +210,7 @@ void RestoreRegularFile::preallocateContents(uint64_t len)
 #endif
 }
 
-void RestoreRegularFile::operator()(std::string_view data)
+void RestoreRegularFile::operator()(BytesView data)
 {
     writeFull(fd.get(), data);
 }
@@ -239,7 +239,7 @@ void RegularFileSink::createRegularFile(const CanonPath & path, std::function<vo
         {
         }
 
-        void operator()(std::string_view data) override
+        void operator()(BytesView data) override
         {
             back.sink(data);
         }
@@ -255,7 +255,7 @@ void NullFileSystemObjectSink::createRegularFile(
 {
     struct : CreateRegularFileSink
     {
-        void operator()(std::string_view data) override {}
+        void operator()(BytesView data) override {}
 
         void isExecutable() override {}
     } crf;

@@ -17,7 +17,7 @@ namespace nix {
 
 using namespace nix::windows;
 
-std::string readFile(HANDLE handle)
+Bytes readFile(HANDLE handle)
 {
     LARGE_INTEGER li;
     if (!GetFileSizeEx(handle, &li))

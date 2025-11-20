@@ -15,7 +15,7 @@ struct Source;
  * Return an object that provides access to the contents of a NAR
  * file.
  */
-ref<SourceAccessor> makeNarAccessor(std::string && nar);
+ref<SourceAccessor> makeNarAccessor(Bytes && nar);
 
 ref<SourceAccessor> makeNarAccessor(Source & source);
 
