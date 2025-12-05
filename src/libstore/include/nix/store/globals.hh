@@ -101,7 +101,7 @@ public:
     /**
      * The directory where system configuration files are stored.
      */
-    Path nixConfDir;
+    std::filesystem::path nixConfDir;
 
     /**
      * A list of user configuration files to load.
@@ -189,7 +189,7 @@ public:
         0,
         "cores",
         R"(
-          Sets the value of the `NIX_BUILD_CORES` environment variable in the [invocation of the `builder` executable](@docroot@/language/derivations.md#builder-execution) of a derivation.
+          Sets the value of the `NIX_BUILD_CORES` environment variable in the [invocation of the `builder` executable](@docroot@/store/building.md#builder-execution) of a derivation.
           The `builder` executable can use this variable to control its own maximum amount of parallelism.
 
           <!--
@@ -292,7 +292,7 @@ public:
 
     Setting<std::string> builders{
         this,
-        "@" + nixConfDir + "/machines",
+        "@" + nixConfDir.string() + "/machines",
         "builders",
         R"(
           A semicolon- or newline-separated list of build machines.

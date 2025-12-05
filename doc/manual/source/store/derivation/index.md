@@ -175,7 +175,7 @@ Taking advantage of the above isomorphism (only considering references maps wher
 
 ### System {#system}
 
-The system type on which the [`builder`](#attr-builder) executable is meant to be run.
+The system type on which the [`builder`](#builder) executable is meant to be run.
 
 A necessary condition for Nix to schedule a given derivation on some [Nix instance] is for the "system" of that derivation to match that instance's [`system` configuration option] or [`extra-platforms` configuration option].
 
@@ -265,7 +265,7 @@ There are two formats, documented separately:
 
 - The legacy ["ATerm" format](@docroot@/protocols/derivation-aterm.md)
 
-- The experimental, currently under development and changing [JSON format](@docroot@/protocols/json/derivation.md)
+- The experimental, currently under development and changing [JSON format](@docroot@/protocols/json/derivation/index.md)
 
 Every derivation has a canonical choice of encoding used to serialize it to a store object.
 This ensures that there is a canonical [store path] used to refer to the derivation, as described in [Referencing derivations](#derivation-path).
