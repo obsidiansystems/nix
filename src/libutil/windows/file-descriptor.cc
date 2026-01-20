@@ -1,7 +1,9 @@
+#include "file-descriptor-impl.hh"
 #include "nix/util/file-system.hh"
 #include "nix/util/signals.hh"
 #include "nix/util/finally.hh"
 #include "nix/util/serialise.hh"
+#include "nix/util/socket.hh"
 
 #include <span>
 
@@ -11,6 +13,7 @@
 #include <namedpipeapi.h>
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <mswsock.h>
 
 namespace nix {
 
@@ -69,6 +72,78 @@ size_t write(Descriptor fd, std::span<const std::byte> buffer)
         throw WinError(lastError, "writing %1% bytes to %2%", buffer.size(), PathFmt(descriptorToPath(fd)));
     }
     return static_cast<size_t>(n);
+}
+
+namespace {
+
+/**
+ * Check if a TransmitFile error is recoverable (non-socket destination).
+ * @return true if we should fall back to read/write, false if we should throw
+ */
+bool isTransmitFileRecoverable(DWORD lastError)
+{
+    return lastError == WSAENOTSOCK || lastError == WSAEOPNOTSUPP;
+}
+
+} // namespace
+
+size_t sendFile(Descriptor out_fd, Descriptor in_fd, off_t offset, size_t count)
+{
+    OVERLAPPED ov = {};
+    ov.Offset = static_cast<DWORD>(offset);
+    if constexpr (sizeof(offset) > 4)
+        ov.OffsetHigh = static_cast<DWORD>(offset >> 32);
+
+    // Try TransmitFile (requires out_fd to be a socket)
+    if (TransmitFile(toSocket(out_fd), in_fd, static_cast<DWORD>(count), 0, &ov, nullptr, 0)) {
+        return count;
+    }
+
+    auto lastError = GetLastError();
+    if (!isTransmitFileRecoverable(lastError)) {
+        throw WinError(lastError, "TransmitFile failed");
+    }
+
+    return sendFileFallback(out_fd, in_fd, offset, count);
+}
+
+size_t splice(Descriptor from, Descriptor to)
+{
+    // Try to use TransmitFile for seekable files
+    off_t pos = lseek(from, 0, SEEK_CUR);
+    if (pos != -1) {
+        try {
+            auto size = getFileSize(from);
+            if (static_cast<std::make_unsigned_t<off_t>>(pos) >= size)
+                return 0; // EOF
+
+            auto remaining = size - pos;
+            // Limit to a reasonable chunk size for consistent behavior
+            auto toTransfer = std::min<size_t>(remaining, 64 * 1024);
+
+            OVERLAPPED ov = {};
+            ov.Offset = static_cast<DWORD>(pos);
+            if constexpr (sizeof(pos) > 4)
+                ov.OffsetHigh = static_cast<DWORD>(pos >> 32);
+
+            if (TransmitFile(toSocket(to), from, static_cast<DWORD>(toTransfer), 0, &ov, nullptr, 0)) {
+                // TransmitFile with OVERLAPPED doesn't update file position
+                lseek(from, pos + toTransfer, SEEK_SET);
+                return toTransfer;
+            }
+
+            auto lastError = GetLastError();
+            if (!isTransmitFileRecoverable(lastError)) {
+                throw WinError(lastError, "TransmitFile failed");
+            }
+            // Fall through to fallback for non-socket destinations
+        } catch (WinError &) {
+            // getFileSize failed (e.g., not a regular file), fall through
+        }
+    }
+
+    // Fallback for pipes or non-socket destinations
+    return spliceFallback(from, to);
 }
 
 //////////////////////////////////////////////////////////////////////

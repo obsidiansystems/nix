@@ -48,7 +48,8 @@ subdir('nix-meson-build-support/libatomic')
 
 if host_machine.system() == 'windows'
   socket = cxx.find_library('ws2_32')
-  deps_other += socket
+  mswsock = cxx.find_library('mswsock')
+  deps_other += [ socket, mswsock ]
 elif host_machine.system() == 'sunos'
   socket = cxx.find_library('socket')
   network_service_library = cxx.find_library('nsl')
@@ -226,7 +227,7 @@ libraries_private = []
 if host_machine.system() == 'windows'
   # `libraries_private` cannot contain ad-hoc dependencies (from
   # `find_library), so we need to do this manually
-  libraries_private += [ '-lws2_32' ]
+  libraries_private += [ '-lws2_32', '-lmswsock' ]
 endif
 
 subdir('nix-meson-build-support/export')

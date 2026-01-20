@@ -1,3 +1,4 @@
+#include "file-descriptor-impl.hh"
 #include "nix/util/serialise.hh"
 #include "nix/util/util.hh"
 #include "nix/util/signals.hh"
@@ -117,7 +118,15 @@ std::string readFile(Descriptor fd)
     return drainFD(fd, {.size = size, .expected = false});
 }
 
-void drainFD(Descriptor fd, Sink & sink, DrainFdSinkOpts opts)
+/**
+ * Common implementation for drainFD variants.
+ *
+ * @param fd File descriptor to drain
+ * @param opts Options controlling the drain behavior
+ * @param transferFn Function that transfers data, called with optional remaining byte count.
+ *                   Returns number of bytes transferred, 0 on EOF.
+ */
+static void drainFDImpl([[maybe_unused]] Descriptor fd, DrainFdSinkOpts opts, auto && transferFn)
 {
 #ifndef _WIN32
     // silence GCC maybe-uninitialized warning in finally
@@ -138,21 +147,19 @@ void drainFD(Descriptor fd, Sink & sink, DrainFdSinkOpts opts)
 #endif
 
     size_t bytesRead = 0;
-    std::array<std::byte, 64 * 1024> buf;
     while (1) {
         checkInterrupt();
 
-        size_t toRead = buf.size();
+        std::optional<size_t> remaining;
         if (opts.expectedSize) {
-            size_t remaining = *opts.expectedSize - bytesRead;
-            if (remaining == 0)
+            remaining = *opts.expectedSize - bytesRead;
+            if (*remaining == 0)
                 break;
-            toRead = std::min(toRead, remaining);
         }
 
         size_t n;
         try {
-            n = read(fd, std::span(buf.data(), toRead));
+            n = transferFn(remaining);
         } catch (SystemError & e) {
 #ifndef _WIN32
             if (!opts.block
@@ -169,8 +176,35 @@ void drainFD(Descriptor fd, Sink & sink, DrainFdSinkOpts opts)
         }
 
         bytesRead += n;
-        sink(std::string_view(reinterpret_cast<const char *>(buf.data()), n));
     }
+}
+
+void drainFD(Descriptor fd, FdSink & sink, DrainFdSinkOpts opts)
+{
+    sink.flush();
+    drainFDImpl(fd, opts, [fd, &sink](std::optional<size_t>) {
+        auto n = splice(fd, sink.fd);
+        sink.written += n;
+        return n;
+    });
+}
+
+void drainFD(Descriptor fd, Sink & sink, DrainFdSinkOpts opts)
+{
+    // Use optimized splice path if sink is an FdSink
+    if (auto fdSink = dynamic_cast<FdSink *>(&sink)) {
+        drainFD(fd, *fdSink, opts);
+        return;
+    }
+
+    std::array<std::byte, 64 * 1024> buf;
+    drainFDImpl(fd, opts, [fd, &sink, &buf](std::optional<size_t> remaining) {
+        auto toRead = remaining ? std::min(buf.size(), *remaining) : buf.size();
+        auto n = read(fd, std::span(buf.data(), toRead));
+        if (n > 0)
+            sink(std::string_view(reinterpret_cast<const char *>(buf.data()), n));
+        return n;
+    });
 }
 
 std::string drainFD(Descriptor fd, DrainFdOpts opts)
@@ -189,7 +223,7 @@ std::string drainFD(Descriptor fd, DrainFdOpts opts)
     return std::move(sink.s);
 }
 
-void copyFdRange(Descriptor fd, off_t offset, size_t nbytes, Sink & sink)
+static void copyFdRangeNoSendfile(Descriptor fd, off_t offset, size_t nbytes, Sink & sink)
 {
     auto left = nbytes;
     std::array<std::byte, 64 * 1024> buf;
@@ -204,6 +238,82 @@ void copyFdRange(Descriptor fd, off_t offset, size_t nbytes, Sink & sink)
         offset += n;
         left -= n;
     }
+}
+
+void copyFdRange(Descriptor fd, off_t offset, size_t nbytes, Sink & sink)
+{
+    // Use optimized sendfile path if sink is an FdSink
+    if (auto fdSink = dynamic_cast<FdSink *>(&sink)) {
+        copyFdRange(fd, offset, nbytes, *fdSink);
+        return;
+    }
+
+    // Fallback: regular read/write loop
+    copyFdRangeNoSendfile(fd, offset, nbytes, sink);
+}
+
+void copyFdRange(Descriptor fd, off_t offset, size_t nbytes, FdSink & sink)
+{
+    // Flush any buffered data first
+    sink.flush();
+
+    off_t original_offset = offset;
+    try {
+        auto left = nbytes;
+        while (left) {
+            checkInterrupt();
+            size_t n;
+            try {
+                n = sendFile(sink.fd, fd, offset, left);
+            } catch (SystemError & e) {
+                if (e.is(std::errc::interrupted)) {
+                    continue;
+                }
+                throw;
+            }
+            if (n == 0) {
+                throw EndOfFile("unexpected end-of-file");
+            }
+            assert(n <= left);
+            sink.written += n;
+            offset += n;
+            left -= n;
+        }
+    } catch (SystemError & e) {
+        if (e.is(std::errc::invalid_argument) || e.is(std::errc::function_not_supported)) {
+            // sendfile not supported, fall back to regular read/write
+            size_t bytes_sent = offset - original_offset;
+            copyFdRangeNoSendfile(fd, offset, nbytes - bytes_sent, sink);
+        } else {
+            throw;
+        }
+    }
+}
+
+size_t sendFileFallback(Descriptor out_fd, Descriptor in_fd, off_t offset, size_t count)
+{
+    std::array<std::byte, 64 * 1024> buf;
+    size_t total = 0;
+    while (total < count) {
+        checkInterrupt();
+        auto toRead = std::min(buf.size(), count - total);
+        auto n = readOffset(in_fd, offset + total, std::span(buf.data(), toRead));
+        if (n == 0)
+            throw EndOfFile("unexpected EOF in sendFile");
+        writeFull(out_fd, std::string_view(reinterpret_cast<char *>(buf.data()), n), false);
+        total += n;
+    }
+    return total;
+}
+
+size_t spliceFallback(Descriptor from, Descriptor to)
+{
+    std::array<std::byte, 64 * 1024> buf;
+    auto n = read(from, buf);
+    if (n == 0)
+        return 0;
+    writeFull(to, std::string_view(reinterpret_cast<char *>(buf.data()), n), false);
+    return n;
 }
 
 //////////////////////////////////////////////////////////////////////

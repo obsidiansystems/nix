@@ -22,6 +22,7 @@ namespace nix {
 
 struct Sink;
 struct Source;
+struct FdSink;
 
 /**
  * Operating System capability
@@ -113,13 +114,48 @@ std::make_unsigned_t<off_t> getFileSize(Descriptor fd);
 size_t readOffset(Descriptor fd, off_t offset, std::span<std::byte> buffer);
 
 /**
- * Read \ref nbytes starting at \ref offset from a seekable file into a sink.
+ * Read @ref nbytes starting at @ref offset from a seekable file into a sink.
  *
  * @throws SystemError if fd is not seekable or any operation fails
  * @throws Interrupted if the operation was interrupted
- * @throws EndOfFile if an EOF was reached before reading \ref nbytes
+ * @throws EndOfFile if an EOF was reached before reading @ref nbytes
  */
 void copyFdRange(Descriptor fd, off_t offset, size_t nbytes, Sink & sink);
+
+/**
+ * Optimized version of copyFdRange for FdSink that uses sendfile when available.
+ */
+void copyFdRange(Descriptor fd, off_t offset, size_t nbytes, FdSink & sink);
+
+/**
+ * Zero-copy transfer of data from one file descriptor to another.
+ * Wrapper around platform-specific sendfile/TransmitFile APIs, with
+ * fallback to read/write loop on unsupported platforms.
+ *
+ * @param out_fd Destination file descriptor
+ * @param in_fd Source file descriptor (must be seekable)
+ * @param offset Offset in source file to start reading from
+ * @param count Number of bytes to transfer
+ * @return Number of bytes transferred
+ *
+ * @throws SystemError on failure
+ * @throws Interrupted if the operation was interrupted
+ *
+ * @note Caller should update offset by adding the return value
+ */
+size_t sendFile(Descriptor out_fd, Descriptor in_fd, off_t offset, size_t count);
+
+/**
+ * Copy data from one file descriptor to another.
+ *
+ * Uses the `splice` syscall on Linux for efficiency, with automatic
+ * fallback to read/write for unsupported fd types. Always works for
+ * any readable source and writable destination.
+ *
+ * @return Number of bytes copied, 0 on EOF
+ * @throws SysError on read/write failure
+ */
+size_t splice(Descriptor from, Descriptor to);
 
 /**
  * Wrappers around read()/write() that read/write exactly the
@@ -209,6 +245,11 @@ std::string drainFD(Descriptor fd, DrainFdOpts opts = {});
  * @param opts Options for the drain operation
  */
 void drainFD(Descriptor fd, Sink & sink, DrainFdSinkOpts opts = {});
+
+/**
+ * Optimized version of drainFD for FdSink that uses splice when available.
+ */
+void drainFD(Descriptor fd, FdSink & sink, DrainFdSinkOpts opts = {});
 
 /**
  * Get [Standard Input](https://en.wikipedia.org/wiki/Standard_streams#Standard_input_(stdin))

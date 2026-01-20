@@ -1,3 +1,4 @@
+#include "file-descriptor-impl.hh"
 #include "nix/util/file-system.hh"
 #include "nix/util/signals.hh"
 #include "nix/util/finally.hh"
@@ -7,6 +8,13 @@
 #include <unistd.h>
 #include <span>
 
+#ifdef __linux__
+#  include <sys/sendfile.h>
+#elif defined(__APPLE__) || defined(__FreeBSD__)
+#  include <sys/types.h>
+#  include <sys/socket.h>
+#  include <sys/uio.h>
+#endif
 #include "util-config-private.hh"
 #include "util-unix-config-private.hh"
 
@@ -52,6 +60,46 @@ size_t write(Descriptor fd, std::span<const std::byte> buffer)
     if (n == -1)
         throw SysError("write of %1% bytes", buffer.size());
     return static_cast<size_t>(n);
+}
+
+size_t sendFile(Descriptor out_fd, Descriptor in_fd, off_t offset, size_t count)
+{
+#ifdef __linux__
+    // Linux sendfile: sendfile(out_fd, in_fd, &offset, count)
+    off_t offset_copy = offset;
+    ssize_t n = ::sendfile(out_fd, in_fd, &offset_copy, count);
+    if (n == -1) {
+        throw SysError("sendfile failed");
+    }
+    return n;
+#elif defined(__APPLE__) || defined(__FreeBSD__)
+    // BSD/macOS sendfile: sendfile(in_fd, out_fd, offset, &len, NULL, 0)
+    off_t len = count;
+    int result = ::sendfile(in_fd, out_fd, offset, &len, nullptr, 0);
+    if (result == -1 && errno != EAGAIN) {
+        throw SysError("sendfile failed");
+    }
+    return len;
+#else
+    return sendFileFallback(out_fd, in_fd, offset, count);
+#endif
+}
+
+size_t splice(Descriptor from, Descriptor to)
+{
+#ifdef __linux__
+    auto res = ::splice(from, nullptr, to, nullptr, SSIZE_MAX, SPLICE_F_MOVE);
+    if (res == -1) {
+        if (errno == EINVAL) {
+            // splice requires at least one pipe fd; fall back to read/write
+            return spliceFallback(from, to);
+        }
+        throw SysError("splicing data between file descriptors");
+    }
+    return res;
+#else
+    return spliceFallback(from, to);
+#endif
 }
 
 //////////////////////////////////////////////////////////////////////
