@@ -49,7 +49,7 @@ TEST(NarInfoDiskCacheImpl, create_and_read)
 
         // We're going to pay special attention to the id field because we had a bug
         // that changed it.
-        db = SQLite(dbPath, {.useWAL = settings.useSQLiteWAL});
+        db = SQLite(dbPath, {.useWAL = settings.getDatabaseSettings().useSQLiteWAL});
         getIds.create(db, "select id from BinaryCaches where url = 'http://foo'");
 
         {

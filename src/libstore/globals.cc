@@ -263,7 +263,7 @@ StringSet Settings::getDefaultExtraPlatforms()
     return extraPlatforms;
 }
 
-bool Settings::isWSL1()
+bool isWSL1()
 {
 #ifdef __linux__
     struct utsname utsbuf;

@@ -501,7 +501,7 @@ void LocalStore::openDB(State & state, bool create)
     auto openMode = config->readOnly ? SQLiteOpenMode::Immutable
                     : create         ? SQLiteOpenMode::Normal
                                      : SQLiteOpenMode::NoCreate;
-    state.db = SQLite(std::filesystem::path(dbDir) / "db.sqlite", {.mode = openMode, .useWAL = settings.useSQLiteWAL});
+    state.db = SQLite(std::filesystem::path(dbDir) / "db.sqlite", {.mode = openMode, .useWAL = settings.getDatabaseSettings().useSQLiteWAL});
 
 #ifdef __CYGWIN__
     /* The cygwin version of sqlite3 has a patch which calls
@@ -520,12 +520,12 @@ void LocalStore::openDB(State & state, bool create)
        should be safe enough.  If the user asks for it, don't sync at
        all.  This can cause database corruption if the system
        crashes. */
-    std::string syncMode = settings.fsyncMetadata ? "normal" : "off";
+    std::string syncMode = settings.getDatabaseSettings().fsyncMetadata ? "normal" : "off";
     db.exec("pragma synchronous = " + syncMode);
 
     /* Set the SQLite journal mode.  WAL mode is fastest, so it's the
        default. */
-    std::string mode = settings.useSQLiteWAL ? "wal" : "truncate";
+    std::string mode = settings.getDatabaseSettings().useSQLiteWAL ? "wal" : "truncate";
     std::string prevMode;
     {
         SQLiteStmt stmt;
@@ -902,7 +902,7 @@ void LocalStore::registerValidPaths(const ValidPathInfos & infos)
        be fsync-ed.  So some may want to fsync them before registering
        the validity, at the expense of some speed of the path
        registering operation. */
-    if (settings.syncBeforeRegistering)
+    if (settings.getDatabaseSettings().syncBeforeRegistering)
         sync();
 #endif
 
@@ -1027,7 +1027,7 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source, RepairF
                 TeeSource wrapperSource{source, hashSink};
 
                 narRead = true;
-                restorePath(realPath, wrapperSource, settings.fsyncStorePaths);
+                restorePath(realPath, wrapperSource, settings.getDatabaseSettings().fsyncStorePaths);
 
                 auto hashResult = hashSink.finish();
 
@@ -1087,7 +1087,7 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source, RepairF
 
                 optimisePath(realPath, repair); // FIXME: combine with hashPath()
 
-                if (settings.fsyncStorePaths) {
+                if (settings.getDatabaseSettings().fsyncStorePaths) {
                     recursiveSync(realPath);
                     syncParent(realPath);
                 }
@@ -1178,7 +1178,7 @@ StorePath LocalStore::addToStoreFromDump(
         delTempDir = std::make_unique<AutoDelete>(tempDir);
         tempPath = tempDir / "x";
 
-        restorePath(tempPath.string(), bothSource, dumpMethod, settings.fsyncStorePaths);
+        restorePath(tempPath.string(), bothSource, dumpMethod, settings.getDatabaseSettings().fsyncStorePaths);
 
         dumpBuffer.reset();
         dump = {};
@@ -1222,7 +1222,7 @@ StorePath LocalStore::addToStoreFromDump(
                 switch (fim) {
                 case FileIngestionMethod::Flat:
                 case FileIngestionMethod::NixArchive:
-                    restorePath(realPath, dumpSource, (FileSerialisationMethod) fim, settings.fsyncStorePaths);
+                    restorePath(realPath, dumpSource, (FileSerialisationMethod) fim, settings.getDatabaseSettings().fsyncStorePaths);
                     break;
                 case FileIngestionMethod::Git:
                     // doesn't correspond to serialization method, so
@@ -1247,7 +1247,7 @@ StorePath LocalStore::addToStoreFromDump(
 
             optimisePath(realPath, repair);
 
-            if (settings.fsyncStorePaths) {
+            if (settings.getDatabaseSettings().fsyncStorePaths) {
                 recursiveSync(realPath);
                 syncParent(realPath);
             }

@@ -201,13 +201,48 @@ struct AutoAllocateUidSettings : public virtual Config
         "The number of UIDs/GIDs to use for dynamic ID allocation."};
 };
 
-class Settings : public virtual Config, private AutoAllocateUidSettings, private GCSettings, private LogFileSettings
+/**
+ * Check if running on WSL1 (Windows Subsystem for Linux version 1).
+ */
+bool isWSL1();
+
+struct DatabaseSettings : public virtual Config
+{
+    Setting<bool> fsyncMetadata{
+        this,
+        true,
+        "fsync-metadata",
+        R"(
+          If set to `true`, changes to the Nix store metadata (in
+          `/nix/var/nix/db`) are synchronously flushed to disk. This improves
+          robustness in case of system crashes, but reduces performance. The
+          default is `true`.
+        )"};
+
+    Setting<bool> fsyncStorePaths{
+        this,
+        false,
+        "fsync-store-paths",
+        R"(
+          Whether to call `fsync()` on store paths before registering them, to
+          flush them to disk. This improves robustness in case of system crashes,
+          but reduces performance. The default is `false`.
+        )"};
+
+    Setting<bool> useSQLiteWAL{this, !isWSL1(), "use-sqlite-wal", "Whether SQLite should use WAL mode."};
+
+#ifndef _WIN32
+    // FIXME: remove this option, `fsync-store-paths` is faster.
+    Setting<bool> syncBeforeRegistering{
+        this, false, "sync-before-registering", "Whether to call `sync()` before registering a path as valid."};
+#endif
+};
+
+class Settings : public virtual Config, private AutoAllocateUidSettings, private GCSettings, private LogFileSettings, private DatabaseSettings
 {
     StringSet getDefaultSystemFeatures();
 
     StringSet getDefaultExtraPlatforms();
-
-    bool isWSL1();
 
     Path getDefaultSSLCertFile();
 
@@ -248,6 +283,19 @@ public:
     const AutoAllocateUidSettings * getAutoAllocateUidSettings() const
     {
         return autoAllocateUids ? this : nullptr;
+    }
+
+    /**
+     * Get the database settings.
+     */
+    DatabaseSettings & getDatabaseSettings()
+    {
+        return *this;
+    }
+
+    const DatabaseSettings & getDatabaseSettings() const
+    {
+        return *this;
     }
 
     static unsigned int getDefaultCores();
@@ -594,35 +642,6 @@ public:
           It means that remote build hosts fetch as many dependencies as possible from their own substituters (e.g, from `cache.nixos.org`) instead of waiting for the local machine to upload them all.
           This can drastically reduce build times if the network connection between the local machine and the remote build host is slow.
         )"};
-
-    Setting<bool> fsyncMetadata{
-        this,
-        true,
-        "fsync-metadata",
-        R"(
-          If set to `true`, changes to the Nix store metadata (in
-          `/nix/var/nix/db`) are synchronously flushed to disk. This improves
-          robustness in case of system crashes, but reduces performance. The
-          default is `true`.
-        )"};
-
-    Setting<bool> fsyncStorePaths{
-        this,
-        false,
-        "fsync-store-paths",
-        R"(
-          Whether to call `fsync()` on store paths before registering them, to
-          flush them to disk. This improves robustness in case of system crashes,
-          but reduces performance. The default is `false`.
-        )"};
-
-    Setting<bool> useSQLiteWAL{this, !isWSL1(), "use-sqlite-wal", "Whether SQLite should use WAL mode."};
-
-#ifndef _WIN32
-    // FIXME: remove this option, `fsync-store-paths` is faster.
-    Setting<bool> syncBeforeRegistering{
-        this, false, "sync-before-registering", "Whether to call `sync()` before registering a path as valid."};
-#endif
 
     Setting<bool> useSubstitutes{
         this,
