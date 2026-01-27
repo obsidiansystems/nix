@@ -221,7 +221,7 @@ public:
     /**
      * Hack for build-remote.cc.
      */
-    PathSet locksHeld;
+    PathSetNG locksHeld;
 
     /**
      * Initialise the local store, upgrading the schema if

@@ -135,18 +135,18 @@ LocalStore::LocalStore(ref<const Config> config)
         makeStoreWritable();
     }
     createDirs(linksDir);
-    Path profilesDir = (config->stateDir.get() / "profiles").string();
+    auto profilesDir = config->stateDir.get() / "profiles";
     createDirs(profilesDir);
     createDirs(tempRootsDir);
     createDirs(dbDir);
-    Path gcRootsDir = (config->stateDir.get() / "gcroots").string();
+    auto gcRootsDir = config->stateDir.get() / "gcroots";
     const auto & gcSettings = settings.getGCSettings();
-    if (!pathExists(gcRootsDir)) {
+    if (!pathExists(gcRootsDir.string())) {
         createDirs(gcRootsDir);
-        replaceSymlink(profilesDir, gcRootsDir + "/profiles");
+        replaceSymlink(profilesDir.string(), (gcRootsDir / "profiles").string());
     }
 
-    for (auto & perUserDir : {profilesDir + "/per-user", gcRootsDir + "/per-user"}) {
+    for (auto & perUserDir : {profilesDir / "per-user", gcRootsDir / "per-user"}) {
         createDirs(perUserDir);
         if (!config->readOnly) {
             // Skip chmod call if the directory already has the correct permissions (0755).
@@ -391,7 +391,7 @@ LocalStore::LocalStore(ref<const Config> config)
 
 AutoCloseFD LocalStore::openGCLock()
 {
-    Path fnGCLock = (config->stateDir.get() / "gc.lock").string();
+    auto fnGCLock = config->stateDir.get() / "gc.lock";
     auto fdGCLock = open(
         fnGCLock.c_str(),
         O_RDWR | O_CREAT
@@ -401,7 +401,7 @@ AutoCloseFD LocalStore::openGCLock()
         ,
         0600);
     if (!fdGCLock)
-        throw SysError("opening global GC lock '%1%'", fnGCLock);
+        throw SysError("opening global GC lock %1%", PathFmt(fnGCLock));
     return toDescriptor(fdGCLock);
 }
 
