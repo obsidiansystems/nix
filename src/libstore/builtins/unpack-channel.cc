@@ -12,7 +12,7 @@ static void builtinUnpackChannel(const BuiltinBuilderContext & ctx)
         return i->second;
     };
 
-    std::filesystem::path out{ctx.outputs.at("out")};
+    auto out = ctx.outputs.at("out");
     auto & channelName = getAttr("channelName");
     auto & src = getAttr("src");
 

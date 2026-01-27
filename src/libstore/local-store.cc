@@ -405,7 +405,7 @@ AutoCloseFD LocalStore::openGCLock()
     return toDescriptor(fdGCLock);
 }
 
-void LocalStore::deleteStorePath(const Path & path, uint64_t & bytesFreed, bool isKnownPath)
+void LocalStore::deleteStorePath(const std::filesystem::path & path, uint64_t & bytesFreed, bool isKnownPath)
 {
     try {
         deletePath(path, bytesFreed);
@@ -415,13 +415,13 @@ void LocalStore::deleteStorePath(const Path & path, uint64_t & bytesFreed, bool 
                 {.msg = HintFmt(
                      isKnownPath ? "ignoring failure to remove store path '%1%': %2%"
                                  : "ignoring failure to remove garbage in store directory '%1%': %2%",
-                     path,
+                     PathFmt(path),
                      e.info().msg)});
         } else {
             e.addTrace(
                 {},
                 isKnownPath ? "While deleting store path '%1%'" : "While deleting garbage in store directory '%1%'",
-                path);
+                PathFmt(path));
             throw;
         }
     }
@@ -873,7 +873,7 @@ std::optional<StorePath> LocalStore::queryPathFromHashPart(const std::string & h
     if (hashPart.size() != StorePath::HashLen)
         throw Error("invalid hash part");
 
-    Path prefix = storeDir + "/" + hashPart;
+    Path prefix = (storeDir / hashPart).string();
 
     return retrySQLite<std::optional<StorePath>>([&]() -> std::optional<StorePath> {
         auto state(_state->lock());

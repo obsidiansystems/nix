@@ -85,11 +85,11 @@ private:
      * An indirection so that we don't need to refer to global settings
      * in headers.
      */
-    static Path getDefaultNixStoreDir();
+    static std::filesystem::path getDefaultNixStoreDir();
 
 public:
 
-    const PathSetting storeDir_{
+    const Setting<std::filesystem::path> storeDir_{
         this,
         getDefaultNixStoreDir(),
         "store",

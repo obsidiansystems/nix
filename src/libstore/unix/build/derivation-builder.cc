@@ -849,7 +849,7 @@ PathsInChroot DerivationBuilderImpl::getPathsInSandbox()
        host file system. */
     PathsInChroot pathsInChroot = defaultPathsInChroot;
 
-    if (hasPrefix(store.storeDir, tmpDirInSandbox().native())) {
+    if (hasPrefix(store.storeDir.string(), tmpDirInSandbox().string())) {
         throw Error("`sandbox-build-dir` must not contain the storeDir");
     }
     pathsInChroot[tmpDirInSandbox()] = {.source = tmpDir};
@@ -1038,7 +1038,7 @@ void DerivationBuilderImpl::initEnv()
        shouldn't care, but this is useful for purity checking (e.g.,
        the compiler or linker might only want to accept paths to files
        in the store or in the build directory). */
-    env["NIX_STORE"] = store.storeDir;
+    env["NIX_STORE"] = store.storeDir.string();
 
     /* The maximum number of cores to utilize for parallel building. */
     env["NIX_BUILD_CORES"] = fmt("%d", settings.buildCores ? settings.buildCores : settings.getDefaultCores());
@@ -1804,13 +1804,13 @@ SingleDrvOutputs DerivationBuilderImpl::registerOutputs()
                         throw NotDeterministic(
                             "derivation '%s' may not be deterministic: output '%s' differs from '%s'",
                             store.printStorePath(drvPath),
-                            store.toRealPath(finalDestPath),
-                            dst);
+                            store.toRealPath(finalDestPath).string(),
+                            dst.string());
                     } else
                         throw NotDeterministic(
                             "derivation '%s' may not be deterministic: output '%s' differs",
                             store.printStorePath(drvPath),
-                            store.toRealPath(finalDestPath));
+                            store.toRealPath(finalDestPath).string());
                 }
 
                 /* Since we verified the build, it's now ultimately trusted. */

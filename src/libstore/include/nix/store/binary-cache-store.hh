@@ -39,7 +39,7 @@ struct BinaryCacheStoreConfig : virtual StoreConfig
           fetch debug info on demand
         )"};
 
-    const Setting<Path> secretKeyFile{this, "", "secret-key", "Path to the secret key used to sign the binary cache."};
+    const Setting<std::filesystem::path> secretKeyFile{this, "", "secret-key", "Path to the secret key used to sign the binary cache."};
 
     const Setting<std::string> secretKeyFiles{
         this, "", "secret-keys", "List of comma-separated paths to the secret keys used to sign the binary cache."};

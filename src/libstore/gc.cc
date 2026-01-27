@@ -41,11 +41,11 @@ namespace nix {
 static std::string gcSocketPath = "/gc-socket/socket";
 static std::string gcRootsDir = "gcroots";
 
-void LocalStore::addIndirectRoot(const Path & path)
+void LocalStore::addIndirectRoot(const std::filesystem::path & path)
 {
-    std::string hash = hashString(HashAlgorithm::SHA1, path).to_string(HashFormat::Nix32, false);
+    std::string hash = hashString(HashAlgorithm::SHA1, path.string()).to_string(HashFormat::Nix32, false);
     auto realRoot = canonPath(config->stateDir.get() / gcRootsDir / "auto" / hash);
-    makeSymlink(realRoot.string(), path);
+    makeSymlink(realRoot, path);
 }
 
 void LocalStore::createTempRootsFile()
@@ -214,7 +214,7 @@ void LocalStore::findTempRoots(Roots & tempRoots, bool censor)
     }
 }
 
-void LocalStore::findRoots(const Path & path, std::filesystem::file_type type, Roots & roots)
+void LocalStore::findRoots(const std::filesystem::path & path, std::filesystem::file_type type, Roots & roots)
 {
     auto foundRoot = [&](const std::filesystem::path & path, const std::filesystem::path & target) {
         try {
@@ -235,7 +235,7 @@ void LocalStore::findRoots(const Path & path, std::filesystem::file_type type, R
         if (type == std::filesystem::file_type::directory) {
             for (auto & i : DirectoryIterator{path}) {
                 checkInterrupt();
-                findRoots(i.path().string(), i.symlink_status().type(), roots);
+                findRoots(i.path(), i.symlink_status().type(), roots);
             }
         }
 
@@ -246,10 +246,10 @@ void LocalStore::findRoots(const Path & path, std::filesystem::file_type type, R
 
             /* Handle indirect roots. */
             else {
-                auto parentPath = std::filesystem::path(path).parent_path();
+                auto parentPath = path.parent_path();
                 target = absPath(target, &parentPath);
                 if (!pathExists(target.string())) {
-                    if (isInDir(path, std::filesystem::path{config->stateDir.get()} / gcRootsDir / "auto")) {
+                    if (isInDir(path, config->stateDir.get() / gcRootsDir / "auto")) {
                         printInfo("removing stale link from %1% to %2%", PathFmt(path), PathFmt(target));
                         unlink(path.c_str());
                     }
@@ -264,9 +264,9 @@ void LocalStore::findRoots(const Path & path, std::filesystem::file_type type, R
         }
 
         else if (type == std::filesystem::file_type::regular) {
-            auto storePath = maybeParseStorePath(storeDir + "/" + std::string(baseNameOf(path)));
+            auto storePath = maybeParseStorePath((storeDir / std::string(baseNameOf(path.string()))).string());
             if (storePath && isValidPath(*storePath))
-                roots[std::move(*storePath)].emplace(path);
+                roots[std::move(*storePath)].emplace(path.string());
         }
 
     }
@@ -275,7 +275,7 @@ void LocalStore::findRoots(const Path & path, std::filesystem::file_type type, R
         /* We only ignore permanent failures. */
         if (e.code() == std::errc::permission_denied || e.code() == std::errc::no_such_file_or_directory
             || e.code() == std::errc::not_a_directory)
-            printInfo("cannot read potential root '%1%'", path);
+            printInfo("cannot read potential root '%1%'", PathFmt(path));
         else
             throw;
     }
@@ -284,7 +284,7 @@ void LocalStore::findRoots(const Path & path, std::filesystem::file_type type, R
         /* We only ignore permanent failures. */
         if (e.is(std::errc::permission_denied) || e.is(std::errc::no_such_file_or_directory)
             || e.is(std::errc::not_a_directory))
-            printInfo("cannot read potential root '%1%'", path);
+            printInfo("cannot read potential root '%1%'", PathFmt(path));
         else
             throw;
     }
@@ -293,8 +293,8 @@ void LocalStore::findRoots(const Path & path, std::filesystem::file_type type, R
 void LocalStore::findRootsNoTemp(Roots & roots, bool censor)
 {
     /* Process direct roots in {gcroots,profiles}. */
-    findRoots((config->stateDir.get() / gcRootsDir).string(), std::filesystem::file_type::unknown, roots);
-    findRoots((config->stateDir.get() / "profiles").string(), std::filesystem::file_type::unknown, roots);
+    findRoots(config->stateDir.get() / gcRootsDir, std::filesystem::file_type::unknown, roots);
+    findRoots(config->stateDir.get() / "profiles", std::filesystem::file_type::unknown, roots);
 
     /* Add additional roots returned by different platforms-specific
        heuristics.  This is typically used to add running programs to
@@ -364,7 +364,7 @@ void LocalStore::findRuntimeRoots(Roots & roots, bool censor)
         struct dirent * ent;
         static const auto digitsRegex = boost::regex(R"(^\d+$)");
         static const auto mapRegex = boost::regex(R"(^\s*\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(/\S+)\s*$)");
-        auto storePathRegex = boost::regex(quoteRegexChars(storeDir) + R"(/[0-9a-z]+[0-9a-zA-Z\+\-\._\?=]*)");
+        auto storePathRegex = boost::regex(quoteRegexChars(storeDir.string()) + R"(/[0-9a-z]+[0-9a-zA-Z\+\-\._\?=]*)");
         while (errno = 0, ent = readdir(procDir.get())) {
             checkInterrupt();
             if (boost::regex_match(ent->d_name, digitsRegex)) {
@@ -841,7 +841,7 @@ void LocalStore::collectGarbage(const GCOptions & options, GCResults & results)
                 if (name == "." || name == ".." || name == linksName)
                     continue;
 
-                if (auto storePath = maybeParseStorePath(storeDir + "/" + name))
+                if (auto storePath = maybeParseStorePath((storeDir / name).string()))
                     deleteReferrersClosure(*storePath);
                 else
                     deleteFromStore(name, false);

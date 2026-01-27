@@ -21,7 +21,7 @@ class ProtoTest : public CharacterizationTest
     }
 
 public:
-    Path storeDir = "/nix/store";
+    std::filesystem::path storeDir = "/nix/store";
     StoreDirConfig store{storeDir};
 
     /**

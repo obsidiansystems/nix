@@ -131,7 +131,7 @@ RC_GTEST_FIXTURE_PROP(StorePathTest, prop_check_regex_eq_parse, ())
 
     auto name = *nameFuzzer;
 
-    std::string path = store->storeDir + "/575s52sh487i0ylmbs9pvi606ljdszr0-" + name;
+    std::string path = (store->storeDir / ("575s52sh487i0ylmbs9pvi606ljdszr0-" + name)).string();
     bool parsed = false;
     try {
         store->parseStorePath(path);

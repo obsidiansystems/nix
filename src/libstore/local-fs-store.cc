@@ -8,14 +8,14 @@
 
 namespace nix {
 
-Path LocalFSStoreConfig::getDefaultStateDir()
+std::filesystem::path LocalFSStoreConfig::getDefaultStateDir()
 {
-    return settings.nixStateDir.string();
+    return settings.nixStateDir;
 }
 
-Path LocalFSStoreConfig::getDefaultLogDir()
+std::filesystem::path LocalFSStoreConfig::getDefaultLogDir()
 {
-    return settings.getLogFileSettings().nixLogDir.string();
+    return settings.getLogFileSettings().nixLogDir;
 }
 
 LocalFSStoreConfig::LocalFSStoreConfig(PathView rootDir, const Params & params)
@@ -54,7 +54,7 @@ struct LocalStoreAccessor : PosixSourceAccessor
 
     void requireStoreObject(const CanonPath & path)
     {
-        auto [storePath, rest] = store->toStorePath(store->storeDir + path.abs());
+        auto [storePath, rest] = store->toStorePath((store->storeDir / path.abs().substr(1)).string());
         if (requireValidPath && !store->isValidPath(storePath))
             throw InvalidPath("path '%1%' is not a valid store path", store->printStorePath(storePath));
     }

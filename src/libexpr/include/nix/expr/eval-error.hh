@@ -1,5 +1,6 @@
 #pragma once
 
+#include "nix/store/path.hh"
 #include "nix/util/error.hh"
 #include "nix/util/pos-idx.hh"
 

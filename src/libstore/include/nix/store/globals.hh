@@ -255,7 +255,7 @@ public:
     /**
      * The directory where we store sources and derived files.
      */
-    Path nixStore;
+    std::filesystem::path nixStore;
 
     /**
      * The directory where state is stored.

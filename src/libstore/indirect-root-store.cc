@@ -2,20 +2,20 @@
 
 namespace nix {
 
-void IndirectRootStore::makeSymlink(const Path & link, const Path & target)
+void IndirectRootStore::makeSymlink(const std::filesystem::path & link, const std::filesystem::path & target)
 {
     /* Create directories up to `gcRoot'. */
-    createDirs(std::filesystem::path(link).parent_path());
+    createDirs(link.parent_path());
 
     /* Create the new symlink. */
     auto tempLink = std::filesystem::path(link).concat(fmt(".tmp-%1%-%2%", getpid(), rand()));
-    createSymlink(target, tempLink.string());
+    createSymlink(target.string(), tempLink.string());
 
     /* Atomically replace the old one. */
     std::filesystem::rename(tempLink, link);
 }
 
-Path IndirectRootStore::addPermRoot(const StorePath & storePath, const Path & _gcRoot)
+std::filesystem::path IndirectRootStore::addPermRoot(const StorePath & storePath, const std::filesystem::path & _gcRoot)
 {
     auto gcRoot = canonPath(_gcRoot);
 
@@ -36,10 +36,10 @@ Path IndirectRootStore::addPermRoot(const StorePath & storePath, const Path & _g
     if (pathExists(gcRoot.string()) && (!std::filesystem::is_symlink(gcRoot) || !isInStore(readLink(gcRoot).string())))
         throw Error("cannot create symlink %1%; already exists", PathFmt(gcRoot));
 
-    makeSymlink(gcRoot.string(), printStorePath(storePath));
-    addIndirectRoot(gcRoot.string());
+    makeSymlink(gcRoot, printStorePath(storePath));
+    addIndirectRoot(gcRoot);
 
-    return gcRoot.string();
+    return gcRoot;
 }
 
 } // namespace nix

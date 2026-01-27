@@ -49,7 +49,7 @@ StorePathSet StoreDirConfig::parseStorePathSet(const PathSet & paths) const
 
 std::string StoreDirConfig::printStorePath(const StorePath & path) const
 {
-    return (storeDir + "/").append(path.to_string());
+    return (storeDir / path.to_string()).string();
 }
 
 PathSet StoreDirConfig::printStorePathSet(const StorePathSet & paths) const
@@ -72,7 +72,7 @@ to match.
 StorePath StoreDirConfig::makeStorePath(std::string_view type, std::string_view hash, std::string_view name) const
 {
     /* e.g., "source:sha256:1abc...:/nix/store:foo.tar.gz" */
-    auto s = std::string(type) + ":" + std::string(hash) + ":" + storeDir + ":" + std::string(name);
+    auto s = std::string(type) + ":" + std::string(hash) + ":" + storeDir.string() + ":" + std::string(name);
     auto h = compressHash(hashString(HashAlgorithm::SHA256, s), 20);
     return StorePath(h, name);
 }

@@ -1,6 +1,7 @@
 #pragma once
 ///@file
 
+#include <filesystem>
 #include <sys/stat.h>
 #include <sys/time.h>
 
@@ -30,21 +31,21 @@ typedef std::set<Inode> InodesSeen;
  * [uidRange->first, uidRange->second].
  */
 void canonicalisePathMetaData(
-    const Path & path,
+    const std::filesystem::path & path,
 #ifndef _WIN32
     std::optional<std::pair<uid_t, uid_t>> uidRange,
 #endif
     InodesSeen & inodesSeen);
 
 void canonicalisePathMetaData(
-    const Path & path
+    const std::filesystem::path & path
 #ifndef _WIN32
     ,
     std::optional<std::pair<uid_t, uid_t>> uidRange = std::nullopt
 #endif
 );
 
-void canonicaliseTimestampAndPermissions(const Path & path);
+void canonicaliseTimestampAndPermissions(const std::filesystem::path & path);
 
 MakeError(PathInUse, Error);
 

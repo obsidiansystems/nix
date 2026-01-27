@@ -28,7 +28,7 @@ using json = nlohmann::json;
 
 namespace nix {
 
-Path StoreConfigBase::getDefaultNixStoreDir()
+std::filesystem::path StoreConfigBase::getDefaultNixStoreDir()
 {
     return settings.nixStore;
 }
@@ -48,7 +48,8 @@ std::pair<StorePath, Path> StoreDirConfig::toStorePath(PathView path) const
 {
     if (!isInStore(path))
         throw Error("path '%1%' is not in the Nix store", path);
-    auto slash = path.find('/', storeDir.size() + 1);
+    auto storeDirStr = storeDir.string();
+    auto slash = path.find('/', storeDirStr.size() + 1);
     if (slash == Path::npos)
         return {parseStorePath(path), ""};
     else

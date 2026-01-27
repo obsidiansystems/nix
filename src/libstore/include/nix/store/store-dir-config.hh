@@ -5,6 +5,7 @@
 #include "nix/store/content-address.hh"
 #include "nix/util/configuration.hh"
 
+#include <filesystem>
 #include <map>
 #include <string>
 #include <variant>
@@ -29,7 +30,7 @@ MakeError(BadStorePathName, BadStorePath);
  */
 struct StoreDirConfig
 {
-    const Path & storeDir;
+    const std::filesystem::path & storeDir;
 
     // pure methods
 

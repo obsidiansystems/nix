@@ -378,11 +378,10 @@ static void main_nix_build(int argc, char ** argv)
     else
         for (auto i : remainingArgs) {
             if (fromArgs) {
-                auto shebangBaseDir = std::filesystem::absolute(script.parent_path());
                 exprs.push_back(state->parseExprFromString(
                     std::move(i),
                     (inShebang && compatibilitySettings.nixShellShebangArgumentsRelativeToScript)
-                        ? lookupFileArg(*state, shebangBaseDir.string())
+                        ? lookupFileArg(*state, std::filesystem::absolute(script.parent_path()).string())
                         : state->rootPath(".")));
             } else {
                 std::filesystem::path absolute = i;
@@ -390,7 +389,8 @@ static void main_nix_build(int argc, char ** argv)
                     absolute = std::filesystem::weakly_canonical(absolute);
                 } catch (std::filesystem::filesystem_error &) {
                 };
-                auto [path, outputNames] = parsePathWithOutputs(absolute.string());
+                auto absoluteStr = absolute.string();
+                auto [path, outputNames] = parsePathWithOutputs(absoluteStr);
                 if (evalStore->isStorePath(path) && hasSuffix(path, ".drv"))
                     drvs.push_back(PackageInfo(*state, evalStore, absolute.string()));
                 else {
@@ -556,7 +556,7 @@ static void main_nix_build(int argc, char ** argv)
         }
 
         env["NIX_BUILD_TOP"] = env["TMPDIR"] = env["TEMPDIR"] = env["TMP"] = env["TEMP"] = tmpDir.path().string();
-        env["NIX_STORE"] = store->storeDir;
+        env["NIX_STORE"] = store->storeDir.string();
         env["NIX_BUILD_CORES"] = fmt("%d", settings.buildCores ? settings.buildCores : settings.getDefaultCores());
 
         DerivationOptions<StorePath> drvOptions;

@@ -122,7 +122,7 @@ static void parseConfigFiles(
             continue;
 
         if (tokens.size() < 2)
-            throw UsageError("syntax error in configuration line '%1%' in %s", line, PathFmt(path));
+            throw UsageError("syntax error in configuration line '%1%' in %2%", line, PathFmt(path));
 
         auto include = false;
         auto ignoreMissing = false;
@@ -135,7 +135,7 @@ static void parseConfigFiles(
 
         if (include) {
             if (tokens.size() != 2)
-                throw UsageError("syntax error in configuration line '%1%' in %s", line, PathFmt(path));
+                throw UsageError("syntax error in configuration line '%1%' in %2%", line, PathFmt(path));
             auto parent = path.parent_path();
             auto p = absPath(std::filesystem::path{tokens[1]}, &parent);
             if (pathExists(p)) {
@@ -152,7 +152,7 @@ static void parseConfigFiles(
         }
 
         if (tokens[1] != "=")
-            throw UsageError("syntax error in configuration line '%1%' in %s", line, PathFmt(path));
+            throw UsageError("syntax error in configuration line '%1%' in %2%", line, PathFmt(path));
 
         std::string name = std::move(tokens[0]);
 

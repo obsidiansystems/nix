@@ -52,8 +52,8 @@ struct ExternalDerivationBuilder : DerivationBuilderImpl
         json.emplace("topTmpDir", topTmpDir.native());
         json.emplace("tmpDir", tmpDir.native());
         json.emplace("tmpDirInSandbox", tmpDirInSandbox().native());
-        json.emplace("storeDir", store.storeDir);
-        json.emplace("realStoreDir", store.config->realStoreDir.get());
+        json.emplace("storeDir", store.storeDir.string());
+        json.emplace("realStoreDir", store.config->realStoreDir.get().string());
         json.emplace("system", drv.platform);
         {
             auto l = nlohmann::json::array();

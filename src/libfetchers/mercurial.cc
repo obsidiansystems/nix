@@ -251,7 +251,7 @@ struct MercurialInputScheme : InputScheme
                     "Hash '%s' is not supported by Mercurial. Only sha1 is supported.",
                     rev.to_string(HashFormat::Base16, true));
 
-            return Cache::Key{"hgRev", {{"store", store.storeDir}, {"name", name}, {"rev", input.getRev()->gitRev()}}};
+            return Cache::Key{"hgRev", {{"store", store.storeDir.string()}, {"name", name}, {"rev", input.getRev()->gitRev()}}};
         };
 
         auto makeResult = [&](const Attrs & infoAttrs, const StorePath & storePath) -> StorePath {

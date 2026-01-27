@@ -119,7 +119,7 @@ TEST(canonPath, requiresAbsolutePath)
     ASSERT_ANY_THROW(canonPath("."sv));
     ASSERT_ANY_THROW(canonPath(".."sv));
     ASSERT_ANY_THROW(canonPath("../"sv));
-    ASSERT_DEATH({ canonPath(""sv); }, "path != \"\"");
+    ASSERT_DEATH({ canonPath(""sv); }, "!path.empty()");
 }
 
 /* ----------------------------------------------------------------------------

@@ -5309,7 +5309,7 @@ void EvalState::createBaseEnv(const EvalSettings & evalSettings)
         )",
         });
 
-    v.mkString(store->storeDir, mem);
+    v.mkString(store->storeDir.string(), mem);
     addConstant(
         "__storeDir",
         v,

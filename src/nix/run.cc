@@ -81,7 +81,7 @@ void execProgramInStore(
 
     if (store->storeDir != store2->getRealStoreDir()) {
         Strings helperArgs = {
-            chrootHelperName, store->storeDir, store2->getRealStoreDir(), std::string(system.value_or("")), program};
+            chrootHelperName, store->storeDir.string(), store2->getRealStoreDir().string(), std::string(system.value_or("")), program};
         for (auto & arg : args)
             helperArgs.push_back(arg);
 

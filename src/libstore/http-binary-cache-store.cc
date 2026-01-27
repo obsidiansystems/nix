@@ -74,7 +74,7 @@ void HttpBinaryCacheStore::init()
         } catch (UploadToHTTP &) {
             throw Error("'%s' does not appear to be a binary cache", config->cacheUri.to_string());
         }
-        diskCache->createCache(cacheKey, config->storeDir, config->wantMassQuery, config->priority);
+        diskCache->createCache(cacheKey, config->storeDir.string(), config->wantMassQuery, config->priority);
     }
 }
 

@@ -378,7 +378,7 @@ ref<NarInfoDiskCache> getNarInfoDiskCache()
     return cache;
 }
 
-ref<NarInfoDiskCache> getTestNarInfoDiskCache(Path dbPath)
+ref<NarInfoDiskCache> getTestNarInfoDiskCache(const std::filesystem::path & dbPath)
 {
     return make_ref<NarInfoDiskCacheImpl>(dbPath);
 }

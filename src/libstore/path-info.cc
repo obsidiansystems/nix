@@ -21,7 +21,7 @@ PathInfoJsonFormat parsePathInfoJsonFormat(uint64_t version)
 }
 
 UnkeyedValidPathInfo::UnkeyedValidPathInfo(const StoreDirConfig & store, Hash narHash)
-    : UnkeyedValidPathInfo{store.storeDir, narHash}
+    : UnkeyedValidPathInfo{store.storeDir.string(), narHash}
 {
 }
 
@@ -233,7 +233,7 @@ UnkeyedValidPathInfo UnkeyedValidPathInfo::fromJSON(const StoreDirConfig * store
             if (auto * rawStoreDir = optionalValueAt(json, "storeDir"))
                 return getString(*rawStoreDir);
             else if (format == PathInfoJsonFormat::V1)
-                return store->storeDir;
+                return store->storeDir.string();
             else
                 throw Error("'storeDir' field is required in path info JSON format version 2");
         }(),

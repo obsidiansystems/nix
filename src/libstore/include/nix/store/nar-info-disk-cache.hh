@@ -43,6 +43,6 @@ public:
  */
 ref<NarInfoDiskCache> getNarInfoDiskCache();
 
-ref<NarInfoDiskCache> getTestNarInfoDiskCache(Path dbPath);
+ref<NarInfoDiskCache> getTestNarInfoDiskCache(const std::filesystem::path & dbPath);
 
 } // namespace nix

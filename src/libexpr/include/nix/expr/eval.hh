@@ -565,7 +565,7 @@ public:
      * Only for restrict eval: pure eval just whitelist store paths,
      * never arbitrary paths.
      */
-    void allowPathLegacy(const Path & path);
+    void allowPathLegacy(const std::filesystem::path & path);
 
     /**
      * Allow access to a store path. Note that this gets remapped to

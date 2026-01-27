@@ -69,7 +69,7 @@ StoreReference UDSRemoteStoreConfig::getReference() const
         .variant =
             StoreReference::Specified{
                 .scheme = *uriSchemes().begin(),
-                .authority = path,
+                .authority = path.string(),
             },
         .params = getQueryParams(),
     };
@@ -95,10 +95,10 @@ ref<RemoteStore::Connection> UDSRemoteStore::openConnection()
     return conn;
 }
 
-void UDSRemoteStore::addIndirectRoot(const Path & path)
+void UDSRemoteStore::addIndirectRoot(const std::filesystem::path & path)
 {
     auto conn(getConnection());
-    conn->to << WorkerProto::Op::AddIndirectRoot << path;
+    conn->to << WorkerProto::Op::AddIndirectRoot << path.string();
     conn.processStderr();
     readInt(conn->from);
 }

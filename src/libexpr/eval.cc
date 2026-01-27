@@ -262,7 +262,7 @@ EvalState::EvalState(
              exception, and make union source accessor
              catch it, so we don't need to do this hack.
            */
-          {CanonPath(store->storeDir), store->getFSAccessor(settings.pureEval)},
+          {CanonPath(store->storeDir.string()), store->getFSAccessor(settings.pureEval)},
       }))
     , rootFS([&] {
         /* In pure eval mode, we provide a filesystem that only
@@ -365,10 +365,10 @@ EvalState::EvalState(
 
 EvalState::~EvalState() {}
 
-void EvalState::allowPathLegacy(const Path & path)
+void EvalState::allowPathLegacy(const std::filesystem::path & path)
 {
     if (auto rootFS2 = rootFS.dynamic_pointer_cast<AllowListSourceAccessor>())
-        rootFS2->allowPrefix(CanonPath(path));
+        rootFS2->allowPrefix(CanonPath(path.string()));
 }
 
 void EvalState::allowPath(const StorePath & storePath)

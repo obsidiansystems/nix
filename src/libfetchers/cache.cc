@@ -102,7 +102,7 @@ struct CacheImpl : Cache
     {
         /* Add the store prefix to the cache key to handle multiple
            store prefixes. */
-        key.second.insert_or_assign("store", store.storeDir);
+        key.second.insert_or_assign("store", store.storeDir.string());
 
         value.insert_or_assign("storePath", (std::string) storePath.to_string());
 
@@ -111,7 +111,7 @@ struct CacheImpl : Cache
 
     std::optional<ResultWithStorePath> lookupStorePath(Key key, Store & store) override
     {
-        key.second.insert_or_assign("store", store.storeDir);
+        key.second.insert_or_assign("store", store.storeDir.string());
 
         auto res = lookupExpired(key);
         if (!res)

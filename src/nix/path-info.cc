@@ -62,7 +62,7 @@ pathInfoToJSON(Store & store, const StorePathSet & storePaths, bool showClosureS
 
             /* Hack in the store dir for now. TODO update the data type
                instead. */
-            jsonObject["storeDir"] = store.storeDir;
+            jsonObject["storeDir"] = store.storeDir.string();
 
             if (showClosureSize) {
                 StorePathSet closure;
@@ -97,7 +97,7 @@ pathInfoToJSON(Store & store, const StorePathSet & storePaths, bool showClosureS
     } else {
         return {
             {"version", format},
-            {"storeDir", store.storeDir},
+            {"storeDir", store.storeDir.string()},
             {"info", std::move(jsonAllObjects)},
         };
     }

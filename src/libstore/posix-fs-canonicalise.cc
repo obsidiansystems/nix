@@ -15,7 +15,7 @@ namespace nix {
 
 const time_t mtimeStore = 1; /* 1 second into the epoch */
 
-static void canonicaliseTimestampAndPermissions(const Path & path, const PosixStat & st)
+static void canonicaliseTimestampAndPermissions(const std::filesystem::path & path, const PosixStat & st)
 {
     if (!S_ISLNK(st.st_mode)) {
 
@@ -36,13 +36,13 @@ static void canonicaliseTimestampAndPermissions(const Path & path, const PosixSt
 #endif
 }
 
-void canonicaliseTimestampAndPermissions(const Path & path)
+void canonicaliseTimestampAndPermissions(const std::filesystem::path & path)
 {
     canonicaliseTimestampAndPermissions(path, lstat(path));
 }
 
 static void canonicalisePathMetaData_(
-    const Path & path,
+    const std::filesystem::path & path,
 #ifndef _WIN32
     std::optional<std::pair<uid_t, uid_t>> uidRange,
 #endif
@@ -56,7 +56,7 @@ static void canonicalisePathMetaData_(
        setattrlist() to remove other attributes as well. */
     if (lchflags(path.c_str(), 0)) {
         if (errno != ENOTSUP)
-            throw SysError("clearing flags of path '%1%'", path);
+            throw SysError("clearing flags of path '%1%'", PathFmt(path));
     }
 #endif
 
@@ -64,7 +64,7 @@ static void canonicalisePathMetaData_(
 
     /* Really make sure that the path is of a supported type. */
     if (!(S_ISREG(st.st_mode) || S_ISDIR(st.st_mode) || S_ISLNK(st.st_mode)))
-        throw Error("file '%1%' has an unsupported type", path);
+        throw Error("file '%1%' has an unsupported type", PathFmt(path));
 
 #if NIX_SUPPORT_ACL
     /* Remove extended attributes / ACLs. */
@@ -72,18 +72,18 @@ static void canonicalisePathMetaData_(
 
     if (eaSize < 0) {
         if (errno != ENOTSUP && errno != ENODATA)
-            throw SysError("querying extended attributes of '%s'", path);
+            throw SysError("querying extended attributes of '%s'", PathFmt(path));
     } else if (eaSize > 0) {
         std::vector<char> eaBuf(eaSize);
 
         if ((eaSize = llistxattr(path.c_str(), eaBuf.data(), eaBuf.size())) < 0)
-            throw SysError("querying extended attributes of '%s'", path);
+            throw SysError("querying extended attributes of '%s'", PathFmt(path));
 
         for (auto & eaName : tokenizeString<Strings>(std::string(eaBuf.data(), eaSize), std::string("\000", 1))) {
             if (settings.ignoredAcls.get().count(eaName))
                 continue;
             if (lremovexattr(path.c_str(), eaName.c_str()) == -1)
-                throw SysError("removing extended attribute '%s' from '%s'", eaName, path);
+                throw SysError("removing extended attribute '%s' from '%s'", eaName, PathFmt(path));
         }
     }
 #endif
@@ -97,7 +97,7 @@ static void canonicalisePathMetaData_(
        (i.e. "touch $out/foo; ln $out/foo $out/bar"). */
     if (uidRange && (st.st_uid < uidRange->first || st.st_uid > uidRange->second)) {
         if (S_ISDIR(st.st_mode) || !inodesSeen.count(Inode(st.st_dev, st.st_ino)))
-            throw BuildError(BuildResult::Failure::OutputRejected, "invalid ownership on file '%1%'", path);
+            throw BuildError(BuildResult::Failure::OutputRejected, "invalid ownership on file '%1%'", PathFmt(path));
         mode_t mode = st.st_mode & ~S_IFMT;
         assert(
             S_ISLNK(st.st_mode)
@@ -124,7 +124,7 @@ static void canonicalisePathMetaData_(
 #  else
         if (!S_ISLNK(st.st_mode) && chown(path.c_str(), geteuid(), getegid()) == -1)
 #  endif
-            throw SysError("changing owner of '%1%' to %2%", path, geteuid());
+            throw SysError("changing owner of '%1%' to %2%", PathFmt(path), geteuid());
     }
 #endif
 
@@ -132,7 +132,7 @@ static void canonicalisePathMetaData_(
         for (auto & i : DirectoryIterator{path}) {
             checkInterrupt();
             canonicalisePathMetaData_(
-                i.path().string(),
+                i.path(),
 #ifndef _WIN32
                 uidRange,
 #endif
@@ -142,7 +142,7 @@ static void canonicalisePathMetaData_(
 }
 
 void canonicalisePathMetaData(
-    const Path & path,
+    const std::filesystem::path & path,
 #ifndef _WIN32
     std::optional<std::pair<uid_t, uid_t>> uidRange,
 #endif
@@ -162,13 +162,13 @@ void canonicalisePathMetaData(
 
     if (st.st_uid != geteuid()) {
         assert(S_ISLNK(st.st_mode));
-        throw Error("wrong ownership of top-level store path '%1%'", path);
+        throw Error("wrong ownership of top-level store path '%1%'", PathFmt(path));
     }
 #endif
 }
 
 void canonicalisePathMetaData(
-    const Path & path
+    const std::filesystem::path & path
 #ifndef _WIN32
     ,
     std::optional<std::pair<uid_t, uid_t>> uidRange

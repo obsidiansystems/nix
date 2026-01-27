@@ -204,19 +204,20 @@ void LocalOverlayStore::collectGarbage(const GCOptions & options, GCResults & re
     remountIfNecessary();
 }
 
-void LocalOverlayStore::deleteStorePath(const Path & path, uint64_t & bytesFreed, bool isKnownPath)
+void LocalOverlayStore::deleteStorePath(const std::filesystem::path & path, uint64_t & bytesFreed, bool isKnownPath)
 {
-    auto mergedDir = config->realStoreDir.get() + "/";
-    if (path.substr(0, mergedDir.length()) != mergedDir) {
-        warn("local-overlay: unexpected gc path '%s' ", path);
+    auto pathStr = path.string();
+    auto mergedDir = config->realStoreDir.get().string() + "/";
+    if (pathStr.substr(0, mergedDir.length()) != mergedDir) {
+        warn("local-overlay: unexpected gc path '%s' ", pathStr);
         return;
     }
 
-    StorePath storePath = {path.substr(mergedDir.length())};
+    StorePath storePath = {pathStr.substr(mergedDir.length())};
     auto upperPath = config->toUpperPath(storePath);
 
     if (pathExists(upperPath)) {
-        debug("upper exists: %s", path);
+        debug("upper exists: %s", pathStr);
         if (lowerStore->isValidPath(storePath)) {
             debug("lower exists: %s", storePath.to_string());
             // Path also exists in lower store.

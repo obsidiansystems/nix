@@ -27,7 +27,7 @@ namespace nix {
 BinaryCacheStore::BinaryCacheStore(Config & config)
     : config{config}
 {
-    if (config.secretKeyFile != "")
+    if (!config.secretKeyFile.get().empty())
         signers.push_back(std::make_unique<LocalSigner>(SecretKey{readFile(config.secretKeyFile.get())}));
 
     if (config.secretKeyFiles != "") {
@@ -47,7 +47,7 @@ void BinaryCacheStore::init()
 {
     auto cacheInfo = getNixCacheInfo();
     if (!cacheInfo) {
-        upsertFile(cacheInfoFile, "StoreDir: " + storeDir + "\n", "text/x-nix-cache-info");
+        upsertFile(cacheInfoFile, "StoreDir: " + storeDir.string() + "\n", "text/x-nix-cache-info");
     } else {
         for (auto & line : tokenizeString<Strings>(*cacheInfo, "\n")) {
             size_t colon = line.find(':');
@@ -56,12 +56,12 @@ void BinaryCacheStore::init()
             auto name = line.substr(0, colon);
             auto value = trim(line.substr(colon + 1, std::string::npos));
             if (name == "StoreDir") {
-                if (value != storeDir)
+                if (value != storeDir.string())
                     throw Error(
                         "binary cache '%s' is for Nix stores with prefix '%s', not '%s'",
                         config.getHumanReadableURI(),
                         value,
-                        storeDir);
+                        storeDir.string());
             } else if (name == "WantMassQuery") {
                 config.wantMassQuery.setDefault(value == "1");
             } else if (name == "Priority") {

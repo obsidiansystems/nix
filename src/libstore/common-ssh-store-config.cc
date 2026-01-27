@@ -21,7 +21,7 @@ SSHMaster CommonSSHStoreConfig::createSSHMaster(bool useMaster, Descriptor logFD
 {
     return {
         authority,
-        sshKey.get(),
+        sshKey.get().string(),
         sshPublicHostKey.get(),
         useMaster,
         compress,

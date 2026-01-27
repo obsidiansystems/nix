@@ -12,7 +12,7 @@ RemoteFSAccessor::RemoteFSAccessor(
 
 std::pair<ref<SourceAccessor>, CanonPath> RemoteFSAccessor::fetch(const CanonPath & path)
 {
-    auto [storePath, restPath] = store->toStorePath(store->storeDir + path.abs());
+    auto [storePath, restPath] = store->toStorePath((store->storeDir / path.abs().substr(1)).string());
     if (requireValidPath && !store->isValidPath(storePath))
         throw InvalidPath("path '%1%' is not a valid store path", store->printStorePath(storePath));
     return {ref{accessObject(storePath)}, CanonPath{restPath}};
