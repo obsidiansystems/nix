@@ -705,6 +705,8 @@ std::optional<Descriptor> DerivationBuilderImpl::startBuild()
     /* Make sure that no other processes are executing under the
        sandbox uids. This must be done before any chownToBuilder()
        calls. */
+    // default: killSandbox virtual function
+    // Linux: maybe also kill old CGroup
     prepareUser();
 
     auto buildDir = store.config->getBuildDir();
@@ -712,6 +714,7 @@ std::optional<Descriptor> DerivationBuilderImpl::startBuild()
     createDirs(buildDir);
 
     if (buildUser)
+        // right above, static. Sus we don't do this in all cases.
         checkNotWorldWritable(buildDir);
 
     /* Create a temporary directory where the build will take
@@ -784,8 +787,10 @@ std::optional<Descriptor> DerivationBuilderImpl::startBuild()
     }
 
     /* Construct the environment passed to the builder. */
+    // non-virtual
     initEnv();
 
+    // Highly virtual
     prepareSandbox();
 
     if (needsHashRewrite() && pathExists(homeDir))
