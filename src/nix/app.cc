@@ -144,6 +144,14 @@ App UnresolvedApp::resolve(ref<Store> evalStore, ref<Store> store)
     if (!store->isInStore(res.program.string()))
         throw Error("app program '%s' is not in the Nix store", res.program.string());
 
+    if (!pathExists(res.program.string()))
+        throw Error(
+            "app program '%s' does not exist. "
+            "The package may be missing the 'meta.mainProgram' attribute, "
+            "which can be set in the package's Nix expression to specify "
+            "the main executable name",
+            res.program.string());
+
     return res;
 }
 

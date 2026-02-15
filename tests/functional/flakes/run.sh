@@ -30,6 +30,11 @@ nix run --no-write-lock-file .#pkgAsPkg
 ! nix run --no-write-lock-file .#pkgAsApp || fail "'nix run' shouldn’t accept an 'app' defined under 'packages'"
 ! nix run --no-write-lock-file .#appAsPkg || fail "elements of 'apps' should be of type 'app'"
 
+# Test that nix run gives a useful error when the program doesn't exist
+# (e.g. because mainProgram is not set and the fallback name is wrong).
+expectStderr 1 nix run --no-write-lock-file -f shell-hello.nix no-main-program \
+  | grepQuiet "meta.mainProgram"
+
 # Test that we're not setting any more environment variables than necessary.
 # For instance, we might set an environment variable temporarily to affect some
 # initialization or whatnot, but this must not leak into the environment of the

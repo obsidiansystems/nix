@@ -55,6 +55,22 @@ rec {
     '';
   };
 
+  # derivation whose name doesn't match any binary it installs,
+  # and has no meta.mainProgram set
+  no-main-program = mkDerivation {
+    name = "no-main-program";
+    outputs = [ "out" ];
+    buildCommand = ''
+      mkdir -p $out/bin
+
+      cat > $out/bin/actual-program <<EOF
+      #! ${shell}
+      echo "I exist but mainProgram doesn't know about me"
+      EOF
+      chmod +x $out/bin/actual-program
+    '';
+  };
+
   # execs env from PATH, so that we can probe the environment
   # does not allow arguments, because we don't need them
   env = mkDerivation {
