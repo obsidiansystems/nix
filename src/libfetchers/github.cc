@@ -9,6 +9,8 @@
 #include "nix/fetchers/fetch-settings.hh"
 #include "nix/fetchers/tarball.hh"
 #include "nix/util/tarfile.hh"
+#include "nix/util/file-system.hh"
+#include "nix/util/file-descriptor.hh"
 #include "nix/fetchers/git-utils.hh"
 
 #include <optional>
@@ -314,10 +316,18 @@ struct GitArchiveInputScheme : InputScheme
             getFileTransfer()->download(std::move(req), sink);
         });
 
+        auto [fdTemp, tempPath] = createTempFile("nix-tarball");
+        AutoDelete cleanupTemp(tempPath);
+        debug("downloading '%s' into '%s'...", input.to_string(), tempPath);
+        {
+            FdSink sink(fdTemp.get());
+            source->drainInto(sink);
+        }
+
         auto act = std::make_unique<Activity>(
             *logger, lvlInfo, actUnknown, fmt("unpacking '%s' into the Git cache", input.to_string()));
 
-        TarArchive archive{*source};
+        TarArchive archive{tempPath};
         auto tarballCache = settings.getTarballCache();
         auto parseSink = tarballCache->getFileSystemObjectSink();
         auto lastModified = unpackTarfileToSink(archive, *parseSink);

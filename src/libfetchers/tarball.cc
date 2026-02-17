@@ -165,28 +165,22 @@ static DownloadTarballResult downloadTarball_(
 
     // TODO: fall back to cached value if download fails.
 
+    /* Download to a temp file first. This decouples the curl download
+       from the expensive tarball-parse + git-object-write pipeline,
+       avoiding backpressure pauses that make large downloads very slow
+       (see #10683). The ZIP codepath already required this for
+       random-access; now all formats benefit. */
+    auto [fdTemp, tempPath] = createTempFile("nix-tarball");
+    AutoDelete cleanupTemp(tempPath);
+    debug("downloading '%s' into '%s'...", url, tempPath);
+    {
+        FdSink sink(fdTemp.get());
+        source->drainInto(sink);
+    }
+
     auto act = std::make_unique<Activity>(*logger, lvlInfo, actUnknown, fmt("unpacking '%s' into the Git cache", url));
 
-    AutoDelete cleanupTemp;
-
-    /* Note: if the download is cached, `importTarball()` will receive
-       no data, which causes it to import an empty tarball. */
-    auto archive = !url.path.empty() && hasSuffix(toLower(url.path.back()), ".zip") ? ({
-        /* In streaming mode, libarchive doesn't handle
-           symlinks in zip files correctly (#10649). So write
-           the entire file to disk so libarchive can access it
-           in random-access mode. */
-        auto [fdTemp, path] = createTempFile("nix-zipfile");
-        cleanupTemp.cancel();
-        cleanupTemp = {path};
-        debug("downloading '%s' into '%s'...", url, path);
-        {
-            FdSink sink(fdTemp.get());
-            source->drainInto(sink);
-        }
-        TarArchive{path};
-    })
-                                                                                    : TarArchive{*source};
+    TarArchive archive{tempPath};
     auto tarballCache = settings.getTarballCache();
     auto parseSink = tarballCache->getFileSystemObjectSink();
     auto lastModified = unpackTarfileToSink(archive, *parseSink);
