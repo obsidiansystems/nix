@@ -753,6 +753,7 @@ struct LinuxDerivationBuilder : DerivationBuilder, DerivationBuilderParams
             };
         }
 
+        StringMap outputRewrites;
         auto builtOutputs = nix::registerOutputs(
             store,
             localSettings,
