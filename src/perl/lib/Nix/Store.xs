@@ -10,7 +10,7 @@
 #include "nix/store/realisation.hh"
 #include "nix/store/globals.hh"
 #include "nix/store/store-open.hh"
-#include "nix/util/posix-source-accessor.hh"
+#include "nix/util/directory-source-accessor.hh"
 #include "nix/store/export-import.hh"
 
 #include <sodium.h>
@@ -256,7 +256,7 @@ hashPath(char * algo, int base32, char * path)
     PPCODE:
         try {
             Hash h = hashPath(
-                PosixSourceAccessor::createAtRoot(path),
+                createAtRoot(path),
                 FileIngestionMethod::NixArchive, parseHashAlgo(algo)).first;
             auto s = h.to_string(base32 ? HashFormat::Nix32 : HashFormat::Base16, false);
             XPUSHs(sv_2mortal(newSVpv(s.c_str(), 0)));
@@ -336,7 +336,7 @@ StoreWrapper::addToStore(char * srcPath, int recursive, char * algo)
             auto method = recursive ? ContentAddressMethod::Raw::NixArchive : ContentAddressMethod::Raw::Flat;
             auto path = THIS->store->addToStore(
                 std::string(baseNameOf(srcPath)),
-                PosixSourceAccessor::createAtRoot(srcPath),
+                createAtRoot(srcPath),
                 method, parseHashAlgo(algo));
             XPUSHs(sv_2mortal(newSVpv(THIS->store->printStorePath(path).c_str(), 0)));
         } catch (Error & e) {

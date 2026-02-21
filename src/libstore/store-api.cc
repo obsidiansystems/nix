@@ -13,7 +13,6 @@
 #include "nix/util/archive.hh"
 #include "nix/util/callback.hh"
 #include "nix/util/git.hh"
-#include "nix/util/posix-source-accessor.hh"
 // FIXME this should not be here, see TODO below on
 // `addMultipleToStore`.
 #include "nix/store/worker-protocol.hh"

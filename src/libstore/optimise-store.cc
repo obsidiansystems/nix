@@ -2,7 +2,7 @@
 #include "nix/store/globals.hh"
 #include "nix/util/signals.hh"
 #include "nix/store/posix-fs-canonicalise.hh"
-#include "nix/util/posix-source-accessor.hh"
+#include "nix/util/source-accessor.hh"
 #include "nix/util/file-system.hh"
 
 #include <cstdlib>
@@ -157,7 +157,7 @@ void LocalStore::optimisePath_(
        the contents of the target (which may not even exist). */
     Hash hash = ({
         hashPath(
-            {make_ref<PosixSourceAccessor>(), CanonPath(path)},
+            {getFSSourceAccessor(), CanonPath(path)},
             FileSerialisationMethod::NixArchive,
             HashAlgorithm::SHA256)
             .hash;

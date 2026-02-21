@@ -8,7 +8,7 @@
 #include "nix/util/archive.hh"
 #include "nix/util/alignment.hh"
 #include "nix/util/config-global.hh"
-#include "nix/util/posix-source-accessor.hh"
+#include "nix/util/directory-source-accessor.hh"
 #include "nix/util/source-path.hh"
 #include "nix/util/file-system.hh"
 #include "nix/util/signals.hh"
@@ -103,7 +103,7 @@ void SourceAccessor::dumpPath(const CanonPath & path, Sink & sink, PathFilter & 
 
 time_t dumpPathAndGetMtime(const Path & path, Sink & sink, PathFilter & filter)
 {
-    auto path2 = PosixSourceAccessor::createAtRoot(path, /*trackLastModified=*/true);
+    auto path2 = createAtRoot(path, /*trackLastModified=*/true);
     path2.dumpPath(sink, filter);
     return path2.accessor->getLastModified().value();
 }

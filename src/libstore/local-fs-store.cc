@@ -1,6 +1,5 @@
 #include "nix/util/archive.hh"
-#include "nix/util/posix-source-accessor.hh"
-#include "nix/util/posix-source-accessor.hh"
+#include "nix/util/source-accessor.hh"
 #include "nix/store/store-api.hh"
 #include "nix/store/local-fs-store.hh"
 #include "nix/store/globals.hh"
@@ -41,14 +40,15 @@ LocalFSStore::LocalFSStore(const Config & config)
 {
 }
 
-struct LocalStoreAccessor : PosixSourceAccessor
+struct LocalStoreAccessor : SourceAccessor
 {
     ref<LocalFSStore> store;
+    ref<SourceAccessor> inner;
     bool requireValidPath;
 
     LocalStoreAccessor(ref<LocalFSStore> store, bool requireValidPath)
-        : PosixSourceAccessor(std::filesystem::path{store->config.realStoreDir.get()})
-        , store(store)
+        : store(store)
+        , inner(makeFSSourceAccessor(std::filesystem::path{store->config.realStoreDir.get()}))
         , requireValidPath(requireValidPath)
     {
     }
@@ -68,25 +68,30 @@ struct LocalStoreAccessor : PosixSourceAccessor
             return Stat{.type = tDirectory};
 
         requireStoreObject(path);
-        return PosixSourceAccessor::maybeLstat(path);
+        return inner->maybeLstat(path);
     }
 
     DirEntries readDirectory(const CanonPath & path) override
     {
         requireStoreObject(path);
-        return PosixSourceAccessor::readDirectory(path);
+        return inner->readDirectory(path);
     }
 
     void readFile(const CanonPath & path, Sink & sink, std::function<void(uint64_t)> sizeCallback) override
     {
         requireStoreObject(path);
-        return PosixSourceAccessor::readFile(path, sink, sizeCallback);
+        return inner->readFile(path, sink, sizeCallback);
     }
 
     std::string readLink(const CanonPath & path) override
     {
         requireStoreObject(path);
-        return PosixSourceAccessor::readLink(path);
+        return inner->readLink(path);
+    }
+
+    std::optional<std::filesystem::path> getPhysicalPath(const CanonPath & path) override
+    {
+        return inner->getPhysicalPath(path);
     }
 };
 

@@ -3,7 +3,7 @@
 #include "nix/store/store-api.hh"
 #include "nix/util/archive.hh"
 #include "nix/util/git.hh"
-#include "nix/util/posix-source-accessor.hh"
+#include "nix/util/directory-source-accessor.hh"
 #include "nix/cmd/misc-store-flags.hh"
 
 using namespace nix;
@@ -38,7 +38,7 @@ struct CmdAddToStore : MixDryRun, StoreCommand
         if (!namePart)
             namePart = baseNameOf(path);
 
-        auto sourcePath = PosixSourceAccessor::createAtRoot(makeParentCanonical(path));
+        auto sourcePath = createAtRoot(makeParentCanonical(path));
 
         auto storePath = dryRun ? store->computeStorePath(*namePart, sourcePath, caMethod, hashAlgo, {}).first
                                 : store->addToStoreSlow(*namePart, sourcePath, caMethod, hashAlgo, {}).path;

@@ -12,7 +12,7 @@
 #include "nix/main/shared.hh"
 #include "graphml.hh"
 #include "nix/cmd/legacy.hh"
-#include "nix/util/posix-source-accessor.hh"
+#include "nix/util/directory-source-accessor.hh"
 #include "nix/store/globals.hh"
 #include "nix/store/path-with-outputs.hh"
 #include "nix/store/export-import.hh"
@@ -192,7 +192,7 @@ static void opAdd(Strings opFlags, Strings opArgs)
         throw UsageError("unknown flag");
 
     for (auto & i : opArgs) {
-        auto sourcePath = PosixSourceAccessor::createAtRoot(makeParentCanonical(i));
+        auto sourcePath = createAtRoot(makeParentCanonical(i));
         cout << fmt("%s\n", store->printStorePath(store->addToStore(std::string(baseNameOf(i)), sourcePath)));
     }
 }
@@ -216,7 +216,7 @@ static void opAddFixed(Strings opFlags, Strings opArgs)
     opArgs.pop_front();
 
     for (auto & i : opArgs) {
-        auto sourcePath = PosixSourceAccessor::createAtRoot(makeParentCanonical(i));
+        auto sourcePath = createAtRoot(makeParentCanonical(i));
         std::cout << fmt(
             "%s\n", store->printStorePath(store->addToStoreSlow(baseNameOf(i), sourcePath, method, hashAlgo).path));
     }

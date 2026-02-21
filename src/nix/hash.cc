@@ -6,7 +6,7 @@
 #include "nix/store/references.hh"
 #include "nix/util/archive.hh"
 #include "nix/util/git.hh"
-#include "nix/util/posix-source-accessor.hh"
+#include "nix/util/directory-source-accessor.hh"
 #include "nix/cmd/misc-store-flags.hh"
 #include "man-pages.hh"
 
@@ -86,7 +86,7 @@ struct CmdHashBase : Command
             };
 
             auto makeSourcePath = [&]() -> SourcePath {
-                return PosixSourceAccessor::createAtRoot(makeParentCanonical(path));
+                return createAtRoot(makeParentCanonical(path));
             };
 
             Hash h{HashAlgorithm::SHA256}; // throwaway def to appease C++
