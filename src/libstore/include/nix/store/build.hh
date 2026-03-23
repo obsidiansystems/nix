@@ -9,7 +9,7 @@ namespace nix {
  * Abstract interface for the build scheduler entry points.
  *
  * `Worker` implements this for local scheduling, including local builds.
- * Remote stores provide a `Builder` via `RemoteBuildStore::getBuilder()`.
+ * Remote stores provide a `Builder` via `BuildStore::getBuilder()`.
  */
 struct Builder
 {
@@ -90,7 +90,7 @@ struct Builder
 
 /**
  * Get a builder for the given store. If the store is a
- * `RemoteBuildStore`, returns its builder; otherwise creates a local
+ * `BuildStore`, returns its builder; otherwise creates a local
  * `Worker`.
  */
 ref<Builder> getDefaultBuilder(ref<Store> store, std::shared_ptr<Store> evalStore = nullptr);

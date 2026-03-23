@@ -61,7 +61,7 @@ struct LegacySSHStoreConfig : std::enable_shared_from_this<LegacySSHStoreConfig>
     StoreReference getReference() const override;
 };
 
-struct LegacySSHStore : public virtual RemoteBuildStore
+struct LegacySSHStore : public virtual BuildStore
 {
     using Config = LegacySSHStoreConfig;
 

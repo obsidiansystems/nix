@@ -24,7 +24,7 @@ namespace nix {
  * need the top-level methods to have complete ownership over the
  * implementation.
  */
-class RemoteBuildStore : public virtual Store
+class BuildStore : public virtual Store
 {
 public:
 

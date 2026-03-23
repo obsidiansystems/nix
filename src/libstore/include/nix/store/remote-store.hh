@@ -42,7 +42,7 @@ struct RemoteStoreConfig : virtual StoreConfig
  * \todo RemoteStore is a misnomer - should be something like
  * DaemonStore.
  */
-struct RemoteStore : public virtual RemoteBuildStore, public virtual GcStore, public virtual LogStore
+struct RemoteStore : public virtual BuildStore, public virtual GcStore, public virtual LogStore
 {
     using Config = RemoteStoreConfig;
 

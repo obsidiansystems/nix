@@ -7,7 +7,7 @@ namespace nix {
 
 ref<Builder> getDefaultBuilder(ref<Store> store, std::shared_ptr<Store> evalStore)
 {
-    if (auto * rbs = dynamic_cast<RemoteBuildStore *>(&*store))
+    if (auto * rbs = dynamic_cast<BuildStore *>(&*store))
         return rbs->getBuilder(std::move(evalStore));
     else
         return getLocalBuilder(std::move(store), std::move(evalStore));
