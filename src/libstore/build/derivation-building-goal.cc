@@ -875,7 +875,7 @@ Goal::Co DerivationBuildingGoal::buildLocally(
                     Worker freshWorker{goal.worker.destStore, goal.worker.srcStore};
                     auto builder = makeRestrictedBuilder(freshWorker, context);
                     daemon::processConnection(
-                        store, std::move(from), std::move(to), NotTrusted, daemon::Recursive, &*builder);
+                        store, std::move(from), std::move(to), NotTrusted, daemon::Recursive, builder);
                 }
             };
 

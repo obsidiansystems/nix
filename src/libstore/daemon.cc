@@ -321,14 +321,14 @@ static void performOp(
     RecursiveFlag recursive,
     WorkerProto::BasicServerConnection & conn,
     WorkerProto::Op op,
-    Builder * builder)
+    std::optional<ref<Builder>> builder)
 {
     WorkerProto::ReadConn rconn(conn);
     WorkerProto::WriteConn wconn(conn);
 
     auto getBuilder = [&]() -> ref<Builder> {
         if (builder)
-            return ref<Builder>(std::shared_ptr<Builder>(std::shared_ptr<Builder>{}, builder));
+            return *builder;
         return getDefaultBuilder(store);
     };
 
@@ -1007,7 +1007,7 @@ static void performOp(
 }
 
 void processConnection(
-    ref<Store> store, FdSource && from, FdSink && to, TrustedFlag trusted, RecursiveFlag recursive, Builder * builder)
+    ref<Store> store, FdSource && from, FdSink && to, TrustedFlag trusted, RecursiveFlag recursive, std::optional<ref<Builder>> builder)
 {
 #ifndef _WIN32 // TODO need graceful async exit support on Windows?
     auto monitor = !recursive ? std::make_unique<MonitorFdHup>(from.fd) : nullptr;

@@ -18,7 +18,7 @@ void processConnection(
     FdSink && to,
     TrustedFlag trusted,
     RecursiveFlag recursive,
-    Builder * builder = nullptr);
+    std::optional<ref<Builder>> builder = std::nullopt);
 
 } // namespace daemon
 
