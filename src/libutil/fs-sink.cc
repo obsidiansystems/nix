@@ -4,6 +4,7 @@
 #include "nix/util/config-global.hh"
 #include "nix/util/file-system-at.hh"
 #include "nix/util/fs-sink.hh"
+#include "nix/util/util.hh"
 
 #ifdef _WIN32
 #  include <fileapi.h>
@@ -62,75 +63,49 @@ static RestoreSinkSettings restoreSinkSettings;
 
 static GlobalConfig::Register r1(&restoreSinkSettings);
 
-static std::filesystem::path append(const std::filesystem::path & src, const CanonPath & path)
-{
-    auto dst = src;
-    if (!path.rel().empty())
-        dst /= path.rel();
-    return dst;
-}
-
 /**
  * Return a descriptor and single-component name suitable for
- * `*at` operations. The returned `CanonPath` is always a pure
+ * `*at` operations. The returned `OsFilename` is always a pure
  * name (no slashes). The `Descriptor` is the fd to use. The
  * `AutoCloseFD` keeps it alive when it was opened temporarily
  * (for multi-component paths); otherwise it is empty and the
- * `Descriptor` borrows from `dirFd`. When `dirFd` is not set,
- * temporarily opens the parent of `dstPath`.
+ * `Descriptor` borrows from `dirFd`.
  */
-static std::tuple<AutoCloseFD, Descriptor, OsFilename>
-getParentFdAndName(Descriptor dirFd, const std::filesystem::path & dstPath, const CanonPath & path)
+static std::tuple<AutoCloseFD, Descriptor, OsFilename> getParentFdAndName(RestoreSink & sink, const CanonPath & path)
 {
-    if (dirFd != INVALID_DESCRIPTOR) {
-        /* dirFd is the root of the restore tree, which means we already created
-           a root directory, which means that path must be relative (i.e. not
-           root) within it. */
-        assert(!path.isRoot());
-        auto parent = path.parent();
-        auto name = OsFilename{std::filesystem::path{std::string{*path.baseName()}}};
-        if (parent->isRoot())
-            return {AutoCloseFD{}, dirFd, std::move(name)};
-        auto parentFd = openFileEnsureBeneathNoSymlinks(
-            dirFd,
-            *parent,
-#ifdef _WIN32
-            FILE_READ_ATTRIBUTES | SYNCHRONIZE,
-            FILE_DIRECTORY_FILE
-#else
-            O_RDONLY | O_DIRECTORY | O_CLOEXEC,
-            0
-#endif
-        );
-        if (!parentFd)
-            throw SysError("opening parent directory of %s", PathFmt(append(dstPath, path)));
-        auto fd = parentFd.get();
-        return {std::move(parentFd), fd, std::move(name)};
+    if (auto * parent = std::get_if<RestoreSink::DirFdParent>(&sink.dirFdKind)) {
+        /* dirFd is the parent directory. The root entry's name comes
+           from the variant. path must be root since we haven't
+           created the root directory yet. */
+        if (!path.isRoot())
+            throw Error("cannot create non-root path %s without a root directory", path);
+        return {AutoCloseFD{}, sink.dirFd.get(), parent->name};
     }
 
-    /* Without dirFd, we're creating the root entry itself, so path
-       must be root. If it's not, someone forgot to create the root
-       directory first. */
-    auto p = append(dstPath, path);
-    if (!path.isRoot())
-        throw Error("cannot create non-root path %s without a root directory", PathFmt(p));
-    if (p.empty())
-        throw Error("restore destination path is empty");
-    auto filename = p.filename();
-    if (filename == "." || filename == "..")
-        throw Error("restore destination %s ends in %s, which is not a valid filename", PathFmt(p), PathFmt(filename));
-    auto parentPath = p.parent_path();
-    /* Relative path with no directory component (e.g. "out") —
-       the parent is the current working directory. Open it so we
-       hold a stable reference in case something else in the process
-       changes the working directory mid-unpack. */
-    if (parentPath.empty())
-        parentPath = ".";
-    auto parentFd = openDirectory(parentPath, FinalSymlink::Follow);
+    /* dirFd is the root of the restore tree, so path must be
+       relative (i.e. not root) within it. */
+    assert(!path.isRoot());
+    auto parent = path.parent();
+    if (parent->isRoot())
+        return {AutoCloseFD{}, sink.dirFd.get(), OsFilename{std::filesystem::path(std::string{*path.baseName()})}};
+
+    /* Multi-component path: open intermediate directories to reach
+       the immediate parent. The returned AutoCloseFD keeps it alive. */
+    auto parentFd = openFileEnsureBeneathNoSymlinks(
+        sink.dirFd.get(),
+        std::filesystem::path(parent->rel()),
+#ifdef _WIN32
+        FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        FILE_DIRECTORY_FILE
+#else
+        O_RDONLY | O_DIRECTORY | O_CLOEXEC,
+        0
+#endif
+    );
     if (!parentFd)
-        throw NativeSysError("opening parent directory of %s", PathFmt(p));
+        throw SysError("opening parent directory of %s", PathFmt(descriptorToPath(sink.dirFd.get()) / path.rel()));
     auto fd = parentFd.get();
-    return {std::move(parentFd), fd, OsFilename{p.filename()}};
+    return {std::move(parentFd), fd, OsFilename{std::filesystem::path(std::string{*path.baseName()})}};
 }
 
 void RestoreSink::createDirectory(const CanonPath & path, DirectoryCreatedCallback callback)
@@ -142,11 +117,11 @@ void RestoreSink::createDirectory(const CanonPath & path, DirectoryCreatedCallba
     }
 
     createDirectory(path);
-    assert(dirFd); // If that's not true the above call must have thrown an exception.
+    assert(
+        std::holds_alternative<DirFdRoot>(
+            dirFdKind)); // If that's not true the above call must have thrown an exception.
 
-    RestoreSink dirSink{startFsync};
-    dirSink.dstPath = append(dstPath, path);
-    dirSink.dirFd = openFileEnsureBeneathNoSymlinks(
+    auto subDirFd = openFileEnsureBeneathNoSymlinks(
         dirFd.get(),
         path,
 #ifdef _WIN32
@@ -158,29 +133,39 @@ void RestoreSink::createDirectory(const CanonPath & path, DirectoryCreatedCallba
 #endif
     );
 
-    if (!dirSink.dirFd)
-        throw SysError("opening directory %s", PathFmt(dirSink.dstPath));
+    if (!subDirFd)
+        throw SysError("opening directory %s", PathFmt(descriptorToPath(dirFd.get()) / path.rel()));
+
+    RestoreSink dirSink{DirFdRoot{}, std::move(subDirFd), startFsync};
 
     callback(dirSink, CanonPath::root);
 }
 
 void RestoreSink::createDirectory(const CanonPath & path)
 {
-    if (dirFd && path.isRoot())
-        throw Error("path %s already exists", PathFmt(append(dstPath, path)));
+    if (std::holds_alternative<DirFdRoot>(dirFdKind) && path.isRoot())
+        /* Trying to create a directory that we already have a file descriptor for. */
+        throw Error("path %s already exists", PathFmt(descriptorToPath(dirFd.get())));
 
-    auto [_parentFd, fd, name] = getParentFdAndName(dirFd.get(), dstPath, path);
+    auto [_parentFd, fd, name] = getParentFdAndName(*this, path);
 
-    if (auto result = openDirectoryAt(fd, OsCanonPath{name}, true); !result) {
-        throw SystemError(result.error(), "creating directory %s", PathFmt(append(dstPath, path)));
+    if (auto result = openDirectoryAt(fd, name, true); !result) {
+        auto ec = result.error();
+        auto fullPath = descriptorToPath(fd) / name.path();
+        if (ec == std::errc::not_a_directory || ec == std::errc::too_many_symbolic_link_levels)
+            throw SymlinkNotAllowed(fullPath);
+        throw SystemError(ec, "creating directory %s", PathFmt(fullPath));
     }
 
-    if (!dirFd) {
-        /* Open directory for further *at operations relative to the sink root
-           directory. */
-        dirFd = openFileEnsureBeneathNoSymlinks(
+    if (std::holds_alternative<DirFdParent>(dirFdKind)) {
+        /* getParentFdAndName throws if path is not root when dirFdKind is Parent. */
+        assert(path.isRoot());
+        /* Open the newly created root directory for further *at operations.
+           Use a temp because `fd` borrows from `this->dirFd` and the
+           assignment would close it before the error message could use it. */
+        auto newDirFd = openFileEnsureBeneathNoSymlinks(
             fd,
-            OsCanonPath{name},
+            name,
 #ifdef _WIN32
             FILE_READ_ATTRIBUTES | SYNCHRONIZE,
             FILE_DIRECTORY_FILE
@@ -189,8 +174,10 @@ void RestoreSink::createDirectory(const CanonPath & path)
             0
 #endif
         );
-        if (!dirFd)
-            throw NativeSysError("opening directory %s", PathFmt(append(dstPath, path)));
+        if (!newDirFd)
+            throw SysError("opening directory %s", PathFmt(descriptorToPath(fd) / name.path()));
+        dirFd = std::move(newDirFd);
+        dirFdKind = DirFdRoot{};
     }
 };
 
@@ -232,23 +219,23 @@ struct RestoreRegularFile : CreateRegularFileSink, FdSink
 
 void RestoreSink::createRegularFile(const CanonPath & path, fun<void(CreateRegularFileSink &)> func)
 {
-    auto [_parentFd, fd, name] = getParentFdAndName(dirFd.get(), dstPath, path);
-    auto crf = RestoreRegularFile(
-        startFsync,
-        openFileEnsureBeneathNoSymlinks(
-            fd,
-            OsCanonPath{name},
+    auto [_parentFd, parentDescriptor, name] = getParentFdAndName(*this, path);
+    auto fd = openFileEnsureBeneathNoSymlinks(
+        parentDescriptor,
+        name,
 #ifdef _WIN32
-            FILE_WRITE_DATA | SYNCHRONIZE,
-            0,
-            FILE_CREATE
+        FILE_WRITE_DATA | SYNCHRONIZE,
+        0,
+        FILE_CREATE
 #else
-            O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC,
-            0666
+        O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC,
+        0666
 #endif
-            ));
-    if (!crf.fd)
-        throw NativeSysError("creating file %s", PathFmt(append(dstPath, path)));
+    );
+    if (!fd)
+        throw NativeSysError("creating file %s", PathFmt(descriptorToPath(dirFd.get()) / path.rel()));
+
+    auto crf = RestoreRegularFile(startFsync, std::move(fd));
     func(crf);
     crf.flush();
 }
@@ -284,8 +271,9 @@ void RestoreRegularFile::preallocateContents(uint64_t len)
 
 void RestoreSink::createSymlink(const CanonPath & path, const std::string & target)
 {
-    auto [_parentFd, fd, name] = getParentFdAndName(dirFd.get(), dstPath, path);
-    createUnknownSymlinkAt(fd, OsCanonPath{name}, string_to_os_string(target));
+    auto [_parentFd, fd, name] = getParentFdAndName(*this, path);
+    // TODO consider slash direction
+    createUnknownSymlinkAt(fd, name, string_to_os_string(target));
 }
 
 void RegularFileSink::createRegularFile(const CanonPath & path, fun<void(CreateRegularFileSink &)> func)
