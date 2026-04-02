@@ -149,6 +149,8 @@ struct TarAdapterImpl : merkle::TarAdapter
             pool.process();
         }
 
+        store.flushAll();
+
         // Phase 2: Resolve hardlinks, loop until all resolved (handles chains)
         while (!pendingHardlinks.empty()) {
             std::set<CanonPath> stillPending;
@@ -193,10 +195,21 @@ struct TarAdapterImpl : merkle::TarAdapter
         }
 
         // Phase 3: Build directories with processGraph (children before parents)
+        // Build maps for efficient child lookup
         std::set<CanonPath> dirPaths;
+        std::map<CanonPath, std::set<CanonPath>> childDirs;
+        std::map<CanonPath, std::vector<std::pair<CanonPath, Entry *>>> children;
+
         for (auto & [path, entry] : entries) {
+            auto parent = path.parent();
+            CanonPath parentPath = parent ? CanonPath(*parent) : CanonPath::root;
+            if (path != CanonPath::root)
+                children[parentPath].emplace_back(path, &entry);
+
             if (std::holds_alternative<DirectoryMarker>(entry)) {
                 dirPaths.insert(path);
+                if (path != CanonPath::root)
+                    childDirs[parentPath].insert(path);
             }
         }
 
@@ -204,41 +217,33 @@ struct TarAdapterImpl : merkle::TarAdapter
 
         processGraph<CanonPath>(
             dirPaths,
-            [&](const CanonPath & path) {
-                // Dependencies: immediate child directories
-                std::set<CanonPath> deps;
-                for (auto & dirPath : dirPaths) {
-                    auto parent = dirPath.parent();
-                    if ((parent && *parent == path) || (!parent && dirPath != CanonPath::root && path.isRoot())) {
-                        deps.insert(dirPath);
-                    }
-                }
-                return deps;
+            [&](const CanonPath & path) -> const std::set<CanonPath> & {
+                static const std::set<CanonPath> empty;
+                auto it = childDirs.find(path);
+                return it != childDirs.end() ? it->second : empty;
             },
             [&](const CanonPath & path) {
                 auto dirSink = store.makeDirectorySink();
 
-                // Add all immediate children
-                for (auto & [childPath, childEntry] : entries) {
-                    auto parent = childPath.parent();
-                    bool isDirectChild =
-                        (parent && *parent == path) || (!parent && childPath != CanonPath::root && path.isRoot());
-                    if (!isDirectChild)
-                        continue;
+                auto it = children.find(path);
+                if (it != children.end()) {
+                    for (auto & [childPath, childEntry] : it->second) {
+                        auto name = std::string(childPath.baseName().value());
 
-                    auto name = std::string(childPath.baseName().value());
-
-                    if (auto * file = std::get_if<CompletedFile>(&childEntry)) {
-                        dirSink->insertChild(name, {file->mode, file->hash});
-                    } else if (std::holds_alternative<DirectoryMarker>(childEntry)) {
-                        auto lockedHashes = dirHashes.lock();
-                        dirSink->insertChild(name, {merkle::Mode::Directory, lockedHashes->at(childPath)});
+                        if (auto * file = std::get_if<CompletedFile>(childEntry)) {
+                            dirSink->insertChild(name, {file->mode, file->hash});
+                        } else if (std::holds_alternative<DirectoryMarker>(*childEntry)) {
+                            auto lockedHashes = dirHashes.lock();
+                            dirSink->insertChild(name, {merkle::Mode::Directory, lockedHashes->at(childPath)});
+                        }
                     }
                 }
 
                 Hash hash = std::move(*dirSink).flush();
                 dirHashes.lock()->emplace(path, hash);
             });
+
+        store.flushAll();
 
         return {merkle::Mode::Directory, dirHashes.lock()->at(CanonPath::root)};
     }

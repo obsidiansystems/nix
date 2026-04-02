@@ -46,6 +46,11 @@ struct FileSinkBuilder
     virtual merkle::TreeEntry makeSymlink(const std::string & target) = 0;
 
     /**
+     * Flush all idle pool members in parallel.
+     */
+    virtual void flushAll() = 0;
+
+    /**
      * Flush all pending writes to persistent storage, and set whether
      * subsequently created sinks may reference objects produced by
      * previously created (and completed) sinks.

@@ -328,6 +328,11 @@ struct GitRepoImpl : GitRepo, std::enable_shared_from_this<GitRepoImpl>
         }
     }
 
+    ~GitRepoImpl()
+    {
+        flush();
+    }
+
     operator git_repository *()
     {
         return repo.get();
@@ -383,50 +388,6 @@ struct GitRepoImpl : GitRepo, std::enable_shared_from_this<GitRepoImpl>
             throw GitError("resetting git mempack backend");
 
         checkInterrupt();
-    }
-
-    uint64_t getRevCount(const Hash & rev) override
-    {
-        boost::concurrent_flat_set<git_oid, std::hash<git_oid>> done;
-
-        auto startCommit = peelObject<Commit>(lookupObject(*this, hashToOID(rev)).get(), GIT_OBJECT_COMMIT);
-        auto startOid = *git_commit_id(startCommit.get());
-        done.insert(startOid);
-
-        Pool<GitRepoImpl> repoPool(std::numeric_limits<size_t>::max(), [this]() -> ref<GitRepoImpl> {
-            return make_ref<GitRepoImpl>(path, options);
-        });
-
-        ThreadPool pool;
-
-        auto process = [&done, &pool, &repoPool](this const auto & process, const git_oid & oid) -> void {
-            auto repo(repoPool.get());
-
-            auto _commit = lookupObject(*repo, oid, GIT_OBJECT_COMMIT);
-            auto commit = (const git_commit *) &*_commit;
-
-            for (auto n : std::views::iota(0U, git_commit_parentcount(commit))) {
-                auto parentOid = git_commit_parent_id(commit, n);
-                if (!parentOid) {
-                    throw Error(
-                        "Failed to retrieve the parent of Git commit '%s': %s. "
-                        "This may be due to an incomplete repository history. "
-                        "To resolve this, either enable the shallow parameter in your flake URL (?shallow=1) "
-                        "or add set the shallow parameter to true in builtins.fetchGit, "
-                        "or fetch the complete history for this branch.",
-                        *git_commit_id(commit),
-                        git_error_last()->message);
-                }
-                if (done.insert(*parentOid))
-                    pool.enqueue(std::bind(process, *parentOid));
-            }
-        };
-
-        pool.enqueue(std::bind(process, startOid));
-
-        pool.process();
-
-        return done.size();
     }
 
     uint64_t getLastModified(const Hash & rev) override
@@ -1161,7 +1122,6 @@ struct GitRegularFileSinkImpl : merkle::RegularFileSinkWithFlush
                acquires ownership and frees the stream. */
             if (git_blob_create_from_stream_commit(&oid, stream.release()))
                 throw GitError("finalizing blob stream");
-            (*writer)->flush();
             /* Can return this writer to the pool too, now that the stream
                is closed. */
             writer.reset();
@@ -1170,7 +1130,6 @@ struct GitRegularFileSinkImpl : merkle::RegularFileSinkWithFlush
             auto handle = writerPool.get();
             if (git_blob_create_from_buffer(&oid, *handle, contents.data(), contents.size()))
                 throw GitError("creating blob from buffer");
-            handle->flush();
         }
 
         return toHash(oid);
@@ -1179,34 +1138,21 @@ struct GitRegularFileSinkImpl : merkle::RegularFileSinkWithFlush
 
 struct GitDirectorySinkImpl : merkle::DirectorySinkWithFlush
 {
-    struct Child
-    {
-        git_filemode_t mode;
-        git_oid oid;
-    };
-
-    using Directory = std::map<std::string, Child>;
-
     Pool<GitRepoImpl> & pool;
-    Directory children;
+
+    TreeBuilder builder;
 
     GitDirectorySinkImpl(Pool<GitRepoImpl> & pool)
         : pool(pool)
     {
+        git_treebuilder * b;
+        if (git_treebuilder_new(&b, *pool.get(), nullptr))
+            throw GitError("creating a tree builder");
+        builder = TreeBuilder(b);
     }
 
-    git_oid writeTree(Pool<GitRepoImpl>::Handle & writer)
+    git_oid writeTree()
     {
-        git_treebuilder * b;
-        if (git_treebuilder_new(&b, *writer, nullptr))
-            throw GitError("creating a tree builder");
-        TreeBuilder builder(b);
-
-        for (auto & [name, child] : children) {
-            if (git_treebuilder_insert(nullptr, builder.get(), name.c_str(), &child.oid, child.mode))
-                throw GitError("adding a file to a tree builder");
-        }
-
         git_oid oid;
         if (git_treebuilder_write(&oid, builder.get()))
             throw GitError("creating a tree object");
@@ -1215,19 +1161,14 @@ struct GitDirectorySinkImpl : merkle::DirectorySinkWithFlush
 
     void insertChild(std::string_view name, merkle::TreeEntry entry) override
     {
-        children.insert_or_assign(
-            std::string(name),
-            Child{
-                static_cast<git_filemode_t>(entry.mode),
-                hashToOID(entry.hash),
-            });
+        auto oid = hashToOID(entry.hash);
+        git_treebuilder_insert(
+            nullptr, builder.get(), std::string(name).c_str(), &oid, static_cast<git_filemode_t>(entry.mode));
     }
 
     Hash flush() && override
     {
-        auto writer = pool.get();
-        auto oid = writeTree(writer);
-        writer->flush();
+        auto oid = writeTree();
         return toHash(oid);
     }
 };
@@ -1361,6 +1302,56 @@ struct GitRepoPoolImpl : GitRepoPool
             throw GitError("creating a blob object for symlink");
         handle->flush();
         return merkle::TreeEntry{merkle::Mode::Symlink, toHash(oid)};
+    }
+
+    uint64_t getRevCount(const Hash & rev) override
+    {
+        boost::concurrent_flat_set<git_oid, std::hash<git_oid>> done;
+
+        auto startRepo = pool.get();
+        auto startCommit = peelObject<Commit>(lookupObject(*startRepo, hashToOID(rev)).get(), GIT_OBJECT_COMMIT);
+        auto startOid = *git_commit_id(startCommit.get());
+        done.insert(startOid);
+
+        ThreadPool threadPool;
+
+        auto process = [&done, &threadPool, this](this const auto & process, const git_oid & oid) -> void {
+            auto repo(pool.get());
+
+            auto _commit = lookupObject(*repo, oid, GIT_OBJECT_COMMIT);
+            auto commit = (const git_commit *) &*_commit;
+
+            for (auto n : std::views::iota(0U, git_commit_parentcount(commit))) {
+                auto parentOid = git_commit_parent_id(commit, n);
+                if (!parentOid) {
+                    throw Error(
+                        "Failed to retrieve the parent of Git commit '%s': %s. "
+                        "This may be due to an incomplete repository history. "
+                        "To resolve this, either enable the shallow parameter in your flake URL (?shallow=1) "
+                        "or add set the shallow parameter to true in builtins.fetchGit, "
+                        "or fetch the complete history for this branch.",
+                        *git_commit_id(commit),
+                        git_error_last()->message);
+                }
+                if (done.insert(*parentOid))
+                    threadPool.enqueue(std::bind(process, *parentOid));
+            }
+        };
+
+        threadPool.enqueue(std::bind(process, startOid));
+
+        threadPool.process();
+
+        return done.size();
+    }
+
+    void flushAll() override
+    {
+        auto repos = pool.clear();
+        ThreadPool workers{repos.size()};
+        for (auto & repo : repos)
+            workers.enqueue([repo]() { repo->flush(); });
+        workers.process();
     }
 };
 

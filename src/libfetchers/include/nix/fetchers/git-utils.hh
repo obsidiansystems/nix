@@ -29,8 +29,6 @@ struct GitRepo
 
     static ref<GitRepo> openRepo(const std::filesystem::path & path, Options options);
 
-    virtual uint64_t getRevCount(const Hash & rev) = 0;
-
     virtual uint64_t getLastModified(const Hash & rev) = 0;
 
     virtual bool isShallow() = 0;
@@ -124,6 +122,8 @@ struct GitRepoPool : merkle::FileSinkBuilder
     virtual ~GitRepoPool() = default;
 
     static ref<GitRepoPool> create(const std::filesystem::path & path, GitRepo::Options options);
+
+    virtual uint64_t getRevCount(const Hash & rev) = 0;
 };
 
 // A helper to ensure that the `git_*_free` functions get called.
