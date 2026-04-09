@@ -326,6 +326,12 @@ StorePath BinaryCacheStore::addToStoreFromDump(
     if (hashMethod.getFileIngestionMethod() == FileIngestionMethod::Git)
         unsupported("addToStoreFromDump");
 
+    // Likewise, Go dirhash needs to walk a finalised tree (sorted by
+    // relative path) and so cannot be computed from a NAR stream in a
+    // single pass.
+    if (hashMethod.getFileIngestionMethod() == FileIngestionMethod::Go)
+        unsupported("addToStoreFromDump");
+
     if (auto * dump2p = dynamic_cast<StringSource *>(&dump)) {
         auto & dump2 = *dump2p;
         // Hack, this gives us a "replayable" source so we can compute

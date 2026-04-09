@@ -8,6 +8,7 @@
 #include "nix/util/util.hh"
 #include "nix/util/archive.hh"
 #include "nix/util/git.hh"
+#include "nix/util/go.hh"
 #include "nix/store/daemon.hh"
 #include "nix/util/topo-sort.hh"
 #include "nix/store/build/child.hh"
@@ -1719,6 +1720,9 @@ SingleDrvOutputs DerivationBuilderImpl::registerOutputs()
                 case FileIngestionMethod::Git: {
                     return git::dumpHash(outputHash.hashAlgo, {getFSSourceAccessor(), CanonPath(actualPath.native())})
                         .hash;
+                }
+                case FileIngestionMethod::Go: {
+                    return go::dumpHash(outputHash.hashAlgo, {getFSSourceAccessor(), CanonPath(actualPath.native())});
                 }
                 }
                 assert(false);

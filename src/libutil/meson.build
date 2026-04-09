@@ -151,6 +151,7 @@ sources = [ config_priv_h ] + files(
   'file-system.cc',
   'fs-sink.cc',
   'git.cc',
+  'go.cc',
   'hash.cc',
   'hilite.cc',
   'json-utils.cc',

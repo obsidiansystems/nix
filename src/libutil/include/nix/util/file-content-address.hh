@@ -113,6 +113,19 @@ enum struct FileIngestionMethod : uint8_t {
      * manual.
      */
     Git,
+
+    /**
+     * Go module hashing.
+     *
+     * Hashes file system objects using the Go module dirhash algorithm
+     * (`golang.org/x/mod/sumdb/dirhash`, `h1:` format): each regular
+     * file's contents are hashed, the per-file digests are sorted by
+     * path and concatenated as a manifest, and the manifest is hashed
+     * to produce the final digest.
+     *
+     * Part of `ExperimentalFeature::GoHashing`.
+     */
+    Go,
 };
 
 /**
@@ -121,6 +134,7 @@ enum struct FileIngestionMethod : uint8_t {
  *  - `flat`: `FileIngestionMethod::Flat`
  *  - `nar`: `FileIngestionMethod::NixArchive`
  *  - `git`: `FileIngestionMethod::Git`
+ *  - `go`: `FileIngestionMethod::Go`
  *
  * Opposite of `renderFileIngestionMethod`.
  */

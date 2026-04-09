@@ -13,7 +13,8 @@ static auto methods = ::testing::Values(
     std::pair{ContentAddressMethod::Raw::Text, "text"},
     std::pair{ContentAddressMethod::Raw::Flat, "flat"},
     std::pair{ContentAddressMethod::Raw::NixArchive, "nar"},
-    std::pair{ContentAddressMethod::Raw::Git, "git"});
+    std::pair{ContentAddressMethod::Raw::Git, "git"},
+    std::pair{ContentAddressMethod::Raw::Go, "go"});
 
 struct ContentAddressMethodTest : ::testing::Test,
                                   ::testing::WithParamInterface<std::pair<ContentAddressMethod, std::string_view>>

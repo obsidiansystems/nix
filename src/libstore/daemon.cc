@@ -444,6 +444,10 @@ static void performOp(
                     // Use NAR; Git is not a serialization method
                     dumpMethod = FileSerialisationMethod::NixArchive;
                     break;
+                case FileIngestionMethod::Go:
+                    // Use NAR; Go dirhash is not a serialization method
+                    dumpMethod = FileSerialisationMethod::NixArchive;
+                    break;
                 default:
                     assert(false);
                 }

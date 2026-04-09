@@ -46,6 +46,7 @@ TEST(FileIngestionMethod, testRoundTripPrintParse_1)
              FileIngestionMethod::Flat,
              FileIngestionMethod::NixArchive,
              FileIngestionMethod::Git,
+             FileIngestionMethod::Go,
          }) {
         EXPECT_EQ(parseFileIngestionMethod(renderFileIngestionMethod(fim)), fim);
     }
@@ -57,6 +58,7 @@ TEST(FileIngestionMethod, testRoundTripPrintParse_2)
              "flat",
              "nar",
              "git",
+             "go",
          }) {
         EXPECT_EQ(renderFileIngestionMethod(parseFileIngestionMethod(fimS)), fimS);
     }

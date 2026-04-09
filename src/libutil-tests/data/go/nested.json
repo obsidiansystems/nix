@@ -1,0 +1,30 @@
+{
+  "entries": {
+    "README": {
+      "contents": "hello\n",
+      "executable": false,
+      "type": "regular"
+    },
+    "pkg": {
+      "entries": {
+        "lib.go": {
+          "contents": "package pkg\n",
+          "executable": false,
+          "type": "regular"
+        },
+        "sub": {
+          "entries": {
+            "more.go": {
+              "contents": "package sub\n",
+              "executable": false,
+              "type": "regular"
+            }
+          },
+          "type": "directory"
+        }
+      },
+      "type": "directory"
+    }
+  },
+  "type": "directory"
+}

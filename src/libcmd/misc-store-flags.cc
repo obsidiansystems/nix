@@ -82,6 +82,15 @@ Args::Flag fileIngestionMethod(FileIngestionMethod * method)
       Assumes that the input is a single file and
       [directly passes](@docroot@/store/file-system-object/content-address.md#serial-flat)
       it to the hash function.
+
+    - `git`:
+      Hashes the input using Git's tree/blob hashing algorithm.
+      Requires the `git-hashing` experimental feature.
+
+    - `go`:
+      Hashes the input using Go's module dirhash algorithm
+      (`golang.org/x/mod/sumdb/dirhash`, `h1:` format).
+      Requires the `go-hashing` experimental feature.
         )",
         .labels = {"file-ingestion-method"},
         .handler = {[method](std::string s) { *method = parseFileIngestionMethod(s); }},

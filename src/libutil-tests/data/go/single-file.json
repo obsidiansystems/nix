@@ -1,0 +1,10 @@
+{
+  "entries": {
+    "foo": {
+      "contents": "bar",
+      "executable": false,
+      "type": "regular"
+    }
+  },
+  "type": "directory"
+}

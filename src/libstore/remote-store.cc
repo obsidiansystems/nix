@@ -360,6 +360,7 @@ ref<const ValidPathInfo> RemoteStore::addCAToStore(
         case ContentAddressMethod::Raw::Flat:
         case ContentAddressMethod::Raw::NixArchive:
         case ContentAddressMethod::Raw::Git:
+        case ContentAddressMethod::Raw::Go:
         default: {
             auto fim = caMethod.getFileIngestionMethod();
             conn->to << WorkerProto::Op::AddToStore << name
@@ -420,6 +421,10 @@ StorePath RemoteStore::addToStoreFromDump(
         break;
     case FileIngestionMethod::Git:
         // Use NAR; Git is not a serialization method
+        fsm = FileSerialisationMethod::NixArchive;
+        break;
+    case FileIngestionMethod::Go:
+        // Use NAR; Go dirhash is not a serialization method
         fsm = FileSerialisationMethod::NixArchive;
         break;
     default:

@@ -71,6 +71,7 @@ sources = files(
   'file-system.cc',
   'fun.cc',
   'git.cc',
+  'go.cc',
   'hash.cc',
   'hilite.cc',
   'json-utils.cc',

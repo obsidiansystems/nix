@@ -1,6 +1,7 @@
 #include "nix/util/file-content-address.hh"
 #include "nix/util/archive.hh"
 #include "nix/util/git.hh"
+#include "nix/util/go.hh"
 #include "nix/util/source-path.hh"
 
 namespace nix {
@@ -29,12 +30,14 @@ FileIngestionMethod parseFileIngestionMethod(std::string_view input)
 {
     if (input == "git") {
         return FileIngestionMethod::Git;
+    } else if (input == "go") {
+        return FileIngestionMethod::Go;
     } else {
         auto ret = parseFileSerialisationMethodOpt(input);
         if (ret)
             return static_cast<FileIngestionMethod>(*ret);
         else
-            throw UsageError("Unknown file ingestion method '%s', expect `flat`, `nar`, or `git`", input);
+            throw UsageError("Unknown file ingestion method '%s', expect `flat`, `nar`, `git`, or `go`", input);
     }
 }
 
@@ -58,6 +61,8 @@ std::string_view renderFileIngestionMethod(FileIngestionMethod method)
         return renderFileSerialisationMethod(static_cast<FileSerialisationMethod>(method));
     case FileIngestionMethod::Git:
         return "git";
+    case FileIngestionMethod::Go:
+        return "go";
     default:
         unreachable();
     }
@@ -105,6 +110,8 @@ hashPath(const SourcePath & path, FileIngestionMethod method, HashAlgorithm ht, 
     }
     case FileIngestionMethod::Git:
         return {git::dumpHash(ht, path, filter).hash, std::nullopt};
+    case FileIngestionMethod::Go:
+        return {go::dumpHash(ht, path, filter), std::nullopt};
     }
     assert(false);
 }

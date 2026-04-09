@@ -1,6 +1,7 @@
 #include "nix/store/local-store.hh"
 #include "nix/store/globals.hh"
 #include "nix/util/git.hh"
+#include "nix/util/go.hh"
 #include "nix/util/archive.hh"
 #include "nix/store/pathlocks.hh"
 #include "nix/store/worker-protocol.hh"
@@ -1095,6 +1096,9 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source, RepairF
                         case FileIngestionMethod::Git:
                             h = git::dumpHash(specified.hash.algo, {accessor, path}).hash;
                             break;
+                        case FileIngestionMethod::Go:
+                            h = go::dumpHash(specified.hash.algo, {accessor, path});
+                            break;
                         }
                         ContentAddress{
                             .method = specified.method,
@@ -1255,6 +1259,7 @@ StorePath LocalStore::addToStoreFromDump(
                     restorePath(realPath, dumpSource, (FileSerialisationMethod) fim, localSettings.fsyncStorePaths);
                     break;
                 case FileIngestionMethod::Git:
+                case FileIngestionMethod::Go:
                     // doesn't correspond to serialization method, so
                     // this should be unreachable
                     assert(false);

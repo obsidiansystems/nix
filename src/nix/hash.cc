@@ -6,6 +6,7 @@
 #include "nix/store/references.hh"
 #include "nix/util/archive.hh"
 #include "nix/util/git.hh"
+#include "nix/util/go.hh"
 #include "nix/util/posix-source-accessor.hh"
 #include "nix/cmd/misc-store-flags.hh"
 #include "man-pages.hh"
@@ -71,6 +72,8 @@ struct CmdHashBase : Command
             return "print cryptographic hash of the NAR serialisation of a path";
         case FileIngestionMethod::Git:
             return "print cryptographic hash of the Git serialisation of a path";
+        case FileIngestionMethod::Go:
+            return "print cryptographic hash of the Go module dirhash of a path";
         default:
             assert(false);
         };
@@ -123,6 +126,13 @@ struct CmdHashBase : Command
                     };
                 };
                 h = hook(sourcePath).hash;
+                break;
+            }
+            case FileIngestionMethod::Go: {
+                if (modulus)
+                    throw UsageError("--modulo is not supported for Go module hashing");
+                auto sourcePath = makeSourcePath();
+                h = go::dumpHash(hashAlgo, sourcePath);
                 break;
             }
             }

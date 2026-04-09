@@ -52,6 +52,7 @@ headers = [ config_pub_h ] + files(
   'fs-sink.hh',
   'fun.hh',
   'git.hh',
+  'go.hh',
   'hash.hh',
   'hilite.hh',
   'json-impls.hh',

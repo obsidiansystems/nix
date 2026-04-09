@@ -14,6 +14,7 @@
 #include "nix/util/archive.hh"
 #include "nix/util/callback.hh"
 #include "nix/util/git.hh"
+#include "nix/util/go.hh"
 #include "nix/util/posix-source-accessor.hh"
 #include "nix/util/signals.hh"
 #include "nix/util/environment-variables.hh"
@@ -183,6 +184,10 @@ StorePath Store::addToStore(
         // Use NAR; Git is not a serialization method
         fsm = FileSerialisationMethod::NixArchive;
         break;
+    case FileIngestionMethod::Go:
+        // Use NAR; Go dirhash is not a serialization method
+        fsm = FileSerialisationMethod::NixArchive;
+        break;
     }
     std::optional<StorePath> storePath;
     auto sink = sourceToSink([&](Source & source) {
@@ -335,6 +340,7 @@ ValidPathInfo Store::addToStoreSlow(
 
     auto hash = method == ContentAddressMethod::Raw::NixArchive && hashAlgo == HashAlgorithm::SHA256 ? narHash
                 : method == ContentAddressMethod::Raw::Git ? git::dumpHash(hashAlgo, srcPath).hash
+                : method == ContentAddressMethod::Raw::Go  ? go::dumpHash(hashAlgo, srcPath)
                                                            : caHashSink.finish().hash;
 
     if (expectedCAHash && expectedCAHash != hash)

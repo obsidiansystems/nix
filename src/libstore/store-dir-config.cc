@@ -109,6 +109,10 @@ StorePath StoreDirConfig::makeFixedOutputPath(std::string_view name, const Fixed
             "Git file ingestion must use SHA-1 or SHA-256 hash, but instead using: %s", printHashAlgo(info.hash.algo));
     }
 
+    if (info.method == FileIngestionMethod::Go && info.hash.algo != HashAlgorithm::SHA256) {
+        throw Error("Go file ingestion must use SHA-256 hash, but instead using: %s", printHashAlgo(info.hash.algo));
+    }
+
     if (info.hash.algo == HashAlgorithm::SHA256 && info.method == FileIngestionMethod::NixArchive) {
         return makeStorePath(makeType(*this, "source", info.references), info.hash, name);
     } else {

@@ -62,6 +62,14 @@ struct ContentAddressMethod
         Git,
 
         /**
+         * Calculate a store path using the `FileIngestionMethod::Go`
+         * hash of the file system objects, and references.
+         *
+         * Part of `ExperimentalFeature::GoHashing`.
+         */
+        Go,
+
+        /**
          * Calculate a store path using the `FileIngestionMethod::Flat`
          * hash of the file system objects, and references, but in a
          * different way than `ContentAddressMethod::Raw::Flat`.

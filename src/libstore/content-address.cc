@@ -16,6 +16,9 @@ std::string_view makeFileIngestionPrefix(FileIngestionMethod m)
     case FileIngestionMethod::Git:
         experimentalFeatureSettings.require(Xp::GitHashing);
         return "git:";
+    case FileIngestionMethod::Go:
+        experimentalFeatureSettings.require(Xp::GoHashing);
+        return "go:";
     default:
         assert(false);
     }
@@ -29,6 +32,7 @@ std::string_view ContentAddressMethod::render() const
     case ContentAddressMethod::Raw::Flat:
     case ContentAddressMethod::Raw::NixArchive:
     case ContentAddressMethod::Raw::Git:
+    case ContentAddressMethod::Raw::Go:
         return renderFileIngestionMethod(getFileIngestionMethod());
     default:
         assert(false);
@@ -53,6 +57,8 @@ static ContentAddressMethod fileIngestionMethodToContentAddressMethod(FileIngest
         return ContentAddressMethod::Raw::NixArchive;
     case FileIngestionMethod::Git:
         return ContentAddressMethod::Raw::Git;
+    case FileIngestionMethod::Go:
+        return ContentAddressMethod::Raw::Go;
     default:
         assert(false);
     }
@@ -74,6 +80,7 @@ std::string_view ContentAddressMethod::renderPrefix() const
     case ContentAddressMethod::Raw::Flat:
     case ContentAddressMethod::Raw::NixArchive:
     case ContentAddressMethod::Raw::Git:
+    case ContentAddressMethod::Raw::Go:
         return makeFileIngestionPrefix(getFileIngestionMethod());
     default:
         assert(false);
@@ -87,6 +94,9 @@ ContentAddressMethod ContentAddressMethod::parsePrefix(std::string_view & m)
     } else if (splitPrefix(m, "git:")) {
         experimentalFeatureSettings.require(Xp::GitHashing);
         return ContentAddressMethod::Raw::Git;
+    } else if (splitPrefix(m, "go:")) {
+        experimentalFeatureSettings.require(Xp::GoHashing);
+        return ContentAddressMethod::Raw::Go;
     } else if (splitPrefix(m, "text:")) {
         return ContentAddressMethod::Raw::Text;
     }
@@ -106,6 +116,7 @@ static std::string renderPrefixModern(const ContentAddressMethod & ca)
     case ContentAddressMethod::Raw::Flat:
     case ContentAddressMethod::Raw::NixArchive:
     case ContentAddressMethod::Raw::Git:
+    case ContentAddressMethod::Raw::Go:
         return "fixed:" + makeFileIngestionPrefix(ca.getFileIngestionMethod());
     default:
         assert(false);
@@ -126,6 +137,8 @@ FileIngestionMethod ContentAddressMethod::getFileIngestionMethod() const
         return FileIngestionMethod::NixArchive;
     case ContentAddressMethod::Raw::Git:
         return FileIngestionMethod::Git;
+    case ContentAddressMethod::Raw::Go:
+        return FileIngestionMethod::Go;
     case ContentAddressMethod::Raw::Text:
         return FileIngestionMethod::Flat;
     default:
@@ -177,6 +190,9 @@ static std::pair<ContentAddressMethod, HashAlgorithm> parseContentAddressMethodP
         else if (splitPrefix(rest, "git:")) {
             experimentalFeatureSettings.require(Xp::GitHashing);
             method = ContentAddressMethod::Raw::Git;
+        } else if (splitPrefix(rest, "go:")) {
+            experimentalFeatureSettings.require(Xp::GoHashing);
+            method = ContentAddressMethod::Raw::Go;
         }
         HashAlgorithm hashAlgo = parseHashAlgorithm_();
         return {
@@ -244,6 +260,7 @@ ContentAddressWithReferences ContentAddressWithReferences::withoutRefs(const Con
     case ContentAddressMethod::Raw::Flat:
     case ContentAddressMethod::Raw::NixArchive:
     case ContentAddressMethod::Raw::Git:
+    case ContentAddressMethod::Raw::Go:
         return FixedOutputInfo{
             .method = ca.method.getFileIngestionMethod(),
             .hash = ca.hash,
@@ -268,6 +285,7 @@ ContentAddressWithReferences::fromParts(ContentAddressMethod method, Hash hash, 
     case ContentAddressMethod::Raw::Flat:
     case ContentAddressMethod::Raw::NixArchive:
     case ContentAddressMethod::Raw::Git:
+    case ContentAddressMethod::Raw::Go:
         return FixedOutputInfo{
             .method = method.getFileIngestionMethod(),
             .hash = std::move(hash),
