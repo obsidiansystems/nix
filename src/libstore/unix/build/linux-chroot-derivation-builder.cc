@@ -404,16 +404,33 @@ struct LinuxChrootDerivationBuilder : DerivationBuilder, DerivationBuilderParams
                     if (usingUserNamespace)
                         options.cloneFlags |= CLONE_NEWUSER;
 
-                    pid_t child = startProcess(
-                        [this,
-                         env,
-                         inputRewrites,
-                         pathsInChroot
+                    struct RunChildArgs
+                    {
+                        StringMap env;
+                        StringMap inputRewrites;
+                        PathsInChroot pathsInChroot;
 #if NIX_WITH_AWS_AUTH
-                         ,
-                         awsCredentials
+                        std::optional<AwsCredentials> awsCredentials;
 #endif
-                    ]() mutable {
+                    };
+
+                    RunChildArgs args{
+                        .env = std::move(env),
+                        .inputRewrites = std::move(inputRewrites),
+                        .pathsInChroot = std::move(pathsInChroot),
+#if NIX_WITH_AWS_AUTH
+                        .awsCredentials = std::move(awsCredentials),
+#endif
+                    };
+
+                    pid_t child = startProcess(
+                        [this, args = std::move(args)]() mutable {
+                            auto & env = args.env;
+                            auto & inputRewrites = args.inputRewrites;
+                            auto & pathsInChroot = args.pathsInChroot;
+#if NIX_WITH_AWS_AUTH
+                            auto & awsCredentials = args.awsCredentials;
+#endif
                             // runChild inlined
                             bool sendException = true;
 
