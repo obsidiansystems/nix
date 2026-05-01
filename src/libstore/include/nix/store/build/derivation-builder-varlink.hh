@@ -135,7 +135,11 @@ struct Response
  * Process Varlink protocol messages for the derivation builder interface.
  */
 void processVarlinkConnection(
-    Store & store, const StorePath & drvPath, ref<Sync<OutputPathMap>> submittedOutputs, FdSource & from, FdSink & to);
+    Store & store,
+    const std::optional<StorePath> & drvPath,
+    ref<Sync<OutputPathMap>> submittedOutputs,
+    FdSource & from,
+    FdSink & to);
 
 } // namespace nix
 

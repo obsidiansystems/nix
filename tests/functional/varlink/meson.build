@@ -10,10 +10,16 @@ if nix_store.found()
   subdir('test-varlink')
   suites += {
     'name' : 'varlink',
-    'deps' : [ varlink_dynamic, varlink_non_trivial, varlink_trivial ],
+    'deps' : [
+      varlink_dynamic,
+      varlink_non_trivial,
+      varlink_trivial_external,
+      varlink_trivial,
+    ],
     'tests' : [
       'varlink-dynamic.sh',
       'varlink-non-trivial.sh',
+      'varlink-trivial-external.sh',
       'varlink-trivial.sh',
     ],
     'workdir' : meson.current_source_dir(),

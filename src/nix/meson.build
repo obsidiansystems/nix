@@ -119,6 +119,7 @@ if host_machine.system() != 'windows'
   nix_sources += files(
     'unix/daemon.cc',
     'unix/store-roots-daemon.cc',
+    'unix/varlink-daemon.cc',
   )
 endif
 

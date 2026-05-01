@@ -9,6 +9,15 @@ varlink_trivial = executable(
   build_by_default : false,
 )
 
+varlink_trivial_external = executable(
+  'varlink-trivial-external',
+  'trivial-external.cc',
+  dependencies : deps_other + [
+    dependency('nix-store'),
+  ],
+  build_by_default : false,
+)
+
 varlink_dynamic = executable(
   'varlink-dynamic',
   'dynamic.cc',

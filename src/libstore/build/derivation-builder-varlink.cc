@@ -26,7 +26,11 @@ using namespace derivation_builder_varlink;
  * doc/manual/source/protocols/derivation-builder/derivation-builder.varlink
  */
 void processVarlinkConnection(
-    Store & store, const StorePath & drvPath, ref<Sync<OutputPathMap>> _submittedOutputs, FdSource & from, FdSink & to)
+    Store & store,
+    const std::optional<StorePath> & drvPath,
+    ref<Sync<OutputPathMap>> _submittedOutputs,
+    FdSource & from,
+    FdSink & to)
 {
     using json = nlohmann::json;
 
@@ -48,6 +52,13 @@ void processVarlinkConnection(
             {"parameters", json::object()},
         });
     };
+
+    std::string storePathName;
+    if (drvPath.has_value()) {
+        storePathName = store.printStorePath(drvPath.value());
+    } else {
+        storePathName = "<external>";
+    }
 
     std::deque<std::byte> buffer;
     std::deque<AutoCloseFD> fds;
@@ -99,9 +110,7 @@ void processVarlinkConnection(
                     // Receive file descriptor from client via SCM_RIGHTS
                     // The client sends the file descriptor containing the NAR archive.
                     if (fds.size() < 1) {
-                        warn(
-                            "Derivation '%s' didn't send file descriptor when adding to store",
-                            store.printStorePath(drvPath));
+                        warn("Derivation '%s' didn't send file descriptor when adding to store", storePathName);
                         sendError("org.nix.derivation-builder.NoFileDescriptor");
                         return;
                     }
@@ -121,7 +130,7 @@ void processVarlinkConnection(
                             {});
                         sendResponse(Response{Response::AddToStore{.path = path}});
                     } catch (SerialisationError & e) {
-                        warn("Derivation '%s' sent an invalid NAR: %s", store.printStorePath(drvPath), e.info().msg);
+                        warn("Derivation '%s' sent an invalid NAR: %s", storePathName, e.info().msg);
                         sendError("org.nix.derivation-builder.InvalidNar");
                     }
                 },
@@ -139,14 +148,18 @@ void processVarlinkConnection(
                     // The store path is already tracked by the RestrictedStore
                     // Authorization is handled automatically by the RestrictedStore wrapper
 
+                    if (!drvPath.has_value()) {
+                        sendError("org.nix.derivation-builder.WrongEnvironment");
+                        return;
+                    }
+
                     try {
                         ValidPathInfo pathInfo(*store.queryPathInfo(req.path));
 
                         if (!pathInfo.isContentAddressed(store)) {
                             warn(
                                 "Derivation '%s' tried to submit non-CA path '%s' for output '%s', skipping",
-                                store.printStorePath(drvPath),
-                                store.printStorePath(req.path),
+                                storePathName,
                                 req.name);
                             sendError("org.nix.derivation-builder.InvalidPath");
                             return;
@@ -154,8 +167,7 @@ void processVarlinkConnection(
                     } catch (const InvalidPath & ex) {
                         warn(
                             "Derivation '%s' tried to submit invalid path '%s' for output '%s', skipping",
-                            store.printStorePath(drvPath),
-                            store.printStorePath(req.path),
+                            storePathName,
                             req.name);
                         sendError("org.nix.derivation-builder.InvalidPath");
                         return;
@@ -164,10 +176,7 @@ void processVarlinkConnection(
                     {
                         auto submittedOutputs(_submittedOutputs->lock());
                         if (submittedOutputs->contains(req.name)) {
-                            warn(
-                                "Derivation '%s' submitted duplicate output '%s', ignoring",
-                                store.printStorePath(drvPath),
-                                req.name);
+                            warn("Derivation '%s' submitted duplicate output '%s', ignoring", storePathName, req.name);
                             sendError("org.nix.derivation-builder.DuplicateOutput");
                             return;
                         }

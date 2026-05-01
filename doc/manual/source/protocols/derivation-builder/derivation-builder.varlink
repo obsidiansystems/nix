@@ -72,6 +72,8 @@ method AddDerivation(derivation: Derivation) -> (path: string)
 # - name: name of the output
 # - path: path of the store object (must already exist in store)
 #
+# This function is only accepted when executing from the context of a derivation
+#
 # The idea is derivations should add and submit their outputs one at a
 # time. This allows a few things:
 #
@@ -98,3 +100,7 @@ error InvalidPath ()
 
 # Attempted to submit output a second time
 error DuplicateOutput ()
+
+# Ran function in wrong environment
+# Applies to SubmitOutput outside derivation
+error WrongEnvironment ()
