@@ -181,6 +181,7 @@ suites = [
       'external-builders.sh',
       'delete-no-keep.sh',
       'submit-failure.sh',
+      'submit-reference.sh',
     ],
     'workdir' : meson.current_source_dir(),
   },
