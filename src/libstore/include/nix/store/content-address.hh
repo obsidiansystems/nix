@@ -131,6 +131,12 @@ struct ContentAddressMethod
      * for hashing file systeme objects.
      */
     FileIngestionMethod getFileIngestionMethod() const;
+
+    /**
+     * The FileSerialisationMethod that is recommended for this content addressing method.
+     * In some circumstances, other methods are also valid.
+     */
+    FileSerialisationMethod getFileSerialisationMethod() const;
 };
 
 /*

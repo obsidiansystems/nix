@@ -1,5 +1,6 @@
 #include "nix/store/local-store.hh"
 #include "nix/store/globals.hh"
+#include "nix/store/path-references.hh"
 #include "nix/util/git.hh"
 #include "nix/util/archive.hh"
 #include "nix/store/pathlocks.hh"
@@ -1151,9 +1152,25 @@ StorePath LocalStore::addToStoreFromDump(
     const StorePathSet & references,
     RepairFlag repair)
 {
+    return addToStoreFromDump(source0, name, dumpMethod, hashMethod, hashAlgo, references, repair, false);
+}
+
+StorePath LocalStore::addToStoreFromDump(
+    Source & source0,
+    std::string_view name,
+    FileSerialisationMethod dumpMethod,
+    ContentAddressMethod hashMethod,
+    HashAlgorithm hashAlgo,
+    const StorePathSet & originalReferences,
+    RepairFlag repair,
+    bool filterReferences)
+{
     /* For computing the store path. */
     auto hashSink = std::make_unique<HashSink>(hashAlgo);
-    TeeSource source{source0, *hashSink};
+    // TODO: don't pathSink when unneeded
+    auto refSink = PathRefScanSink::fromPaths(originalReferences);
+    TeeSink teeSink{*hashSink, refSink};
+    TeeSource source{source0, teeSink};
     const LocalSettings & localSettings = config->getLocalSettings();
 
     /* Read the source path into memory, but only if it's up to
@@ -1206,8 +1223,9 @@ StorePath LocalStore::addToStoreFromDump(
     bool methodsMatch = static_cast<FileIngestionMethod>(dumpMethod) == hashMethod.getFileIngestionMethod();
 
     /* If the methods don't match, our streaming hash of the dump is the
-       wrong sort, and we need to rehash. */
-    bool inMemoryAndDontNeedRestore = inMemory && methodsMatch;
+       wrong sort, and we need to rehash.
+       References are also in store path, if scanning we will need to move */
+    bool inMemoryAndDontNeedRestore = inMemory && methodsMatch && !filterReferences;
 
     if (!inMemoryAndDontNeedRestore) {
         /* Drain what we pulled so far, and then keep on pulling */
@@ -1225,6 +1243,13 @@ StorePath LocalStore::addToStoreFromDump(
     }
 
     auto [dumpHash, size] = hashSink->finish();
+
+    StorePathSet references;
+    if (filterReferences) {
+        references = refSink.getResultPaths();
+    } else {
+        references = originalReferences;
+    }
 
     auto desc = ContentAddressWithReferences::fromParts(
         hashMethod,

@@ -262,6 +262,7 @@ enum struct WorkerProto::Op : uint64_t {
     AddBuildLog = 45,
     BuildPathsWithResults = 46,
     AddPermRoot = 47,
+    AddToStoreScanning = 48,
     SubmitOutput = 1000, // Only used within derivations with feature
 };
 

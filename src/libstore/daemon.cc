@@ -1,5 +1,6 @@
 #include "nix/store/daemon.hh"
 #include "nix/util/configuration.hh"
+#include "nix/util/file-content-address.hh"
 #include "nix/util/signals.hh"
 #include "nix/store/worker-protocol.hh"
 #include "nix/store/worker-protocol-connection.hh"
@@ -333,6 +334,7 @@ static void performOp(
             WorkerProto::Op::AddMultipleToStore,
             WorkerProto::Op::AddToStoreNar,
             WorkerProto::Op::AddTextToStore,
+            WorkerProto::Op::AddToStoreScanning,
             // SubmitOutput is designed specifically for this use case
             WorkerProto::Op::SubmitOutput,
             // Used by nix cli, should never change actual outputs
@@ -1045,6 +1047,33 @@ static void performOp(
         }
         logger->stopWork();
         conn.to << 1;
+        break;
+    }
+
+    case WorkerProto::Op::AddToStoreScanning: {
+        auto name = readString(conn.from);
+        auto camStr = readString(conn.from);
+
+        experimentalFeatureSettings.require(Xp::DynamicDerivations);
+        if (recursive != daemon::RecursiveSubmitted)
+            throw Error("SubmitOutput only valid within derivation with `builder-rpc-v0` feature");
+
+        auto & submitStore = require<SubmitStore>(*store);
+
+        logger->startWork();
+        auto pathInfo = [&]() {
+            // NB: FramedSource must be out of scope before logger->stopWork();
+            // FIXME: this means that if there is an error
+            // half-way through, the client will keep sending
+            // data, since we haven't sent it the error yet.
+            auto [contentAddressMethod, hashAlgo] = ContentAddressMethod::parseWithAlgo(camStr);
+            FramedSource source(conn.from);
+            FileSerialisationMethod dumpMethod = contentAddressMethod.getFileSerialisationMethod();
+            return submitStore.addToStoreScanning(source, name, dumpMethod, contentAddressMethod, hashAlgo);
+        }();
+        logger->stopWork();
+
+        WorkerProto::Serialise<ValidPathInfo>::write(*store, wconn, *pathInfo);
         break;
     }
 
