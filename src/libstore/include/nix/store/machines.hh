@@ -16,8 +16,15 @@ struct Machine
 {
 
     const StoreReference storeUri;
+    /**
+     * @TODO this information should eventually just exist to update an
+     * underlying setting on `Store::Config`, just as the feature information
+     * updates `Store::Config::systemType`. The only wrinkle is whether the
+     * makes sense for separate local stores to have distinct systems, when they
+     * are all the current OS, just different part of the file system.
+     */
     const StringSet systemTypes;
-    const std::string sshKey;
+    const std::optional<std::filesystem::path> sshKey;
     const unsigned int maxJobs;
     const float speedFactor;
     const StringSet supportedFeatures;
@@ -78,12 +85,5 @@ struct Machine
      */
     static Machines parseConfig(const StringSet & defaultSystems, const std::string & config);
 };
-
-/**
- * Parse machines from the global config
- *
- * @todo Remove, globals are bad.
- */
-Machines getMachines();
 
 } // namespace nix

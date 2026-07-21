@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "nix/store/build-result.hh"
+#include "nix/util/tests/characterization.hh"
 #include "nix/util/tests/json-characterization.hh"
 
 namespace nix {
@@ -35,8 +36,6 @@ TEST_P(BuildResultJsonTest, to_json)
     writeJsonTest(name, value);
 }
 
-using namespace std::literals::chrono_literals;
-
 INSTANTIATE_TEST_SUITE_P(
     BuildResultJSON,
     BuildResultJsonTest,
@@ -44,22 +43,22 @@ INSTANTIATE_TEST_SUITE_P(
         std::pair{
             "not-deterministic",
             BuildResult{
-                .inner{BuildResult::Failure{
+                .inner{BuildResult::Failure{{
                     .status = BuildResult::Failure::NotDeterministic,
-                    .errorMsg = "no idea why",
+                    .msg = HintFmt("no idea why"),
                     .isNonDeterministic = false, // Note: This field is separate from the status
-                }},
+                }}},
                 .timesBuilt = 1,
             },
         },
         std::pair{
             "output-rejected",
             BuildResult{
-                .inner{BuildResult::Failure{
+                .inner{BuildResult::Failure{{
                     .status = BuildResult::Failure::OutputRejected,
-                    .errorMsg = "no idea why",
+                    .msg = HintFmt("no idea why"),
                     .isNonDeterministic = false,
-                }},
+                }}},
                 .timesBuilt = 3,
                 .startTime = 30,
                 .stopTime = 50,
@@ -74,25 +73,13 @@ INSTANTIATE_TEST_SUITE_P(
                         {
                             "foo",
                             {
-                                {
-                                    .outPath = StorePath{"g1w7hy3qg1w7hy3qg1w7hy3qg1w7hy3q-foo"},
-                                },
-                                DrvOutput{
-                                    .drvHash = Hash::parseSRI("sha256-b4afnqKCO9oWXgYHb9DeQ2berSwOjS27rSd9TxXDc/U="),
-                                    .outputName = "foo",
-                                },
+                                .outPath = StorePath{"g1w7hy3qg1w7hy3qg1w7hy3qg1w7hy3q-foo"},
                             },
                         },
                         {
                             "bar",
                             {
-                                {
-                                    .outPath = StorePath{"g1w7hy3qg1w7hy3qg1w7hy3qg1w7hy3q-bar"},
-                                },
-                                DrvOutput{
-                                    .drvHash = Hash::parseSRI("sha256-b4afnqKCO9oWXgYHb9DeQ2berSwOjS27rSd9TxXDc/U="),
-                                    .outputName = "bar",
-                                },
+                                .outPath = StorePath{"g1w7hy3qg1w7hy3qg1w7hy3qg1w7hy3q-bar"},
                             },
                         },
                     },
@@ -100,8 +87,8 @@ INSTANTIATE_TEST_SUITE_P(
                 .timesBuilt = 3,
                 .startTime = 30,
                 .stopTime = 50,
-                .cpuUser = std::chrono::microseconds(500s),
-                .cpuSystem = std::chrono::microseconds(604s),
+                .cpuUser = std::chrono::seconds(500),
+                .cpuSystem = std::chrono::seconds(604),
             },
         }));
 

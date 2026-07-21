@@ -2,7 +2,6 @@
 ///@file
 
 #include "nix/store/common-ssh-store-config.hh"
-#include "nix/store/store-api.hh"
 #include "nix/store/ssh.hh"
 #include "nix/util/callback.hh"
 #include "nix/util/pool.hh"
@@ -12,23 +11,31 @@ namespace nix {
 
 struct LegacySSHStoreConfig : std::enable_shared_from_this<LegacySSHStoreConfig>, virtual CommonSSHStoreConfig
 {
-    using CommonSSHStoreConfig::CommonSSHStoreConfig;
+private:
+    void anchor() override;
 
-    LegacySSHStoreConfig(std::string_view scheme, std::string_view authority, const Params & params);
+public:
+    LegacySSHStoreConfig(const Params & params)
+        : StoreConfig(params, FilePathType::Unix)
+        , CommonSSHStoreConfig(params)
+    {
+    }
+
+    LegacySSHStoreConfig(const ParsedURL::Authority & authority, const Params & params);
 
 #ifndef _WIN32
     // Hack for getting remote build log output.
     // Intentionally not in `LegacySSHStoreConfig` so that it doesn't appear in
     // the documentation
-    const Setting<int> logFD{this, INVALID_DESCRIPTOR, "log-fd", "file descriptor to which SSH's stderr is connected"};
+    Setting<int> logFD{this, INVALID_DESCRIPTOR, "log-fd", "file descriptor to which SSH's stderr is connected"};
 #else
     Descriptor logFD = INVALID_DESCRIPTOR;
 #endif
 
-    const Setting<Strings> remoteProgram{
+    Setting<Strings> remoteProgram{
         this, {"nix-store"}, "remote-program", "Path to the `nix-store` executable on the remote machine."};
 
-    const Setting<int> maxConnections{this, 1, "max-connections", "Maximum number of concurrent SSH connections."};
+    Setting<int> maxConnections{this, 1, "max-connections", "Maximum number of concurrent SSH connections."};
 
     /**
      * Hack for hydra
@@ -59,6 +66,10 @@ struct LegacySSHStoreConfig : std::enable_shared_from_this<LegacySSHStoreConfig>
 
 struct LegacySSHStore : public virtual Store
 {
+private:
+    void anchor() override;
+
+public:
     using Config = LegacySSHStoreConfig;
 
     ref<const Config> config;
@@ -90,7 +101,7 @@ struct LegacySSHStore : public virtual Store
      *
      * This is exposed for sake of Hydra.
      */
-    void narFromPath(const StorePath & path, std::function<void(Source &)> fun);
+    void narFromPath(const StorePath & path, fun<void(Source &)> receiveNar);
 
     std::optional<StorePath> queryPathFromHashPart(const std::string & hashPart) override
     {
@@ -128,24 +139,7 @@ struct LegacySSHStore : public virtual Store
 
 public:
 
-    BuildResult buildDerivation(const StorePath & drvPath, const BasicDerivation & drv, BuildMode buildMode) override;
-
-    /**
-     * Note, the returned function must only be called once, or we'll
-     * try to read from the connection twice.
-     *
-     * @todo Use C++23 `std::move_only_function`.
-     */
-    std::function<BuildResult()> buildDerivationAsync(
-        const StorePath & drvPath, const BasicDerivation & drv, const ServeProto::BuildOptions & options);
-
-    void buildPaths(
-        const std::vector<DerivedPath> & drvPaths, BuildMode buildMode, std::shared_ptr<Store> evalStore) override;
-
-    void ensurePath(const StorePath & path) override
-    {
-        unsupported("ensurePath");
-    }
+    ref<Builder> getBuilder(std::shared_ptr<Store> evalStore) override;
 
     ref<SourceAccessor> getFSAccessor(bool requireValidPath) override
     {
@@ -155,19 +149,6 @@ public:
     std::shared_ptr<SourceAccessor> getFSAccessor(const StorePath & path, bool requireValidPath) override
     {
         unsupported("getFSAccessor");
-    }
-
-    /**
-     * The default instance would schedule the work on the client side, but
-     * for consistency with `buildPaths` and `buildDerivation` it should happen
-     * on the remote side.
-     *
-     * We make this fail for now so we can add implement this properly later
-     * without it being a breaking change.
-     */
-    void repairPath(const StorePath & path) override
-    {
-        unsupported("repairPath");
     }
 
     void computeFSClosure(
@@ -214,6 +195,14 @@ public:
     {
         unsupported("queryRealisation");
     }
+
+    StorePathSet querySubstitutablePaths(const StorePathSet & paths) override
+    {
+        // not supported
+        return {};
+    }
+
+    friend struct LegacySSHBuilder;
 };
 
 } // namespace nix

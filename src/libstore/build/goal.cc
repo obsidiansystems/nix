@@ -1,24 +1,84 @@
 #include "nix/store/build/goal.hh"
 #include "nix/store/build/worker.hh"
-#include "nix/store/globals.hh"
+#include "nix/store/worker-settings.hh"
 
 namespace nix {
 
+void WorkerSettings::anchor() {}
+
+TimedOut::TimedOut(time_t maxDuration)
+    : CloneableError(BuildResult::Failure::TimedOut, "timed out after %1% seconds", maxDuration)
+    , maxDuration(maxDuration)
+{
+}
+
+void TimedOut::anchor() {}
+
+void Goal::anchor() {}
+
 using Co = nix::Goal::Co;
 using promise_type = nix::Goal::promise_type;
+
+void Goal::ChildEvents::pushChildEvent(ChildOutput event)
+{
+    if (childTimeout)
+        return; // Already timed out, ignore
+    childOutputs.push(std::move(event));
+}
+
+void Goal::ChildEvents::pushChildEvent(ChildEOF event)
+{
+    if (childTimeout)
+        return; // Already timed out, ignore
+    assert(!childEOF);
+    childEOF = std::move(event);
+}
+
+void Goal::ChildEvents::pushChildEvent(TimedOut event)
+{
+    // Timeout is immediate - flush pending events
+    childOutputs = {};
+    childEOF.reset();
+    childTimeout = std::make_unique<TimedOut>(std::move(event));
+}
+
+bool Goal::ChildEvents::hasChildEvent() const
+{
+    return !childOutputs.empty() || childEOF || childTimeout;
+}
+
+Goal::ChildEvent Goal::ChildEvents::popChildEvent()
+{
+    if (!childOutputs.empty()) {
+        auto event = std::move(childOutputs.front());
+        childOutputs.pop();
+        return event;
+    }
+    if (childEOF)
+        return *std::exchange(childEOF, std::nullopt);
+    if (childTimeout)
+        return std::exchange(childTimeout, nullptr);
+    unreachable();
+}
+
 using handle_type = nix::Goal::handle_type;
 using Suspend = nix::Goal::Suspend;
 
-Co::Co(Co && rhs)
+Co::Co(Co && rhs) noexcept
 {
     this->handle = rhs.handle;
     rhs.handle = nullptr;
 }
 
-void Co::operator=(Co && rhs)
+Co & Co::operator=(Co && rhs) noexcept
 {
-    this->handle = rhs.handle;
+    if (handle) {
+        handle.promise().alive = false;
+        handle.destroy();
+    }
+    handle = rhs.handle;
     rhs.handle = nullptr;
+    return *this;
 }
 
 Co::~Co()
@@ -107,9 +167,7 @@ std::coroutine_handle<> nix::Goal::Co::await_suspend(handle_type caller)
 
 bool CompareGoalPtrs::operator()(const GoalPtr & a, const GoalPtr & b) const
 {
-    std::string s1 = a->key();
-    std::string s2 = b->key();
-    return s1 < s2;
+    return a->keyCached() < b->keyCached();
 }
 
 void addToWeakGoals(WeakGoals & goals, GoalPtr p)
@@ -133,7 +191,20 @@ Co Goal::await(Goals new_waitees)
     co_return Return{};
 }
 
-Goal::Done Goal::amDone(ExitCode result, std::optional<Error> ex)
+Goal::Done Goal::doneSuccess(BuildResult::Success success)
+{
+    buildResult.inner = std::move(success);
+    return amDone(ecSuccess);
+}
+
+Goal::Done Goal::doneFailure(ExitCode result, BuildResult::Failure failure)
+{
+    assert(result == ecFailed || result == ecNoSubstituters);
+    buildResult.inner = std::move(failure);
+    return amDone(result);
+}
+
+Goal::Done Goal::amDone(ExitCode result)
 {
     trace("done");
     assert(top_co);
@@ -141,11 +212,15 @@ Goal::Done Goal::amDone(ExitCode result, std::optional<Error> ex)
     assert(result == ecSuccess || result == ecFailed || result == ecNoSubstituters);
     exitCode = result;
 
-    if (ex) {
-        if (!preserveException && !waiters.empty())
-            logError(ex->info());
-        else
-            this->ex = std::move(*ex);
+    // Log the failure if we have one and shouldn't preserve it.
+    // Only log for actual failures (ecFailed), not for ecNoSubstituters
+    // which indicates "couldn't substitute, will try building" - that's
+    // expected behavior, not an error.
+    if (result == ecFailed) {
+        if (auto * failure = buildResult.tryGetFailure()) {
+            if (!preserveFailure && !waiters.empty())
+                logError(failure->info());
+        }
     }
 
     for (auto & i : waiters) {
@@ -165,11 +240,11 @@ Goal::Done Goal::amDone(ExitCode result, std::optional<Error> ex)
 
             if (goal->waitees.empty()) {
                 worker.wakeUp(goal);
-            } else if (result == ecFailed && !settings.keepGoing) {
+            } else if (result == ecFailed && !worker.settings.keepGoing) {
                 /* If we failed and keepGoing is not set, we remove all
                    remaining waitees. */
                 for (auto & g : goal->waitees) {
-                    g->waiters.extract(goal);
+                    g->waiters.erase(goal);
                 }
                 goal->waitees.clear();
 
@@ -206,6 +281,24 @@ void Goal::work()
     assert(top_co || exitCode != ecBusy);
 }
 
+void Goal::handleChildOutput(Descriptor fd, std::string_view data)
+{
+    childEvents.pushChildEvent(ChildOutput{fd, std::string{data}});
+    worker.wakeUp(shared_from_this());
+}
+
+void Goal::handleEOF(Descriptor fd)
+{
+    childEvents.pushChildEvent(ChildEOF{fd});
+    worker.wakeUp(shared_from_this());
+}
+
+void Goal::timedOut(TimedOut && ex)
+{
+    childEvents.pushChildEvent(std::move(ex));
+    worker.wakeUp(shared_from_this());
+}
+
 Goal::Co Goal::yield()
 {
     worker.wakeUp(shared_from_this());
@@ -216,6 +309,13 @@ Goal::Co Goal::yield()
 Goal::Co Goal::waitForAWhile()
 {
     worker.waitForAWhile(shared_from_this());
+    co_await Suspend{};
+    co_return Return{};
+}
+
+Goal::Co Goal::waitUntilWoken()
+{
+    worker.waitForCompletion(shared_from_this());
     co_await Suspend{};
     co_return Return{};
 }

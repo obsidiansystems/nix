@@ -1,8 +1,13 @@
 #include "nix/expr/attr-path.hh"
 #include "nix/expr/eval-inline.hh"
+#include "nix/util/util.hh"
 #include "nix/util/strings-inline.hh"
 
 namespace nix {
+
+void AttrPathNotFound::anchor() {}
+
+void NoPositionInfo::anchor() {}
 
 static Strings parseAttrPath(std::string_view s)
 {
@@ -50,7 +55,7 @@ std::vector<SymbolStr> AttrPath::resolve(EvalState & state) const
 }
 
 std::pair<Value *, PosIdx>
-findAlongAttrPath(EvalState & state, const std::string & attrPath, Bindings & autoArgs, Value & vIn)
+findAlongAttrPath(EvalState & state, const std::string & attrPath, const Bindings & autoArgs, Value & vIn)
 {
     Strings tokens = parseAttrPath(attrPath);
 
@@ -137,16 +142,15 @@ std::pair<SourcePath, uint32_t> findPackageFilename(EvalState & state, Value & v
 
     auto fail = [fn]() { throw ParseError("cannot parse 'meta.position' attribute '%s'", fn); };
 
-    try {
-        auto colon = fn.rfind(':');
-        if (colon == std::string::npos)
-            fail();
-        auto lineno = std::stoi(std::string(fn, colon + 1, std::string::npos));
-        return {SourcePath{path.accessor, CanonPath(fn.substr(0, colon))}, lineno};
-    } catch (std::invalid_argument & e) {
+    auto colon = fn.rfind(':');
+    if (colon == std::string::npos)
         fail();
-        unreachable();
-    }
+
+    auto lineno = string2Int<uint32_t>(std::string_view(fn).substr(colon + 1));
+    if (!lineno)
+        fail();
+
+    return {SourcePath{path.accessor, CanonPath(fn.substr(0, colon))}, *lineno};
 }
 
 } // namespace nix

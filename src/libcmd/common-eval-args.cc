@@ -1,9 +1,7 @@
 #include "nix/fetchers/fetch-settings.hh"
 #include "nix/expr/eval-settings.hh"
 #include "nix/cmd/common-eval-args.hh"
-#include "nix/main/shared.hh"
 #include "nix/util/config-global.hh"
-#include "nix/store/filetransfer.hh"
 #include "nix/expr/eval.hh"
 #include "nix/fetchers/fetchers.hh"
 #include "nix/fetchers/registry.hh"
@@ -148,11 +146,11 @@ MixEvalArgs::MixEvalArgs()
           )",
         .category = category,
         .labels = {"store-url"},
-        .handler = {&evalStoreUrl},
+        .handler = {[this](std::string s) { evalStoreUrl = StoreReference::parse(s); }},
     });
 }
 
-Bindings * MixEvalArgs::getAutoArgs(EvalState & state)
+const Bindings * MixEvalArgs::getAutoArgs(EvalState & state)
 {
     auto res = state.buildBindings(autoArgs.size());
     for (auto & [name, arg] : autoArgs) {

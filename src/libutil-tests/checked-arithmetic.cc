@@ -10,7 +10,6 @@
 #include "nix/util/tests/gtest-with-params.hh"
 
 namespace rc {
-using namespace nix;
 
 template<std::integral T>
 struct Arbitrary<nix::checked::Checked<T>>

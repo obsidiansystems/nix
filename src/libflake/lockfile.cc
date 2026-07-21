@@ -8,10 +8,7 @@
 #include <algorithm>
 #include <iomanip>
 #include <iterator>
-#include <compare>
 #include <ctime>
-#include <format>
-#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -32,10 +29,8 @@
 #include "nix/flake/flakeref.hh"
 #include "nix/store/path.hh"
 #include "nix/util/ansicolor.hh"
-#include "nix/util/configuration.hh"
 #include "nix/util/error.hh"
 #include "nix/util/fmt.hh"
-#include "nix/util/hash.hh"
 #include "nix/util/logging.hh"
 #include "nix/util/ref.hh"
 #include "nix/util/types.hh"
@@ -314,6 +309,19 @@ InputAttrPath parseInputAttrPath(std::string_view s)
     }
 
     return path;
+}
+
+std::optional<NonEmptyInputAttrPath> NonEmptyInputAttrPath::parse(std::string_view s)
+{
+    auto path = parseInputAttrPath(s);
+    return make(std::move(path));
+}
+
+std::optional<NonEmptyInputAttrPath> NonEmptyInputAttrPath::make(InputAttrPath path)
+{
+    if (path.empty())
+        return std::nullopt;
+    return NonEmptyInputAttrPath{std::move(path)};
 }
 
 std::map<InputAttrPath, Node::Edge> LockFile::getAllInputs() const

@@ -1,6 +1,7 @@
 #include "nix/util/signals.hh"
 #include "nix/util/util.hh"
 #include "nix/util/error.hh"
+#include "nix/util/fun.hh"
 #include "nix/util/sync.hh"
 #include "nix/util/terminal.hh"
 
@@ -8,7 +9,9 @@
 
 namespace nix {
 
-using namespace unix;
+void Interrupted::anchor() {}
+
+void Cancelled::anchor() {}
 
 std::atomic<bool> unix::_isInterrupted = false;
 
@@ -39,13 +42,25 @@ struct InterruptCallbacks
     Token nextToken = 0;
 
     /* Used as a list, see InterruptCallbacks comment. */
-    std::map<Token, std::function<void()>> callbacks;
+    std::map<Token, fun<void()>> callbacks;
 };
 
-static Sync<InterruptCallbacks> _interruptCallbacks;
+InterruptCallback::~InterruptCallback() {}
+
+/* Required to avoid static initialization order fiasco. This allows global
+   objects to safely register callbacks. */
+static Sync<InterruptCallbacks> & getInterruptCallbacks()
+{
+    /* Intentionally leak, according to the Construct On First Use Idiom.
+       An alternative is to use the Nifty Counter Idiom, but
+       InterruptCallbacks' destructor is not very important. */
+    static Sync<InterruptCallbacks> * _interruptCallbacks = new Sync<InterruptCallbacks>();
+    return *_interruptCallbacks;
+}
 
 static void signalHandlerThread(sigset_t set)
 {
+    using namespace nix::unix;
     while (true) {
         int signal = 0;
         sigwait(&set, &signal);
@@ -68,7 +83,7 @@ void unix::triggerInterrupt()
         while (true) {
             std::function<void()> callback;
             {
-                auto interruptCallbacks(_interruptCallbacks.lock());
+                auto interruptCallbacks(getInterruptCallbacks().lock());
                 auto lb = interruptCallbacks->callbacks.lower_bound(i);
                 if (lb == interruptCallbacks->callbacks.end())
                     break;
@@ -136,28 +151,38 @@ void unix::restoreSignals()
         throw SysError("restoring signals");
 }
 
+namespace {
+
 /* RAII helper to automatically deregister a callback. */
 struct InterruptCallbackImpl : InterruptCallback
 {
     InterruptCallbacks::Token token;
 
+    InterruptCallbackImpl(InterruptCallbacks::Token token)
+        : token(token)
+    {
+    }
+
+    InterruptCallbackImpl(InterruptCallbackImpl &&) = delete;
+    InterruptCallbackImpl(const InterruptCallbackImpl &) = delete;
+    InterruptCallbackImpl & operator=(InterruptCallbackImpl &&) = delete;
+    InterruptCallbackImpl & operator=(const InterruptCallbackImpl &) = delete;
+
     ~InterruptCallbackImpl() override
     {
-        auto interruptCallbacks(_interruptCallbacks.lock());
+        auto interruptCallbacks(getInterruptCallbacks().lock());
         interruptCallbacks->callbacks.erase(token);
     }
 };
 
-std::unique_ptr<InterruptCallback> createInterruptCallback(std::function<void()> callback)
+} // namespace
+
+std::unique_ptr<InterruptCallback> createInterruptCallback(fun<void()> callback)
 {
-    auto interruptCallbacks(_interruptCallbacks.lock());
+    auto interruptCallbacks(getInterruptCallbacks().lock());
     auto token = interruptCallbacks->nextToken++;
     interruptCallbacks->callbacks.emplace(token, callback);
-
-    std::unique_ptr<InterruptCallbackImpl> res{new InterruptCallbackImpl{}};
-    res->token = token;
-
-    return std::unique_ptr<InterruptCallback>(res.release());
+    return std::make_unique<InterruptCallbackImpl>(token);
 }
 
 } // namespace nix

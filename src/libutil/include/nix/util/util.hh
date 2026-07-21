@@ -9,7 +9,9 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <set>
 #include <sstream>
+#include <bit>
 #include <optional>
 #include <ranges>
 
@@ -30,7 +32,7 @@ template<class... Parts>
 auto concatStrings(Parts &&... parts)
     -> std::enable_if_t<(... && std::is_convertible_v<Parts, std::string_view>), std::string>
 {
-    std::string_view views[sizeof...(parts)] = {parts...};
+    std::string_view views[sizeof...(parts)] = {std::forward<Parts>(parts)...};
     return concatStringsSep({}, views);
 }
 
@@ -82,7 +84,12 @@ std::string trim(std::string_view s, std::string_view whitespace = " \n\r\t");
  */
 std::string replaceStrings(std::string s, std::string_view from, std::string_view to);
 
-std::string rewriteStrings(std::string s, const StringMap & rewrites);
+/**
+ * Replace all occurrences of the keys in `rewrites` with their corresponding values. Optionally returns the positions
+ * of the matches in `matches`.
+ */
+std::string rewriteStrings(
+    std::string s, const StringMap & rewrites, std::set<uint64_t> * matches = nullptr, uint64_t offsetShift = 0);
 
 /**
  * Parse a string into an integer.
@@ -175,8 +182,25 @@ template<typename T>
 T readLittleEndian(unsigned char * p)
 {
     T x = 0;
-    for (size_t i = 0; i < sizeof(x); ++i, ++p) {
-        x |= ((T) *p) << (i * 8);
+    /* Byte types such as char/unsigned char/std::byte are a bit special because
+       they are allowed to alias anything else. Thus a raw loop iterating
+       over the bytes here would be quite inefficient and iterate byte-by-byte
+       (the compiler cannot optimise anything because the pointer might alias
+       something). Use a memcpy + byteswap here as needed. */
+    std::memcpy(&x, p, sizeof(T));
+    /* Don't need to do anything if we are not on a big endian machine. */
+    if constexpr (std::endian::native != std::endian::little) {
+        if constexpr (std::is_same_v<T, uint64_t>) {
+            x = __builtin_bswap64(x);
+        } else if constexpr (std::is_same_v<T, uint32_t>) {
+            x = __builtin_bswap32(x);
+        } else if constexpr (std::is_same_v<T, uint16_t>) {
+            x = __builtin_bswap16(x);
+        } else {
+            /* Signed types don't make their way here. Though it would be fine
+               since C++20 mandates 2's complement representation. */
+            static_assert(false);
+        }
     }
     return x;
 }
@@ -384,6 +408,11 @@ struct MaintainCount
         counter += delta;
     }
 
+    MaintainCount(MaintainCount &&) = delete;
+    MaintainCount(const MaintainCount &) = delete;
+    MaintainCount & operator=(MaintainCount &&) = delete;
+    MaintainCount & operator=(const MaintainCount &) = delete;
+
     ~MaintainCount()
     {
         counter -= delta;
@@ -398,6 +427,20 @@ constexpr auto enumerate(R && range)
 {
     /* Not std::views::enumerate because it uses difference_type for the index. */
     return std::views::zip(std::views::iota(size_t{0}), std::forward<R>(range));
+}
+
+/**
+ * An iterator adapter that enumerates the elements of a range,
+ * pairing each element with a boolean indicating whether it is the
+ * last element.
+ */
+template<std::ranges::viewable_range R>
+    requires std::ranges::sized_range<R>
+constexpr auto markLast(R && range)
+{
+    auto n = std::ranges::size(range);
+    return std::views::zip(
+        std::views::iota(size_t{1}) | std::views::transform([n](size_t i) { return i == n; }), std::forward<R>(range));
 }
 
 /**

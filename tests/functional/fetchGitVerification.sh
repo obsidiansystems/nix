@@ -7,8 +7,6 @@ requireGit
 
 enableFeatures "verified-fetches"
 
-clearStoreIfPossible
-
 repo="$TEST_ROOT/git"
 
 # generate signing keys
@@ -21,9 +19,7 @@ ssh-keygen -f "$keysDir/testkey2" -t rsa -P "" -C "test key 2"
 key2File="$keysDir/testkey2.pub"
 publicKey2=$(awk '{print $2}' "$key2File")
 
-git init "$repo"
-git -C "$repo" config user.email "foobar@example.com"
-git -C "$repo" config user.name "Foobar"
+createGitRepo "$repo"
 git -C "$repo" config gpg.format ssh
 
 echo 'hello' > "$repo"/text

@@ -1,8 +1,11 @@
+#include "nix/expr/value.hh"
 #include "nix/fetchers/attrs.hh"
 #include "nix/expr/primops.hh"
 #include "nix/expr/eval-inline.hh"
 #include "nix/expr/eval-settings.hh"
+#include "nix/expr/fetch-tree.hh"
 #include "nix/store/store-api.hh"
+#include "nix/store/build.hh"
 #include "nix/fetchers/fetchers.hh"
 #include "nix/store/filetransfer.hh"
 #include "nix/fetchers/registry.hh"
@@ -16,9 +19,103 @@
 
 #include <ctime>
 #include <iomanip>
-#include <regex>
 
 namespace nix {
+
+/**
+ * Adapter for putting libfetchers data into a thunk closure.
+ * Used as the argument to prim_forceLazyFetcherAttr in a lazy apply thunk.
+ */
+class LazyFetcherAttr : public ExternalValueBase, public gc_cleanup
+{
+private:
+    /* VTable anchor to avoid weak linkage of the vtable - it breaks
+       dynamic_cast across shared libraries on Darwin. */
+    virtual void anchor();
+    fetchers::LazyAttr lazy;
+
+public:
+    LazyFetcherAttr(fetchers::LazyAttr lazy)
+        : lazy(std::move(lazy))
+    {
+    }
+
+    fetchers::ResolvedAttr force()
+    {
+        return lazy->compute();
+    }
+
+protected:
+    std::ostream & print(std::ostream & str) const override
+    {
+        unreachable();
+    }
+
+public:
+    std::string showType() const override
+    {
+        unreachable();
+    }
+
+    std::string typeOf() const override
+    {
+        unreachable();
+    }
+};
+
+void LazyFetcherAttr::anchor() {}
+
+/**
+ * Initialize a `Value` from a resolved fetcher attribute.
+ */
+static void resolvedAttrToValue(EvalState & state, Value & v, const fetchers::ResolvedAttr & resolved)
+{
+    std::visit(
+        overloaded{
+            [&](const std::string & s) { v.mkString(s, state.mem); },
+            [&](uint64_t n) { v.mkInt(n); },
+            [&](const Explicit<bool> & b) { v.mkBool(b.t); },
+        },
+        resolved);
+}
+
+/**
+ * internal primop: Force a LazyFetcherAttr external value.
+ */
+static void prim_forceLazyFetcherAttr(EvalState & state, const PosIdx pos, Value ** args, Value & v)
+{
+    Value & arg = *args[0];
+
+    state.forceValue(arg, pos);
+    // We only construct this primop with LazyFetcherAttr preapplied.
+    assert(arg.type() == nExternal);
+    auto * ext = dynamic_cast<LazyFetcherAttr *>(args[0]->external());
+    assert(ext);
+
+    resolvedAttrToValue(state, v, ext->force());
+}
+
+/**
+ * Emit a lazy thunk for a LazyAttr: mkApp(primop, externalValue).
+ */
+static void emitLazyAttrThunk(EvalState & state, const fetchers::LazyAttr & lazyAttr, Value & dest)
+{
+    // not user-callable (unregistered, internal)
+    static PrimOp forcePrimOp{
+        .name = "__forceLazyFetcherAttr",
+        .arity = 1,
+        .impl = prim_forceLazyFetcherAttr,
+        .internal = true,
+    };
+
+    auto * vExt = state.allocValue();
+    vExt->mkExternal(new LazyFetcherAttr(lazyAttr));
+
+    auto * vPrimOp = state.allocValue();
+    vPrimOp->mkPrimOp(&forcePrimOp);
+
+    dest.mkApp(vPrimOp, vExt);
+}
 
 void emitTreeAttrs(
     EvalState & state,
@@ -52,7 +149,9 @@ void emitTreeAttrs(
             attrs.alloc("shortRev").mkString(emptyHash.gitShortRev(), state.mem);
         }
 
-        if (auto revCount = input.getRevCount())
+        if (auto revCount = maybeGetLazyAttr(input.attrs, "revCount"))
+            emitLazyAttrThunk(state, *revCount, attrs.alloc("revCount"));
+        else if (auto revCount = input.getRevCount())
             attrs.alloc("revCount").mkInt(*revCount);
         else if (emptyRevFallback)
             attrs.alloc("revCount").mkInt(0);
@@ -357,7 +456,7 @@ static RegisterPrimOp primop_fetchTree({
 
         return doc;
     }(),
-    .fun = prim_fetchTree,
+    .impl = prim_fetchTree,
     .experimentalFeature = Xp::FetchTree,
 });
 
@@ -369,7 +468,7 @@ void prim_fetchFinalTree(EvalState & state, const PosIdx pos, Value ** args, Val
 static RegisterPrimOp primop_fetchFinalTree({
     .name = "fetchFinalTree",
     .args = {"input"},
-    .fun = prim_fetchFinalTree,
+    .impl = prim_fetchFinalTree,
     .internal = true,
 });
 
@@ -464,7 +563,7 @@ static void fetch(
 
         // Try to get the path from the local store or substituters
         try {
-            state.store->ensurePath(expectedPath);
+            state.store->getBuilder()->ensurePath(expectedPath);
             debug("using substituted/cached path '%s' for '%s'", state.store->printStorePath(expectedPath), *url);
             state.allowAndSetStorePathString(expectedPath, v);
             return;
@@ -477,35 +576,39 @@ static void fetch(
         }
     }
 
-    // Download the file/tarball if substitution failed or no hash was provided
-    auto storePath = unpack ? fetchToStore(
-                                  state.fetchSettings,
-                                  *state.store,
-                                  fetchers::downloadTarball(*state.store, state.fetchSettings, *url),
-                                  FetchMode::Copy,
-                                  name)
-                            : fetchers::downloadFile(*state.store, state.fetchSettings, *url, name).storePath;
-
-    if (expectedHash) {
-        auto hash = unpack ? state.store->queryPathInfo(storePath)->narHash
-                           : hashPath(
-                                 {state.store->requireStoreObjectAccessor(storePath)},
-                                 FileSerialisationMethod::Flat,
-                                 HashAlgorithm::SHA256)
-                                 .hash;
-        if (hash != *expectedHash) {
-            state
-                .error<EvalError>(
-                    "hash mismatch in file downloaded from '%s':\n  specified: %s\n  got:       %s",
-                    *url,
-                    expectedHash->to_string(HashFormat::Nix32, true),
-                    hash.to_string(HashFormat::Nix32, true))
-                .withExitStatus(102)
-                .debugThrow();
+    if (unpack) {
+        auto attrs = fetchers::Attrs{
+            {"type", "tarball"},
+            {"url", *url},
+            {"name", name},
+        };
+        if (expectedHash)
+            attrs.emplace("narHash", expectedHash->to_string(HashFormat::SRI, true));
+        auto input = fetchers::Input::fromAttrs(state.fetchSettings, std::move(attrs));
+        auto cachedInput =
+            state.inputCache->getAccessor(state.fetchSettings, *state.store, input, fetchers::UseRegistries::No);
+        auto storePath = state.mountInput(cachedInput.lockedInput, input, cachedInput.accessor);
+        state.mkStorePathString(storePath, v);
+    } else {
+        auto storePath = fetchers::downloadFile(*state.store, state.fetchSettings, *url, name).storePath;
+        if (expectedHash) {
+            auto hash = hashPath(
+                            {state.store->requireStoreObjectAccessor(storePath)},
+                            FileSerialisationMethod::Flat,
+                            HashAlgorithm::SHA256)
+                            .hash;
+            if (hash != *expectedHash)
+                state
+                    .error<EvalError>(
+                        "hash mismatch in file downloaded from '%s':\n  specified: %s\n  got:       %s",
+                        *url,
+                        expectedHash->to_string(HashFormat::Nix32, true),
+                        hash.to_string(HashFormat::Nix32, true))
+                    .withExitStatus(102)
+                    .debugThrow();
         }
+        state.allowAndSetStorePathString(storePath, v);
     }
-
-    state.allowAndSetStorePathString(storePath, v);
 }
 
 static void prim_fetchurl(EvalState & state, const PosIdx pos, Value ** args, Value & v)
@@ -531,7 +634,7 @@ static RegisterPrimOp primop_fetchurl({
 
       Not available in [restricted evaluation mode](@docroot@/command-ref/conf-file.md#conf-restrict-eval).
     )",
-    .fun = prim_fetchurl,
+    .impl = prim_fetchurl,
 });
 
 static void prim_fetchTarball(EvalState & state, const PosIdx pos, Value ** args, Value & v)
@@ -581,7 +684,7 @@ static RegisterPrimOp primop_fetchTarball({
 
       Not available in [restricted evaluation mode](@docroot@/command-ref/conf-file.md#conf-restrict-eval).
     )",
-    .fun = prim_fetchTarball,
+    .impl = prim_fetchTarball,
 });
 
 static void prim_fetchGit(EvalState & state, const PosIdx pos, Value ** args, Value & v)
@@ -600,7 +703,12 @@ static RegisterPrimOp primop_fetchGit({
 
       - `url`
 
-        The URL of the repo.
+        The [Git URL] of the repo. SCP-like syntax is supported, but relative
+        paths are rewritten to absolute ones. For example:
+
+        `git@github.com:repo/path` becomes `ssh://git@github.com/repo/path`
+
+        [Git URL]: https://git-scm.com/docs/git-clone#_git_urls
 
       - `name` (default: `source`)
 
@@ -797,7 +905,7 @@ static RegisterPrimOp primop_fetchGit({
       files, even if they are not committed or added to Git's index. It
       only considers files added to the Git repository, as listed by `git ls-files`.
     )",
-    .fun = prim_fetchGit,
+    .impl = prim_fetchGit,
 });
 
 } // namespace nix

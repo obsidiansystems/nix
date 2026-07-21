@@ -3,9 +3,7 @@
 
 namespace nix {
 
-using namespace std;
-
-map<string, set<string>> testGraph = {
+std::map<std::string, std::set<std::string>> testGraph = {
     {"A", {"B", "C", "G"}},
     {"B", {"A"}}, // Loops back to A
     {"C", {"F"}}, // Indirect reference
@@ -17,13 +15,11 @@ map<string, set<string>> testGraph = {
 
 TEST(closure, correctClosure)
 {
-    set<string> aClosure;
-    set<string> expectedClosure = {"A", "B", "C", "F", "G"};
-    computeClosure<string>(
-        {"A"}, aClosure, [&](const string currentNode, function<void(promise<set<string>> &)> processEdges) {
-            promise<set<string>> promisedNodes;
-            promisedNodes.set_value(testGraph[currentNode]);
-            processEdges(promisedNodes);
+    std::set<std::string> aClosure;
+    std::set<std::string> expectedClosure = {"A", "B", "C", "F", "G"};
+    computeClosure<std::string>(
+        {"A"}, aClosure, [&](const std::string & currentNode) -> asio::awaitable<std::set<std::string>> {
+            co_return testGraph[currentNode];
         });
 
     ASSERT_EQ(aClosure, expectedClosure);
@@ -34,35 +30,19 @@ TEST(closure, properlyHandlesDirectExceptions)
     struct TestExn
     {};
 
-    set<string> aClosure;
+    std::set<std::string> aClosure;
+    std::size_t callCount = 0;
     EXPECT_THROW(
-        computeClosure<string>(
-            {"A"},
+        computeClosure<std::string>(
+            {"A", "B"},
             aClosure,
-            [&](const string currentNode, function<void(promise<set<string>> &)> processEdges) { throw TestExn(); }),
-        TestExn);
-}
-
-TEST(closure, properlyHandlesExceptionsInPromise)
-{
-    struct TestExn
-    {};
-
-    set<string> aClosure;
-    EXPECT_THROW(
-        computeClosure<string>(
-            {"A"},
-            aClosure,
-            [&](const string currentNode, function<void(promise<set<string>> &)> processEdges) {
-                promise<set<string>> promise;
-                try {
+            [&](const std::string &) -> asio::awaitable<std::set<std::string>> {
+                if (callCount++ == 0)
                     throw TestExn();
-                } catch (...) {
-                    promise.set_exception(std::current_exception());
-                }
-                processEdges(promise);
+                co_return std::set<std::string>{};
             }),
         TestExn);
+    ASSERT_EQ(callCount, 2);
 }
 
 } // namespace nix

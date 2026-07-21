@@ -64,6 +64,9 @@ unset XDG_CONFIG_HOME
 unset XDG_CONFIG_DIRS
 unset XDG_CACHE_HOME
 unset GIT_DIR
+# Isolate tests from host git config (signing, url rewrites, etc.)
+export GIT_CONFIG_SYSTEM=/dev/null
+export GIT_CONFIG_GLOBAL=/dev/null
 
 export IMPURE_VAR1=foo
 export IMPURE_VAR2=bar
@@ -79,6 +82,6 @@ fi
 # Very common, shorthand helps
 # Used in other files
 # shellcheck disable=SC2034
-config_nix="${_NIX_TEST_BUILD_DIR}/config.nix"
+config_nix="${TEST_ROOT}/config.nix"
 
 fi # COMMON_VARS_SH_SOURCED

@@ -1,12 +1,13 @@
 #include "nix/store/globals.hh"
 #include "nix/store/store-open.hh"
+#include "nix/store/build.hh"
 #include "nix/store/build-result.hh"
 #include <iostream>
 
-using namespace nix;
-
 int main(int argc, char ** argv)
 {
+    using namespace nix;
+
     try {
         if (argc != 2) {
             std::cerr << "Usage: " << argv[0] << " store/path/to/something.drv\n";
@@ -24,7 +25,7 @@ int main(int argc, char ** argv)
         std::vector<DerivedPath> paths{DerivedPath::Built{
             .drvPath = makeConstantStorePathRef(store->parseStorePath(drvPath)), .outputs = OutputsSpec::Names{"out"}}};
 
-        const auto results = store->buildPathsWithResults(paths, bmNormal, store);
+        const auto results = store->getBuilder()->buildPathsWithResults(paths, bmNormal);
 
         for (const auto & result : results) {
             if (auto * successP = result.tryGetSuccess()) {

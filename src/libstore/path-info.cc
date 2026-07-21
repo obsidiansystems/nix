@@ -8,6 +8,10 @@
 
 namespace nix {
 
+void UnkeyedValidPathInfo::anchor() {}
+
+void ValidPathInfo::anchor() {}
+
 PathInfoJsonFormat parsePathInfoJsonFormat(uint64_t version)
 {
     switch (version) {
@@ -15,15 +19,23 @@ PathInfoJsonFormat parsePathInfoJsonFormat(uint64_t version)
         return PathInfoJsonFormat::V1;
     case 2:
         return PathInfoJsonFormat::V2;
+    case 3:
+        return PathInfoJsonFormat::V3;
     default:
-        throw Error("unsupported path info JSON format version %d; supported versions are 1 and 2", version);
+        throw Error("unsupported path info JSON format version %d; supported versions are 1, 2 and 3", version);
     }
+}
+
+UnkeyedValidPathInfo::UnkeyedValidPathInfo(const StoreDirConfig & store, Hash narHash)
+    : UnkeyedValidPathInfo{store.storeDir, narHash}
+{
 }
 
 GENERATE_CMP_EXT(
     ,
     std::weak_ordering,
     UnkeyedValidPathInfo,
+    me->storeDir,
     me->deriver,
     me->narHash,
     me->references,
@@ -123,7 +135,7 @@ size_t ValidPathInfo::checkSignatures(const StoreDirConfig & store, const Public
 }
 
 bool ValidPathInfo::checkSignature(
-    const StoreDirConfig & store, const PublicKeys & publicKeys, const std::string & sig) const
+    const StoreDirConfig & store, const PublicKeys & publicKeys, const Signature & sig) const
 {
     return verifyDetached(fingerprint(store), sig, publicKeys);
 }
@@ -141,7 +153,7 @@ ValidPathInfo ValidPathInfo::makeFromCA(
 {
     ValidPathInfo res{
         store.makeFixedOutputPathFromCA(name, ca),
-        narHash,
+        UnkeyedValidPathInfo(store, narHash),
     };
     res.ca = ContentAddress{
         .method = ca.getMethod(),
@@ -173,6 +185,8 @@ UnkeyedValidPathInfo::toJSON(const StoreDirConfig * store, bool includeImpureInf
 
     jsonObject["version"] = format;
 
+    jsonObject["storeDir"] = storeDir;
+
     jsonObject["narHash"] = format == PathInfoJsonFormat::V1
                                 ? static_cast<json>(narHash.to_string(HashFormat::SRI, true))
                                 : static_cast<json>(narHash);
@@ -203,9 +217,13 @@ UnkeyedValidPathInfo::toJSON(const StoreDirConfig * store, bool includeImpureInf
 
         jsonObject["ultimate"] = ultimate;
 
-        auto & sigsObj = jsonObject["signatures"] = json::array();
-        for (auto & sig : sigs)
-            sigsObj.push_back(sig);
+        if (format == PathInfoJsonFormat::V3) {
+            jsonObject["signatures"] = sigs;
+        } else {
+            auto & sigsObj = jsonObject["signatures"] = json::array();
+            for (auto & sig : sigs)
+                sigsObj.push_back(sig.to_string());
+        }
     }
 
     return jsonObject;
@@ -213,10 +231,6 @@ UnkeyedValidPathInfo::toJSON(const StoreDirConfig * store, bool includeImpureInf
 
 UnkeyedValidPathInfo UnkeyedValidPathInfo::fromJSON(const StoreDirConfig * store, const nlohmann::json & _json)
 {
-    UnkeyedValidPathInfo res{
-        Hash(Hash::dummy),
-    };
-
     auto & json = getObject(_json);
 
     PathInfoJsonFormat format = PathInfoJsonFormat::V1;
@@ -226,10 +240,20 @@ UnkeyedValidPathInfo UnkeyedValidPathInfo::fromJSON(const StoreDirConfig * store
     if (format == PathInfoJsonFormat::V1)
         assert(store);
 
-    if (format == PathInfoJsonFormat::V1)
-        res.narHash = Hash::parseSRI(getString(valueAt(json, "narHash")));
-    else
-        res.narHash = valueAt(json, "narHash");
+    UnkeyedValidPathInfo res{
+        [&] {
+            if (auto * rawStoreDir = optionalValueAt(json, "storeDir"))
+                return getString(*rawStoreDir);
+            else if (format == PathInfoJsonFormat::V1)
+                return store->storeDir;
+            else
+                throw Error("'storeDir' field is required in path info JSON format version 2");
+        }(),
+        [&] {
+            return format == PathInfoJsonFormat::V1 ? Hash::parseSRI(getString(valueAt(json, "narHash")))
+                                                    : Hash(valueAt(json, "narHash"));
+        }(),
+    };
 
     res.narSize = getUnsigned(valueAt(json, "narSize"));
 
@@ -273,7 +297,7 @@ UnkeyedValidPathInfo UnkeyedValidPathInfo::fromJSON(const StoreDirConfig * store
         res.ultimate = getBoolean(*rawUltimate);
 
     if (auto * rawSignatures = optionalValueAt(json, "signatures"))
-        res.sigs = getStringSet(*rawSignatures);
+        res.sigs = *rawSignatures;
 
     return res;
 }
@@ -282,30 +306,29 @@ UnkeyedValidPathInfo UnkeyedValidPathInfo::fromJSON(const StoreDirConfig * store
 
 namespace nlohmann {
 
-using namespace nix;
-
-PathInfoJsonFormat adl_serializer<PathInfoJsonFormat>::from_json(const json & json)
+nix::PathInfoJsonFormat adl_serializer<nix::PathInfoJsonFormat>::from_json(const json & json)
 {
-    return parsePathInfoJsonFormat(getUnsigned(json));
+    return nix::parsePathInfoJsonFormat(nix::getUnsigned(json));
 }
 
-void adl_serializer<PathInfoJsonFormat>::to_json(json & json, const PathInfoJsonFormat & format)
+void adl_serializer<nix::PathInfoJsonFormat>::to_json(json & json, const nix::PathInfoJsonFormat & format)
 {
     json = static_cast<int>(format);
 }
 
-UnkeyedValidPathInfo adl_serializer<UnkeyedValidPathInfo>::from_json(const json & json)
+nix::UnkeyedValidPathInfo adl_serializer<nix::UnkeyedValidPathInfo>::from_json(const json & json)
 {
-    return UnkeyedValidPathInfo::fromJSON(nullptr, json);
+    return nix::UnkeyedValidPathInfo::fromJSON(nullptr, json);
 }
 
-void adl_serializer<UnkeyedValidPathInfo>::to_json(json & json, const UnkeyedValidPathInfo & c)
+void adl_serializer<nix::UnkeyedValidPathInfo>::to_json(json & json, const nix::UnkeyedValidPathInfo & c)
 {
-    json = c.toJSON(nullptr, true, PathInfoJsonFormat::V2);
+    json = c.toJSON(nullptr, true, nix::PathInfoJsonFormat::V3);
 }
 
-ValidPathInfo adl_serializer<ValidPathInfo>::from_json(const json & json0)
+nix::ValidPathInfo adl_serializer<nix::ValidPathInfo>::from_json(const json & json0)
 {
+    using namespace nix;
     auto json = getObject(json0);
 
     return ValidPathInfo{
@@ -314,8 +337,9 @@ ValidPathInfo adl_serializer<ValidPathInfo>::from_json(const json & json0)
     };
 }
 
-void adl_serializer<ValidPathInfo>::to_json(json & json, const ValidPathInfo & v)
+void adl_serializer<nix::ValidPathInfo>::to_json(json & json, const nix::ValidPathInfo & v)
 {
+    using namespace nix;
     adl_serializer<UnkeyedValidPathInfo>::to_json(json, v);
     json["path"] = v.path;
 }

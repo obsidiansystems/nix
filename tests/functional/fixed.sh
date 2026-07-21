@@ -4,8 +4,6 @@ source common.sh
 
 TODO_NixOS
 
-clearStore
-
 path=$(nix-store -q "$(nix-instantiate fixed.nix -A good.0)")
 
 echo 'testing bad...'
@@ -17,11 +15,7 @@ nix-build fixed.nix -A bad --no-out-link && fail "should fail"
 nix path-info --json --json-format 2 "$path" | jq -e \
     '.info.[].ca == {
         method: "flat",
-        hash: {
-            algorithm: "md5",
-            format: "base16",
-            hash: "8ddd8be4b179a529afa5f2ffae4b9858"
-        },
+        hash: "md5-jd2L5LF5pSmvpfL/rkuYWA=="
     }'
 
 echo 'testing good...'

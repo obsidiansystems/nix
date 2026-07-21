@@ -1,16 +1,15 @@
 #include "nix/cmd/command.hh"
 #include "nix/util/hash.hh"
-#include "nix/store/content-address.hh"
 #include "nix/cmd/legacy.hh"
 #include "nix/main/shared.hh"
 #include "nix/store/references.hh"
-#include "nix/util/archive.hh"
 #include "nix/util/git.hh"
-#include "nix/util/posix-source-accessor.hh"
+#include "nix/util/source-accessor.hh"
 #include "nix/cmd/misc-store-flags.hh"
 #include "man-pages.hh"
+#include "nix/util/fun.hh"
 
-using namespace nix;
+namespace nix {
 
 /**
  * Base for `nix hash path`, `nix hash file` (deprecated), and `nix-hash` (legacy).
@@ -85,9 +84,7 @@ struct CmdHashBase : Command
                     return std::make_unique<HashSink>(hashAlgo);
             };
 
-            auto makeSourcePath = [&]() -> SourcePath {
-                return PosixSourceAccessor::createAtRoot(makeParentCanonical(path));
-            };
+            auto makeSourcePath = [&]() -> SourcePath { return makeFSSourceAccessor(absPath(path)); };
 
             Hash h{HashAlgorithm::SHA256}; // throwaway def to appease C++
             switch (mode) {
@@ -112,8 +109,7 @@ struct CmdHashBase : Command
             }
             case FileIngestionMethod::Git: {
                 auto sourcePath = makeSourcePath();
-                std::function<git::DumpHook> hook;
-                hook = [&](const SourcePath & path) -> git::TreeEntry {
+                fun<git::DumpHook> hook = [&](const SourcePath & path) -> git::TreeEntry {
                     auto hashSink = makeSink();
                     auto mode = dump(path, *hashSink, hook);
                     auto hash = hashSink->finish().hash;
@@ -248,11 +244,13 @@ struct CmdHashConvert : Command
     void run() override
     {
         for (const auto & s : hashStrings) {
-            Hash h = from == HashFormat::SRI ? Hash::parseSRI(s) : Hash::parseAny(s, algo);
-            if (from && from != HashFormat::SRI
-                && h.to_string(*from, false) != (from == HashFormat::Base16 ? toLower(s) : s)) {
-                auto from_as_string = printHashFormat(*from);
-                throw BadHash("input hash '%s' does not have the expected format for '--from %s'", s, from_as_string);
+            auto [h, parsedFormat] = Hash::parseAnyReturningFormat(s, algo);
+            if (from && *from != parsedFormat) {
+                throw BadHash(
+                    "input hash '%s' has format '%s', but '--from %s' was specified",
+                    s,
+                    printHashFormat(parsedFormat),
+                    printHashFormat(*from));
             }
             logger->cout(h.to_string(to, to == HashFormat::SRI));
         }
@@ -366,3 +364,5 @@ static int compatNixHash(int argc, char ** argv)
 }
 
 static RegisterLegacyCommand r_nix_hash("nix-hash", compatNixHash);
+
+} // namespace nix

@@ -1,9 +1,9 @@
 #include "user-env.hh"
 #include "nix/store/derivations.hh"
 #include "nix/store/store-api.hh"
+#include "nix/store/build.hh"
 #include "nix/store/path-with-outputs.hh"
 #include "nix/store/local-fs-store.hh"
-#include "nix/store/globals.hh"
 #include "nix/main/shared.hh"
 #include "nix/expr/eval.hh"
 #include "nix/expr/eval-inline.hh"
@@ -11,28 +11,31 @@
 #include "nix/expr/print-ambiguous.hh"
 #include "nix/expr/static-string-data.hh"
 
-#include <limits>
 #include <sstream>
 
 namespace nix {
 
-PackageInfos queryInstalled(EvalState & state, const Path & userEnv)
+PackageInfos queryInstalled(EvalState & state, const std::filesystem::path & userEnv)
 {
     PackageInfos elems;
-    if (pathExists(userEnv + "/manifest.json"))
-        throw Error("profile '%s' is incompatible with 'nix-env'; please use 'nix profile' instead", userEnv);
-    auto manifestFile = userEnv + "/manifest.nix";
+    if (pathExists(userEnv / "manifest.json"))
+        throw Error("profile %s is incompatible with 'nix-env'; please use 'nix profile' instead", PathFmt(userEnv));
+    auto manifestFile = userEnv / "manifest.nix";
     if (pathExists(manifestFile)) {
         Value v;
-        state.evalFile(state.rootPath(CanonPath(manifestFile)).resolveSymlinks(), v);
-        Bindings & bindings = Bindings::emptyBindings;
+        state.evalFile(state.rootPath(CanonPath(manifestFile.string())).resolveSymlinks(), v);
+        const Bindings & bindings = Bindings::emptyBindings;
         getDerivations(state, v, "", bindings, elems, false);
     }
     return elems;
 }
 
 bool createUserEnv(
-    EvalState & state, PackageInfos & elems, const Path & profile, bool keepDerivations, const std::string & lockToken)
+    EvalState & state,
+    PackageInfos & elems,
+    const std::filesystem::path & profile,
+    bool keepDerivations,
+    const std::string & lockToken)
 {
     /* Build the components in the user environment, if they don't
        exist already. */
@@ -42,7 +45,7 @@ bool createUserEnv(
             drvsToBuild.push_back({*drvPath});
 
     debug("building user environment dependencies");
-    state.store->buildPaths(toDerivedPaths(drvsToBuild), state.repair ? bmRepair : bmNormal);
+    state.store->getBuilder()->buildPaths(toDerivedPaths(drvsToBuild), state.repair ? bmRepair : bmNormal);
 
     /* Construct the whole top level derivation. */
     StorePathSet references;
@@ -77,7 +80,7 @@ bool createUserEnv(
             /* This is only necessary when installing store paths, e.g.,
                `nix-env -i /nix/store/abcd...-foo'. */
             state.store->addTempRoot(*j.second);
-            state.store->ensurePath(*j.second);
+            state.store->getBuilder()->ensurePath(*j.second);
 
             references.insert(*j.second);
         }
@@ -108,7 +111,7 @@ bool createUserEnv(
        environment. */
     auto manifestFile = ({
         std::ostringstream str;
-        printAmbiguous(manifest, state.symbols, str, nullptr, std::numeric_limits<int>::max());
+        printAmbiguous(state, manifest, str, nullptr);
         StringSource source{str.view()};
         state.store->addToStoreFromDump(
             source,
@@ -152,7 +155,7 @@ bool createUserEnv(
     debug("building user environment");
     std::vector<StorePathWithOutputs> topLevelDrvs;
     topLevelDrvs.push_back({topLevelDrv});
-    state.store->buildPaths(toDerivedPaths(topLevelDrvs), state.repair ? bmRepair : bmNormal);
+    state.store->getBuilder()->buildPaths(toDerivedPaths(topLevelDrvs), state.repair ? bmRepair : bmNormal);
 
     /* Switch the current user environment to the output path. */
     auto store2 = state.store.dynamic_pointer_cast<LocalFSStore>();
@@ -163,7 +166,7 @@ bool createUserEnv(
 
         std::filesystem::path lockTokenCur = optimisticLockProfile(profile);
         if (lockToken != lockTokenCur) {
-            printInfo("profile '%1%' changed while we were busy; restarting", profile);
+            printInfo("profile %s changed while we were busy; restarting", PathFmt(profile));
             return false;
         }
 

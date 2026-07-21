@@ -32,7 +32,7 @@ Otherwise, the file is downloaded, and an error is signaled if the
 actual hash of the file does not match the specified hash.
 
 This command prints the hash on standard output.
-The hash is printed using base-32 unless `--type md5` is specified,
+The hash is printed using [Nix32](@docroot@/protocols/nix32.md) unless `--type md5` is specified,
 in which case it's printed using base-16.
 Additionally, if the option `--print-path` is used,
 the path of the downloaded file in the Nix store is also printed.
@@ -76,7 +76,7 @@ $ nix-prefetch-url ftp://ftp.gnu.org/pub/gnu/hello/hello-2.10.tar.gz
 ```console
 $ nix-prefetch-url --print-path mirror://gnu/hello/hello-2.10.tar.gz
 0ssi1wpaf7plaswqqjwigppsg5fyh99vdlb9kzl7c9lng89ndq1i
-/nix/store/3x7dwzq014bblazs7kq20p9hyzz0qh8g-hello-2.10.tar.gz
+/nix/store/8alrpdaasjd1x6g1fczchmzbpqm936a3-hello-2.10.tar.gz
 ```
 
 ```console

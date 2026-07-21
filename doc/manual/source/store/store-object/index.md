@@ -70,9 +70,9 @@ The *referrers closure* of a store object are the store objects that can reach t
 > - The references of a store object --- the set of store paths called the references --- is a field of a store object, and thus intrinsic by definition.
     Regardless of what store contains the store object in question, and what else that store may or may not contain, the references are the same.
 >
-> - The requisites of a store object are almost intrinsic --- some store paths due not precisely refer to a unique single store object.
+> - The requisites of a store object are almost intrinsic --- some store paths do not precisely refer to a unique single store object.
 > Exactly what store object is being referenced, and what in turn *its* references are, depends on the store in question.
->   Different stores that disagree.
+>   Different stores may disagree on what a given store path refers to.
 >
 > - The referrers of a store object are completely extrinsic, and depends solely on the store which contains that store object, not the store object itself.
 >   Other store objects which refer to the store object in question may be added or removed from the store.
@@ -181,5 +181,11 @@ That is the responsibility of a different data structure, the [build trace], tha
 A final consequence of the above design is that there is no such thing as "invalid store object", except for having an invalid closure.
 Any file system object, paired with any references, so long as the closure is coherent), can be assigned a closure digest.
 Again, more practical notions of invalidity like "wasn't actually produced by XYZ" are the responsibility of other layers of the system.
+
+## Store Object Metadata {#metadata}
+
+[Store implementations](@docroot@/store/types/index.md) currently associate more information than described above with a store object.
+Quite arguably some of this information doesn't belong here, because it conflates concerns.
+For details see the [store object info](@docroot@/protocols/json/store-object-info.md) JSON format or the [narinfo](@docroot@/protocols/binary-cache/narinfo.md) format.
 
 [build trace]: @docroot@/store/build-trace.md

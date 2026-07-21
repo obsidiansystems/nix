@@ -1,4 +1,3 @@
-#include "nix_api_store.h"
 #include "nix_api_util.h"
 #include "nix_api_expr.h"
 #include "nix_api_value.h"
@@ -118,6 +117,14 @@ TEST_F(nix_api_expr_test, nix_value_set_get_path)
     ASSERT_STREQ(p, nix_get_path_string(ctx, value));
     ASSERT_STREQ("a path", nix_get_typename(ctx, value));
     ASSERT_EQ(NIX_TYPE_PATH, nix_get_type(ctx, value));
+}
+
+TEST_F(nix_api_expr_test, nix_get_external_invalid)
+{
+    ASSERT_EQ(nullptr, nix_get_external(ctx, nullptr));
+    assert_ctx_err();
+    ASSERT_EQ(nullptr, nix_get_external(ctx, value));
+    assert_ctx_err();
 }
 
 TEST_F(nix_api_expr_test, nix_build_and_init_list_invalid)

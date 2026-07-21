@@ -1,5 +1,5 @@
-# This is the implementation of the ‘derivation’ builtin function.
-# It's actually a wrapper around the ‘derivationStrict’ primop.
+# This is the implementation of the `derivation` builtin function.
+# It's actually a wrapper around the `derivationStrict` primop.
 # Note that the following comment will be shown in :doc in the repl, but not in the manual.
 
 /**
@@ -46,7 +46,7 @@ let
   outputToAttrListElement = outputName: {
     name = outputName;
     value = commonAttrs // {
-      outPath = builtins.getAttr outputName strict;
+      outPath = strict.${outputName};
       drvPath = strict.drvPath;
       type = "derivation";
       inherit outputName;

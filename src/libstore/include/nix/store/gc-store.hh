@@ -13,28 +13,44 @@ typedef boost::unordered_flat_map<
     std::hash<StorePath>>
     Roots;
 
+/**
+ * Garbage collector operation:
+ *
+ * - `gcReturnLive`: return the set of paths reachable from
+ *   (i.e. in the closure of) the roots.
+ *
+ * - `gcReturnDead`: return the set of paths not reachable from
+ *   the roots.
+ *
+ * - `gcDeleteDead`: actually delete the latter set.
+ *
+ * - `gcDeleteSpecific`: delete the paths listed in
+ *    `pathsToDelete`, insofar as they are not reachable.
+ */
+enum class GCAction {
+    gcReturnLive,
+    gcReturnDead,
+    gcDeleteDead,
+    gcDeleteSpecific,
+};
+
 struct GCOptions
 {
-    /**
-     * Garbage collector operation:
-     *
-     * - `gcReturnLive`: return the set of paths reachable from
-     *   (i.e. in the closure of) the roots.
-     *
-     * - `gcReturnDead`: return the set of paths not reachable from
-     *   the roots.
-     *
-     * - `gcDeleteDead`: actually delete the latter set.
-     *
-     * - `gcDeleteSpecific`: delete the paths listed in
-     *    `pathsToDelete`, insofar as they are not reachable.
-     */
-    typedef enum {
-        gcReturnLive,
-        gcReturnDead,
-        gcDeleteDead,
-        gcDeleteSpecific,
-    } GCAction;
+    using GCAction = nix::GCAction;
+    using enum GCAction;
+
+    struct WholeStore
+    {};
+
+    struct SpecificPaths
+    {
+        StorePathSet paths;
+
+        /**
+         * Allow dead referrers of candidate paths to also be deleted.
+         */
+        bool deleteReferrers = false;
+    };
 
     GCAction action{gcDeleteDead};
 
@@ -47,9 +63,10 @@ struct GCOptions
     bool ignoreLiveness{false};
 
     /**
-     * For `gcDeleteSpecific`, the paths to delete.
+     * The paths from which to delete.
      */
-    StorePathSet pathsToDelete;
+    using GCPaths = std::variant<WholeStore, SpecificPaths>;
+    GCPaths pathsToDelete;
 
     /**
      * Stop after at least `maxFreed` bytes have been freed.
@@ -63,11 +80,10 @@ struct GCResults
      * Depending on the action, the GC roots, or the paths that would
      * be or have been deleted.
      */
-    PathSet paths;
+    StringSet paths;
 
     /**
-     * For `gcReturnDead`, `gcDeleteDead` and `gcDeleteSpecific`, the
-     * number of bytes that would be or was freed.
+     * For `gcDeleteDead` and `gcDeleteSpecific`, the number of bytes that were freed.
      */
     uint64_t bytesFreed = 0;
 };
@@ -100,6 +116,10 @@ struct GCResults
  */
 struct GcStore : public virtual Store
 {
+private:
+    void anchor() override;
+
+public:
     inline static std::string operationName = "Garbage collection";
 
     /**
@@ -115,6 +135,13 @@ struct GcStore : public virtual Store
      * Perform a garbage collection.
      */
     virtual void collectGarbage(const GCOptions & options, GCResults & results) = 0;
+
+    /**
+     * Delete build trace entries (realisations) from the store's database.
+     *
+     * The entries are specified by their key (the build trace is a map).
+     */
+    virtual void deleteBuildTraces(const std::set<DrvOutput> & keys) = 0;
 };
 
 } // namespace nix

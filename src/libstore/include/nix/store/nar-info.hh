@@ -1,6 +1,7 @@
 #pragma once
 ///@file
 
+#include "nix/util/compression-algo.hh"
 #include "nix/util/types.hh"
 #include "nix/util/hash.hh"
 #include "nix/store/path-info.hh"
@@ -12,7 +13,7 @@ struct StoreDirConfig;
 struct UnkeyedNarInfo : virtual UnkeyedValidPathInfo
 {
     std::string url;
-    std::string compression;
+    std::optional<CompressionAlgo> compression;
     std::optional<Hash> fileHash;
     uint64_t fileSize = 0;
 
@@ -35,6 +36,10 @@ struct UnkeyedNarInfo : virtual UnkeyedValidPathInfo
  */
 struct NarInfo : ValidPathInfo, UnkeyedNarInfo
 {
+private:
+    void anchor() override;
+
+public:
     NarInfo() = delete;
 
     NarInfo(ValidPathInfo info)
@@ -42,15 +47,20 @@ struct NarInfo : ValidPathInfo, UnkeyedNarInfo
         /* Later copies from `*this` are pointless. The argument is only
            there so the constructors can also call
            `UnkeyedValidPathInfo`, but this won't happen since the base
-           class is virtual. Only this counstructor (assuming it is most
+           class is virtual. Only this constructor (assuming it is most
            derived) will initialize that virtual base class. */
         , ValidPathInfo{info.path, static_cast<const UnkeyedValidPathInfo &>(*this)}
         , UnkeyedNarInfo{static_cast<const UnkeyedValidPathInfo &>(*this)}
     {
     }
 
-    NarInfo(StorePath path, Hash narHash)
-        : NarInfo{ValidPathInfo{std::move(path), UnkeyedValidPathInfo(narHash)}}
+    NarInfo(const StoreDirConfig & store, StorePath path, Hash narHash)
+        : NarInfo{ValidPathInfo{std::move(path), UnkeyedValidPathInfo{store, narHash}}}
+    {
+    }
+
+    NarInfo(std::string storeDir, StorePath path, Hash narHash)
+        : NarInfo{ValidPathInfo{std::move(path), UnkeyedValidPathInfo{std::move(storeDir), narHash}}}
     {
     }
 

@@ -9,7 +9,7 @@ project(
     'errorlogs=true', # Please print logs for tests that fail
     'localstatedir=/nix/var',
   ],
-  meson_version : '>= 1.1',
+  meson_version : '>= 1.8',
   license : 'LGPL-2.1-or-later',
 )
 
@@ -29,8 +29,7 @@ subdir('nix-meson-build-support/default-system-cpu')
 configdata_pub.set_quoted(
   'NIX_LOCAL_SYSTEM',
   nix_system_cpu + '-' + host_machine.system(),
-  description : 'This is the system name Nix expects for local running instance of Nix.\n\n'
-    + 'See the "system" setting for additional details',
+  description : 'This is the system name Nix expects for local running instance of Nix.\n\n' + 'See the "system" setting for additional details',
 )
 
 deps_private_maybe_subproject = []
@@ -39,37 +38,41 @@ deps_public_maybe_subproject = [
 ]
 subdir('nix-meson-build-support/subprojects')
 
-run_command(
-  'ln',
-  '-s',
-  meson.project_build_root() / '__nothing_link_target',
-  meson.project_build_root() / '__nothing_symlink',
-  # native doesn't allow dangling symlinks, which the tests require
-  env : {'MSYS' : 'winsymlinks:lnk'},
-  check : true,
-)
-can_link_symlink = run_command(
-  'ln',
-  meson.project_build_root() / '__nothing_symlink',
-  meson.project_build_root() / '__nothing_hardlink',
-  check : false,
-).returncode() == 0
-run_command(
-  'rm',
-  '-f',
-  meson.project_build_root() / '__nothing_symlink',
-  meson.project_build_root() / '__nothing_hardlink',
-  check : true,
-)
+can_link_symlink = false
+native_ln = find_program('ln', required : false, native : true)
+if native_ln.found()
+  run_command(
+    native_ln,
+    '-s',
+    meson.project_build_root() / '__nothing_link_target',
+    meson.project_build_root() / '__nothing_symlink',
+    # native doesn't allow dangling symlinks, which the tests require
+    env : {'MSYS' : 'winsymlinks:lnk'},
+    check : true,
+  )
+  can_link_symlink = run_command(
+    native_ln,
+    meson.project_build_root() / '__nothing_symlink',
+    meson.project_build_root() / '__nothing_hardlink',
+    check : false,
+  ).returncode() == 0
+  run_command(
+    'rm',
+    '-f',
+    meson.project_build_root() / '__nothing_symlink',
+    meson.project_build_root() / '__nothing_hardlink',
+    check : true,
+  )
+endif
 summary('can hardlink to symlink', can_link_symlink, bool_yn : true)
 configdata_priv.set('CAN_LINK_SYMLINK', can_link_symlink.to_int())
 
-# Check for each of these functions, and create a define like `#define HAVE_LCHOWN 1`.
+# Check for each of these functions, and create a define like `#define HAVE_POSIX_FALLOCATE 1`.
 check_funcs = [
-  # Optionally used for canonicalising files from the build
-  'lchown',
   'posix_fallocate',
   'statvfs',
+  'open_tree',
+  'move_mount',
 ]
 foreach funcspec : check_funcs
   define_name = 'HAVE_' + funcspec.underscorify().to_upper()
@@ -77,9 +80,16 @@ foreach funcspec : check_funcs
   configdata_priv.set(define_name, define_value)
 endforeach
 
-has_acl_support = cxx.has_header('sys/xattr.h') \
-  and cxx.has_function('llistxattr') \
-  and cxx.has_function('lremovexattr')
+if host_machine.system() == 'linux'
+  has_landlock = cxx.has_header('linux/landlock.h')
+  configdata_priv.set('HAVE_LANDLOCK', has_landlock.to_int())
+endif
+
+has_acl_support = cxx.has_header('sys/xattr.h') and cxx.has_function(
+  'llistxattr',
+) and cxx.has_function(
+  'lremovexattr',
+)
 # Used in public header. Affects ABI!
 configdata_pub.set(
   'NIX_SUPPORT_ACL',
@@ -113,17 +123,10 @@ boost = dependency(
 # put in `deps_other`.
 deps_other += boost
 
-curl = dependency('libcurl', 'curl', version : '>= 7.75.0')
-if curl.version().version_compare('>=8.16.0') and curl.version().version_compare(
-  '<8.17.0',
-)
-  # Out of precaution, avoid building with libcurl version that suffer from https://github.com/curl/curl/issues/19334.
-  error(
-    'curl @0@ has issues with write pausing, please use libcurl < 8.16 or >= 8.17, see https://github.com/curl/curl/issues/19334'.format(
-      curl.version(),
-    ),
-  )
-endif
+# This is quite new, but curl has a bunch of known issues with write pausing and decompression.
+# Please use libcurl >= 8.17. See https://github.com/curl/curl/issues/19334, https://github.com/curl/curl/issues/16280, https://github.com/curl/curl/issues/16955 if in doubt.
+# Patch out this check at your own risk.
+curl = dependency('libcurl', 'curl', version : '>= 8.17.0')
 
 deps_private += curl
 
@@ -147,6 +150,12 @@ endif
 configdata_priv.set('HAVE_SECCOMP', seccomp.found().to_int())
 deps_private += seccomp
 
+if host_machine.system() == 'freebsd'
+  # libjail is not in freebsd.libc, but there's no discovery mechanism
+  libjail = declare_dependency(link_args : [ '-ljail' ])
+  deps_other += libjail
+endif
+
 nlohmann_json = dependency('nlohmann_json', version : '>= 3.9')
 deps_public += nlohmann_json
 
@@ -154,50 +163,28 @@ sqlite = dependency('sqlite3', 'sqlite', version : '>=3.6.19')
 deps_private += sqlite
 
 s3_aws_auth = get_option('s3-aws-auth')
-aws_crt_cpp = cxx.find_library('aws-crt-cpp', required : s3_aws_auth)
+aws_crt_cpp = dependency(
+  'aws-crt-cpp',
+  required : s3_aws_auth,
+  method : 'cmake',
+  modules : [ 'AWS::aws-crt-cpp' ],
+)
 
 if s3_aws_auth.enabled()
   deps_other += aws_crt_cpp
-  aws_c_common = cxx.find_library('aws-c-common', required : true)
-  deps_other += aws_c_common
 endif
 
 configdata_pub.set('NIX_WITH_AWS_AUTH', s3_aws_auth.enabled().to_int())
 
-subdir('nix-meson-build-support/generate-header')
-
-generated_headers = []
-foreach header : [
-  'schema.sql',
-  'ca-specific-schema.sql',
-]
-  generated_headers += gen_header.process(header)
-endforeach
-
 busybox = find_program(get_option('sandbox-shell'), required : false)
-
-configdata_priv.set(
-  'HAVE_EMBEDDED_SANDBOX_SHELL',
-  get_option('embedded-sandbox-shell').to_int(),
-)
 
 if get_option('embedded-sandbox-shell')
   configdata_priv.set_quoted('SANDBOX_SHELL', '__embedded_sandbox_shell__')
+  configdata_priv.set_quoted('EMBEDDED_SANDBOX_SHELL_PATH', busybox.full_path())
+  configdata_priv.set('HAVE_EMBEDDED_SANDBOX_SHELL', 1)
 elif busybox.found()
   configdata_priv.set_quoted('SANDBOX_SHELL', busybox.full_path())
-endif
-
-if get_option('embedded-sandbox-shell')
-  hexdump = find_program('hexdump', native : true)
-  embedded_sandbox_shell_gen = custom_target(
-    'embedded-sandbox-shell.gen.hh',
-    command : [ hexdump, '-v', '-e', '1/1 "0x%x," "\n"' ],
-    input : busybox.full_path(),
-    output : 'embedded-sandbox-shell.gen.hh',
-    capture : true,
-    feed : true,
-  )
-  generated_headers += embedded_sandbox_shell_gen
+  configdata_priv.set('HAVE_EMBEDDED_SANDBOX_SHELL', 0)
 endif
 
 fs = import('fs')
@@ -207,20 +194,18 @@ prefix = get_option('prefix')
 # it is already an absolute path (which is the default for store-dir, localstatedir, and log-dir).
 path_opts = [
   # Meson built-ins.
-  'datadir',
   'mandir',
   'libdir',
   'includedir',
   'libexecdir',
+  'localstatedir',
   # Homecooked Nix directories.
   'store-dir',
-  'localstatedir',
   'log-dir',
 ]
 # For your grepping pleasure, this loop sets the following variables that aren't mentioned
 # literally above:
 # store_dir
-# localstatedir
 # log_dir
 # profile_dir
 foreach optname : path_opts
@@ -235,21 +220,25 @@ endforeach
 
 # sysconfdir doesn't get anything installed to directly, and is only used to
 # tell Nix where to look for nix.conf, so it doesn't get appended to prefix.
-sysconfdir = get_option('sysconfdir')
-if not fs.is_absolute(sysconfdir)
-  sysconfdir = '/' / sysconfdir
+if host_machine.system() != 'windows'
+  sysconfdir = get_option('sysconfdir')
+  if not fs.is_absolute(sysconfdir)
+    sysconfdir = '/' / sysconfdir
+  endif
 endif
 
 # Aside from prefix itself, each of these was made into an absolute path
 # by joining it with prefix, unless it was already an absolute path
 # (which is the default for store-dir, localstatedir, and log-dir).
-configdata_priv.set_quoted('NIX_PREFIX', prefix)
 configdata_priv.set_quoted('NIX_STORE_DIR', store_dir)
-configdata_priv.set_quoted('NIX_DATA_DIR', datadir)
-configdata_priv.set_quoted('NIX_STATE_DIR', localstatedir / 'nix')
-configdata_priv.set_quoted('NIX_LOG_DIR', log_dir)
-configdata_priv.set_quoted('NIX_CONF_DIR', sysconfdir / 'nix')
-configdata_priv.set_quoted('NIX_MAN_DIR', mandir)
+# On Windows, NIX_STATE_DIR, NIX_LOG_DIR, and NIX_CONF_DIR are determined at
+# runtime using the Windows known folders API (FOLDERID_ProgramData), so we
+# don't define them at compile time.
+if host_machine.system() != 'windows'
+  configdata_priv.set_quoted('NIX_STATE_DIR', localstatedir / 'nix')
+  configdata_priv.set_quoted('NIX_LOG_DIR', log_dir)
+  configdata_priv.set_quoted('NIX_CONF_DIR', sysconfdir / 'nix')
+endif
 
 lsof = find_program('lsof', required : false)
 configdata_priv.set_quoted(
@@ -269,6 +258,7 @@ subdir('nix-meson-build-support/common')
 sources = files(
   'binary-cache-store.cc',
   'build-result.cc',
+  'build/build-log.cc',
   'build/derivation-builder.cc',
   'build/derivation-building-goal.cc',
   'build/derivation-check.cc',
@@ -304,6 +294,7 @@ sources = files(
   'legacy-ssh-store.cc',
   'local-binary-cache-store.cc',
   'local-fs-store.cc',
+  'local-gc.cc',
   'local-overlay-store.cc',
   'local-store.cc',
   'log-store.cc',
@@ -314,6 +305,7 @@ sources = files(
   'nar-info-disk-cache.cc',
   'nar-info.cc',
   'optimise-store.cc',
+  'outputs-query.cc',
   'outputs-spec.cc',
   'parsed-derivations.cc',
   'path-info.cc',
@@ -339,6 +331,7 @@ sources = files(
   'store-dir-config.cc',
   'store-reference.cc',
   'store-registration.cc',
+  'submit-store.cc',
   'uds-remote-store.cc',
   'worker-protocol-connection.cc',
   'worker-protocol.cc',
@@ -355,6 +348,14 @@ if host_machine.system() == 'linux'
   subdir('linux')
 endif
 
+if host_machine.system() == 'freebsd'
+  subdir('freebsd')
+endif
+
+if host_machine.system() == 'darwin'
+  subdir('darwin')
+endif
+
 if host_machine.system() == 'windows'
   subdir('windows')
 else
@@ -366,7 +367,6 @@ subdir('nix-meson-build-support/windows-version')
 
 this_library = library(
   'nixstore',
-  generated_headers,
   sources,
   config_priv_h,
   soversion : nix_soversion,
@@ -384,13 +384,7 @@ libraries_private = []
 
 extra_pkg_config_variables = {
   'storedir' : get_option('store-dir'),
+  'localstatedir' : get_option('localstatedir'),
 }
-
-# Working around https://github.com/mesonbuild/meson/issues/13584
-if host_machine.system() != 'darwin'
-  extra_pkg_config_variables += {
-    'localstatedir' : get_option('localstatedir'),
-  }
-endif
 
 subdir('nix-meson-build-support/export')

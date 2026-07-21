@@ -8,7 +8,7 @@ project(
     'warning_level=1',
     'errorlogs=true', # Please print logs for tests that fail
   ],
-  meson_version : '>= 1.1',
+  meson_version : '>= 1.8',
   license : 'LGPL-2.1-or-later',
 )
 
@@ -28,7 +28,7 @@ deps_public_maybe_subproject = [
 subdir('nix-meson-build-support/subprojects')
 subdir('nix-meson-build-support/big-objs')
 
-# Check for each of these functions, and create a define like `#define HAVE_LCHOWN 1`.
+# Check for each of these functions, and create a define like `#define HAVE_SYSCONF 1`.
 check_funcs = [
   'sysconf',
 ]
@@ -91,6 +91,10 @@ configdata_priv.set(
 
 deps_other += toml11
 
+cpuid = dependency('libcpuid', 'cpuid', required : false)
+configdata_priv.set('HAVE_LIBCPUID', cpuid.found().to_int())
+deps_private += cpuid
+
 config_priv_h = configure_file(
   configuration : configdata_priv,
   output : 'expr-config-private.hh',
@@ -140,19 +144,10 @@ lexer_tab = custom_target(
   install_dir : get_option('includedir') / 'nix',
 )
 
-subdir('nix-meson-build-support/generate-header')
-
-generated_headers = []
-foreach header : [
-  'imported-drv-to-derivation.nix',
-  'fetchurl.nix',
-]
-  generated_headers += gen_header.process(header)
-endforeach
-
 sources = files(
   'attr-path.cc',
   'attr-set.cc',
+  'diagnose.cc',
   'eval-cache.cc',
   'eval-error.cc',
   'eval-gc.cc',
@@ -163,7 +158,6 @@ sources = files(
   'function-trace.cc',
   'get-drvs.cc',
   'json-to-value.cc',
-  'lexer-helpers.cc',
   'nixexpr.cc',
   'paths.cc',
   'primops.cc',
@@ -214,6 +208,7 @@ parser_library = static_library(
   'nixexpr-parser',
   parser_tab,
   lexer_tab,
+  'lexer-helpers.cc',
   cpp_args : parser_library_cpp_args,
   dependencies : deps_public + deps_private + deps_other,
   include_directories : include_dirs,
@@ -224,6 +219,8 @@ parser_library = static_library(
   override_options : [
     'b_ndebug=@0@'.format(not get_option('debug')),
     'b_lto=@0@'.format(get_option('b_lto') and cxx.get_id() != 'gcc'),
+    # Unity builds mess up the recursive header dependency between flex and bison generated code.
+    'unity=off',
   ],
 )
 
@@ -233,7 +230,6 @@ this_library = library(
   config_priv_h,
   parser_tab[1],
   lexer_tab[1],
-  generated_headers,
   soversion : nix_soversion,
   dependencies : deps_public + deps_private + deps_other,
   include_directories : include_dirs,

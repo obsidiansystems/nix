@@ -1,18 +1,9 @@
 # Default meson build dir
 /build
-
-# /tests/functional/
-/tests/functional/common/subst-vars.sh
-/tests/functional/restricted-innocent
-/tests/functional/debugger-test-out
-/tests/functional/test-libstoreconsumer/test-libstoreconsumer
-/tests/functional/nix-shell
-
-# /tests/functional/lang/
-/tests/functional/lang/*.out
-/tests/functional/lang/*.out.xml
-/tests/functional/lang/*.err
-/tests/functional/lang/*.ast
+# Meson creates this file too
+src/.wraplock
+# Python bytecode (clang-tidy runner scripts)
+__pycache__/
 
 /outputs
 

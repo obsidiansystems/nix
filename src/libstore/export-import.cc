@@ -37,9 +37,8 @@ static void exportPath(Store & store, const StorePath & path, Sink & sink)
 void exportPaths(Store & store, const StorePathSet & paths, Sink & sink)
 {
     auto sorted = store.topoSortPaths(paths);
-    std::reverse(sorted.begin(), sorted.end());
 
-    for (auto & path : sorted) {
+    for (auto & path : sorted | std::views::reverse) {
         sink << 1;
         exportPath(store, path, sink);
     }
@@ -75,7 +74,7 @@ StorePaths importPaths(Store & store, Source & source, CheckSigsFlag checkSigs)
         auto deriver = readString(source);
         auto narHash = hashString(HashAlgorithm::SHA256, saved.s);
 
-        ValidPathInfo info{path, narHash};
+        ValidPathInfo info{path, {store, narHash}};
         if (deriver != "")
             info.deriver = store.parseStorePath(deriver);
         info.references = references;

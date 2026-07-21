@@ -1,6 +1,4 @@
-#include <regex>
-
-#include <exception> // Needed by rapidcheck on Darwin
+#include <exception> // IWYU pragma: keep (Needed by rapidcheck on Darwin and FreeBSD)
 #include <rapidcheck.h>
 
 #include "nix/util/hash.hh"
@@ -8,10 +6,10 @@
 #include "nix/util/tests/hash.hh"
 
 namespace rc {
-using namespace nix;
 
-Gen<Hash> Arbitrary<Hash>::arbitrary()
+Gen<nix::Hash> Arbitrary<nix::Hash>::arbitrary()
 {
+    using namespace nix;
     Hash prototype(HashAlgorithm::SHA1);
     return gen::apply(
         [](const std::vector<uint8_t> & v) {

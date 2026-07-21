@@ -1,14 +1,5 @@
 { lib, nixComponents, ... }:
 
-let
-  # FIXME (roberth) reference issue
-  inputDerivation =
-    pkg:
-    (pkg.overrideAttrs (o: {
-      disallowedReferences = [ ];
-    })).inputDerivation;
-
-in
 {
   # We rarely change the script in a way that benefits from type checking, so
   # we skip it to save time.
@@ -20,7 +11,7 @@ in
 
       virtualisation.writableStore = true;
       system.extraDependencies = [
-        (inputDerivation config.nix.package)
+        config.nix.package.inputDerivation
       ];
 
       nix.settings.substituters = lib.mkForce [ ];
@@ -64,7 +55,9 @@ in
 
               meson setup nix/tests/functional build
               cd build
-              meson test -j1 --print-errorlogs
+              # Meson uses tqdm progress bar when stdout is a tty, which ends
+              # up being garbled in the nixos test logs.
+              meson test -j1 --print-errorlogs | cat
             '';
           };
         in

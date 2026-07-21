@@ -35,15 +35,16 @@ struct BuilderFailureError;
  */
 struct DerivationResolutionGoal : public Goal
 {
-    DerivationResolutionGoal(const StorePath & drvPath, const Derivation & drv, Worker & worker, BuildMode buildMode);
+    friend class Worker;
+
+    DerivationResolutionGoal(
+        const StorePath & drvPath, ref<const Derivation> drv, Worker & worker, BuildMode buildMode);
 
     /**
      * If the derivation needed to be resolved, this is resulting
      * resolved derivations and its path.
      */
     std::unique_ptr<std::pair<StorePath, BasicDerivation>> resolvedDrv;
-
-    void timedOut(Error && ex) override {}
 
 private:
 
@@ -55,7 +56,7 @@ private:
     /**
      * The derivation stored at drvPath.
      */
-    std::unique_ptr<Derivation> drv;
+    ref<const Derivation> drv;
 
     /**
      * The remainder is state held during the build.

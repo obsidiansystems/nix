@@ -162,6 +162,7 @@ private:
     std::ostream & output;
     EvalState & state;
     PrintOptions options;
+    NixStringContext * context;
     std::optional<ValuesSeen> seen;
     size_t totalAttrsPrinted = 0;
     size_t totalListItemsPrinted = 0;
@@ -509,6 +510,17 @@ private:
         }
     }
 
+    void printFailed()
+    {
+        if (options.ansiColors)
+            output << ANSI_MAGENTA;
+        // Historically, a tried and then ignored value (e.g. through tryEval) was
+        // reverted to the original thunk.
+        output << "«thunk»";
+        if (options.ansiColors)
+            output << ANSI_NORMAL;
+    }
+
     void printExternal(Value & v)
     {
         v.external()->print(output);
@@ -537,6 +549,16 @@ private:
         output.flush();
         checkInterrupt();
 
+        // Catch infinite recursion before it overflows the C++ stack.
+        // Non-cyclic structures can be infinitely deep when values are
+        // lazily produced (e.g., `let f = n: { inner = f (n + 1); }; in f 0`).
+        // We check print depth against max-call-depth rather than incrementing
+        // the callDepth counter, because accessing an attribute is not a call.
+        // Other places do increment callDepth for simplicity, but that is
+        // technically incorrect.
+        if (depth > state.settings.maxCallDepth)
+            state.error<StackOverflowError>().atPos(v.determinePos(noPos)).debugThrow();
+
         try {
             if (options.force) {
                 state.forceValue(v, v.determinePos(noPos));
@@ -556,9 +578,12 @@ private:
                 printBool(v);
                 break;
 
-            case nString:
+            case nString: {
                 printString(v);
+                if (context)
+                    copyContext(v, *context);
                 break;
+            }
 
             case nPath:
                 printPath(v);
@@ -580,6 +605,10 @@ private:
                 printFunction(v);
                 break;
 
+            case nFailed:
+                printFailed();
+                break;
+
             case nThunk:
                 printThunk(v);
                 break;
@@ -592,6 +621,11 @@ private:
                 printUnknown();
                 break;
             }
+        } catch (StackOverflowError &) {
+            // Always re-throw because stack overflow is a serious condition
+            // that expressions should avoid, unlike say `throw`, which can
+            // be part of legitimate expression patterns.
+            throw;
         } catch (Error & e) {
             if (options.errors == ErrorPrintBehavior::Throw
                 || (options.errors == ErrorPrintBehavior::ThrowTopLevel && depth == 0)) {
@@ -602,10 +636,11 @@ private:
     }
 
 public:
-    Printer(std::ostream & output, EvalState & state, PrintOptions options)
+    Printer(std::ostream & output, EvalState & state, PrintOptions options, NixStringContext * context)
         : output(output)
         , state(state)
         , options(options)
+        , context(context)
     {
     }
 
@@ -626,14 +661,14 @@ public:
     }
 };
 
-void printValue(EvalState & state, std::ostream & output, Value & v, PrintOptions options)
+void printValue(EvalState & state, std::ostream & output, Value & v, PrintOptions options, NixStringContext * context)
 {
-    Printer(output, state, options).print(v);
+    Printer(output, state, options, context).print(v);
 }
 
 std::ostream & operator<<(std::ostream & output, const ValuePrinter & printer)
 {
-    printValue(printer.state, output, printer.value, printer.options);
+    printValue(printer.state, output, printer.value, printer.options, printer.context);
     return output;
 }
 

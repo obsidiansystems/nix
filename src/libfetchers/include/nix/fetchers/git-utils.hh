@@ -16,6 +16,10 @@ struct Settings;
  */
 struct GitFileSystemObjectSink : ExtendedFileSystemObjectSink
 {
+private:
+    void anchor() override;
+
+public:
     /**
      * Flush builder and return a final Git hash.
      */
@@ -32,8 +36,14 @@ struct GitRepo
 {
     virtual ~GitRepo() {}
 
-    static ref<GitRepo>
-    openRepo(const std::filesystem::path & path, bool create = false, bool bare = false, bool packfilesOnly = false);
+    struct Options
+    {
+        bool create = false;
+        bool bare = false;
+        bool packfilesOnly = false;
+    };
+
+    static ref<GitRepo> openRepo(const std::filesystem::path & path, Options options);
 
     virtual uint64_t getRevCount(const Hash & rev) = 0;
 
@@ -82,6 +92,9 @@ struct GitRepo
 
     static WorkdirInfo getCachedWorkdirInfo(const std::filesystem::path & path);
 
+    /* Drop all entries from the getCachedWorkdirInfo() cache. */
+    static void invalidateWorkdirInfoCache();
+
     /* Get the ref that HEAD points to. */
     virtual std::optional<std::string> getWorkdirRef() = 0;
 
@@ -125,17 +138,6 @@ struct GitRepo
      * Otherwise, return the passed ID unchanged.
      */
     virtual Hash dereferenceSingletonDirectory(const Hash & oid) = 0;
-};
-
-// A helper to ensure that the `git_*_free` functions get called.
-template<auto del>
-struct Deleter
-{
-    template<typename T>
-    void operator()(T * p) const
-    {
-        del(p);
-    };
 };
 
 // A helper to ensure that we don't leak objects returned by libgit2.

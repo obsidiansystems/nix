@@ -3,14 +3,29 @@
 #include "nix/fetchers/fetch-settings.hh"
 #include "nix/util/environment-variables.hh"
 
+#include <boost/unordered/concurrent_flat_map.hpp>
+
 namespace nix {
 
-fetchers::Cache::Key makeFetchToStoreCacheKey(
-    const std::string & name, const std::string & fingerprint, ContentAddressMethod method, const std::string & path)
+struct SrcToStore
+{
+    boost::concurrent_flat_map<
+        std::tuple<SourcePath, ContentAddressMethod::Raw, std::string>,
+        std::tuple<StorePath, Hash, FetchMode>>
+        cache;
+};
+
+ref<SrcToStore> fetchers::Settings::createSrcToStore()
+{
+    return make_ref<SrcToStore>();
+}
+
+fetchers::Cache::Key
+makeSourcePathToHashCacheKey(std::string_view fingerprint, ContentAddressMethod method, const CanonPath & path)
 {
     return fetchers::Cache::Key{
-        "fetchToStore",
-        {{"name", name}, {"fingerprint", fingerprint}, {"method", std::string{method.render()}}, {"path", path}}};
+        "sourcePathToHash",
+        {{"fingerprint", std::string(fingerprint)}, {"method", std::string{method.render()}}, {"path", path.abs()}}};
 }
 
 StorePath fetchToStore(
@@ -23,8 +38,26 @@ StorePath fetchToStore(
     PathFilter * filter,
     RepairFlag repair)
 {
-    // FIXME: add an optimisation for the case where the accessor is
-    // a `PosixSourceAccessor` pointing to a store path.
+    return fetchToStore2(settings, store, path, mode, name, method, filter, repair).first;
+}
+
+std::pair<StorePath, Hash> fetchToStore2(
+    const fetchers::Settings & settings,
+    Store & store,
+    const SourcePath & path,
+    FetchMode mode,
+    std::string_view name,
+    ContentAddressMethod method,
+    PathFilter * filter,
+    RepairFlag repair)
+{
+    auto srcToStoreKey = std::make_tuple(path, method.raw, std::string(name));
+
+    if (!filter) {
+        auto dstPathCached = getConcurrent(settings.srcToStore->cache, srcToStoreKey);
+        if (dstPathCached && (mode == FetchMode::DryRun || std::get<2>(*dstPathCached) == FetchMode::Copy))
+            return std::make_pair(std::get<0>(*dstPathCached), std::get<1>(*dstPathCached));
+    }
 
     std::optional<fetchers::Cache::Key> cacheKey;
 
@@ -32,16 +65,31 @@ StorePath fetchToStore(
                                          : path.accessor->getFingerprint(path.path);
 
     if (fingerprint) {
-        cacheKey = makeFetchToStoreCacheKey(std::string{name}, *fingerprint, method, subpath.abs());
-        if (auto res = settings.getCache()->lookupStorePath(*cacheKey, store)) {
-            debug("store path cache hit for '%s'", path);
-            return res->storePath;
+        cacheKey = makeSourcePathToHashCacheKey(*fingerprint, method, subpath);
+        if (auto res = settings.getCache()->lookup(*cacheKey)) {
+            auto hash = Hash::parseSRI(fetchers::getStrAttr(*res, "hash"));
+            auto storePath =
+                store.makeFixedOutputPathFromCA(name, ContentAddressWithReferences::fromParts(method, hash, {}));
+
+            /* Add a temproot before the call to isValidPath to prevent accidental GC in case the
+               input is cached. Note that this must be done before to avoid races. */
+            if (mode != FetchMode::DryRun)
+                store.addTempRoot(storePath);
+
+            if (mode == FetchMode::DryRun || store.isValidPath(storePath)) {
+                debug(
+                    "source path '%s' cache hit in '%s' (hash '%s')",
+                    path,
+                    store.printStorePath(storePath),
+                    hash.to_string(HashFormat::SRI, true));
+                return {storePath, hash};
+            }
+            debug("source path '%s' not in store", path);
         }
     } else {
         static auto barf = getEnv("_NIX_TEST_BARF_ON_UNCACHEABLE").value_or("") == "1";
         if (barf && !filter)
             throw Error("source path '%s' is uncacheable (filter=%d)", path, (bool) filter);
-        // FIXME: could still provide in-memory caching keyed on `SourcePath`.
         debug("source path '%s' is uncacheable", path);
     }
 
@@ -53,16 +101,46 @@ StorePath fetchToStore(
 
     auto filter2 = filter ? *filter : defaultPathFilter;
 
-    auto storePath = mode == FetchMode::DryRun
-                         ? store.computeStorePath(name, path, method, HashAlgorithm::SHA256, {}, filter2).first
-                         : store.addToStore(name, path, method, HashAlgorithm::SHA256, {}, filter2, repair);
+    auto [storePath, hash] =
+        mode == FetchMode::DryRun
+            ? [&]() {
+                  // FIXME: we may have already computed this above.
+                  auto [storePath, hash] =
+                      store.computeStorePath(name, path, method, HashAlgorithm::SHA256, {}, filter2);
+                  debug(
+                      "hashed '%s' to '%s' (hash '%s')",
+                      path,
+                      store.printStorePath(storePath),
+                      hash.to_string(HashFormat::SRI, true));
+                  return std::make_pair(storePath, hash);
+              }()
+            : [&]() {
+                  // FIXME: ideally addToStore() would return the hash
+                  // right away (like computeStorePath()).
+                  auto storePath = store.addToStore(name, path, method, HashAlgorithm::SHA256, {}, filter2, repair);
+                  auto info = store.queryPathInfo(storePath);
+                  assert(info->references.empty());
+                  auto hash = method == ContentAddressMethod::Raw::NixArchive ? info->narHash : ({
+                      if (!info->ca || info->ca->method != method)
+                          throw Error("path '%s' lacks a CA field", store.printStorePath(storePath));
+                      info->ca->hash;
+                  });
+                  printMsg(
+                      lvlChatty,
+                      "copied source '%s' -> '%s' (hash '%s')",
+                      path,
+                      store.printStorePath(storePath),
+                      hash.to_string(HashFormat::SRI, true));
+                  return std::make_pair(storePath, hash);
+              }();
 
-    debug(mode == FetchMode::DryRun ? "hashed '%s'" : "copied '%s' to '%s'", path, store.printStorePath(storePath));
+    if (cacheKey)
+        settings.getCache()->upsert(*cacheKey, {{"hash", hash.to_string(HashFormat::SRI, true)}});
 
-    if (cacheKey && mode == FetchMode::Copy)
-        settings.getCache()->upsert(*cacheKey, store, {}, storePath);
+    if (!filter)
+        settings.srcToStore->cache.insert_or_assign(srcToStoreKey, std::make_tuple(storePath, hash, mode));
 
-    return storePath;
+    return {storePath, hash};
 }
 
 } // namespace nix

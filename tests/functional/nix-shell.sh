@@ -2,8 +2,6 @@
 
 source common.sh
 
-clearStoreIfPossible
-
 if [[ -n ${NIX_TESTS_CA_BY_DEFAULT:-} ]]; then
     shellDotNix="$PWD/ca-shell.nix"
 else
@@ -35,12 +33,12 @@ output=$(nix-shell --pure --keep SELECTED_IMPURE_VAR "$shellDotNix" -A shellDrv 
 [ "$output" = " - foo - bar - baz" ]
 
 # test NIX_BUILD_TOP
-testTmpDir=$(pwd)/nix-shell
+testTmpDir=$TEST_ROOT/tmp-dir
 mkdir -p "$testTmpDir"
 # shellcheck disable=SC2016
 output=$(TMPDIR="$testTmpDir" nix-shell --pure "$shellDotNix" -A shellDrv --run 'echo $NIX_BUILD_TOP')
-[[ "$output" =~ ${testTmpDir}.* ]] || {
-    echo "expected $output =~ ${testTmpDir}.*" >&2
+[[ "$output" == "${testTmpDir}"/* ]] || {
+    echo "expected $output == ${testTmpDir}/*" >&2
     exit 1
 }
 
@@ -88,7 +86,7 @@ sed -e "s|@ENV_PROG@|$(type -P env)|" shell.shebang.expr > "$TEST_ROOT"/shell.sh
 chmod a+rx "$TEST_ROOT"/shell.shebang.expr
 # Should fail due to expressions using relative path
  "$TEST_ROOT"/shell.shebang.expr bar && exit 1
-cp shell.nix "${config_nix}" "$TEST_ROOT"
+cp shell.nix "$TEST_ROOT"
 # Should succeed
 echo "cwd: $PWD"
 output=$("$TEST_ROOT"/shell.shebang.expr bar)
@@ -245,8 +243,6 @@ diff "$TEST_ROOT"/dev-env{,2}.json
 # Run tests involving `source <(nix print-dev-env)` in subshells to avoid modifying the current
 # environment.
 
-set -u
-
 # Ensure `source <(nix print-dev-env)` modifies the environment.
 (
     path=$PATH
@@ -280,9 +276,6 @@ assert (!(args ? inNixShell));
 EOF
 nix-shell "$TEST_ROOT"/shell-ellipsis.nix --run "true"
 
-# FIXME unclear why this (newly made) test is failing in this case.
-if ! isTestOnNixOS; then
-  # `nix develop` should also work with fixed-output derivations
-  # shellcheck disable=SC2016
-  nix develop -f "$shellDotNix" fixed -c bash -c '[[ -n $stdenv ]]'
-fi
+# `nix develop` should also work with fixed-output derivations
+# shellcheck disable=SC2016
+nix develop -f "$shellDotNix" fixed -c bash -c '[[ $FOO == "was a fixed-output derivation" ]]'

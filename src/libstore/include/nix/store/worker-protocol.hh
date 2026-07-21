@@ -1,9 +1,12 @@
 #pragma once
 ///@file
 
+#include <algorithm>
 #include <chrono>
+#include <compare>
 
 #include "nix/store/common-protocol.hh"
+#include "nix/store/gc-store.hh"
 
 namespace nix {
 
@@ -12,11 +15,10 @@ namespace nix {
 
 /* Note: you generally shouldn't change the protocol version. Define a
    new `WorkerProto::Feature` instead. */
-#define PROTOCOL_VERSION (1 << 8 | 38)
+#define PROTOCOL_VERSION (1 << 8 | 39)
 #define MINIMUM_PROTOCOL_VERSION (1 << 8 | 18)
 #define GET_PROTOCOL_MAJOR(x) ((x) & 0xff00)
 #define GET_PROTOCOL_MINOR(x) ((x) & 0x00ff)
-
 #define STDERR_NEXT 0x6f6c6d67
 #define STDERR_READ 0x64617461  // data needed from source
 #define STDERR_WRITE 0x64617416 // data for sink
@@ -35,8 +37,12 @@ struct BuildResult;
 struct KeyedBuildResult;
 struct ValidPathInfo;
 struct UnkeyedValidPathInfo;
+struct DrvOutput;
+struct UnkeyedRealisation;
+struct Realisation;
 enum BuildMode : uint8_t;
 enum TrustedFlag : bool;
+enum class GCAction;
 
 /**
  * The "worker protocol", used by unix:// and ssh-ng:// stores.
@@ -54,9 +60,85 @@ struct WorkerProto
     /**
      * Version type for the protocol.
      *
-     * @todo Convert to struct with separate major vs minor fields.
+     * This bundles the protocol version number with the negotiated
+     * feature set. The version number has a total ordering, but the
+     * full `Version` (number + features) only has a partial ordering,
+     * so there is no `operator<=>` on `Version` itself --- callers
+     * must compare `.number` explicitly.
      */
-    using Version = unsigned int;
+    struct Version
+    {
+        struct Number
+        {
+            unsigned int major;
+            uint8_t minor;
+
+            constexpr auto operator<=>(const Number &) const = default;
+
+            /**
+             * Convert to wire format for protocol compatibility.
+             * Format: (major << 8) | minor
+             */
+            constexpr unsigned int toWire() const
+            {
+                return (major << 8) | minor;
+            }
+
+            /**
+             * Convert from wire format.
+             */
+            static constexpr Number fromWire(unsigned int wire)
+            {
+                return {
+                    .major = (wire & 0xff00) >> 8,
+                    .minor = static_cast<uint8_t>(wire & 0x00ff),
+                };
+            };
+        } number;
+
+        using Feature = std::string;
+        using FeatureSet = std::set<Feature, std::less<>>;
+
+        FeatureSet features = {};
+
+        bool operator==(const Version &) const = default;
+
+        /**
+         * Partial ordering: v1 <= v2 iff v1.number <= v2.number AND
+         * v1.features is a subset of v2.features. Two versions with
+         * incomparable feature sets are unordered.
+         */
+        std::partial_ordering operator<=>(const Version & other) const;
+    };
+
+    /**
+     * @note you generally shouldn't change the protocol version number. Define a new
+     * `WorkerProto::Version::Feature` instead.
+     */
+    static const Version latest;
+
+    static const Version minimum;
+
+    /**
+     * Feature for transmitting `UnkeyedRealisation` and `DrvOutput`
+     * using drvPath (store path) instead of the old hash-based JSON format.
+     */
+    static constexpr std::string_view featureRealisationWithPath = "realisation-with-path-not-hash";
+
+    /**
+     * Feature for garbage collecting a specific set of paths and deleting referrers.
+     */
+    static constexpr std::string_view featureDeleteDeadSpecificReferrers = "delete-dead-specific-referrers";
+
+    /**
+     * Feature for disabling SetOptions, which is a no-op in recursive-nix
+     */
+    static constexpr std::string_view featureDisableSetOptions = "disable-set-options";
+
+    /**
+     * Feature for enabling the `AddToStoreScanning` operation
+     */
+    static constexpr std::string_view featureAddToStoreScanning = "add-to-store-scanning";
 
     /**
      * A unidirectional read connection, to be used by the read half of the
@@ -65,7 +147,7 @@ struct WorkerProto
     struct ReadConn
     {
         Source & from;
-        Version version;
+        const Version & version;
     };
 
     /**
@@ -75,7 +157,7 @@ struct WorkerProto
     struct WriteConn
     {
         Sink & to;
-        Version version;
+        const Version & version;
     };
 
     /**
@@ -132,18 +214,13 @@ struct WorkerProto
     {
         WorkerProto::Serialise<T>::write(store, conn, t);
     }
-
-    using Feature = std::string;
-    using FeatureSet = std::set<Feature, std::less<>>;
-
-    static const FeatureSet allFeatures;
 };
 
 enum struct WorkerProto::Op : uint64_t {
     IsValidPath = 1,
-    HasSubstitutes = 3,
-    QueryPathHash = 4,   // obsolete
-    QueryReferences = 5, // obsolete
+    // HasSubstitutes = 3, // removed
+    // QueryPathHash = 4, // removed
+    // QueryReferences = 5, // removed
     QueryReferrers = 6,
     AddToStore = 7,
     AddTextToStore = 8, // obsolete since 1.25, Nix 3.0. Use WorkerProto::Op::AddToStore
@@ -160,8 +237,8 @@ enum struct WorkerProto::Op : uint64_t {
     QuerySubstitutablePathInfo = 21,
     QueryDerivationOutputs = 22, // obsolete
     QueryAllValidPaths = 23,
-    QueryFailedPaths = 24,
-    ClearFailedPaths = 25,
+    // QueryFailedPaths = 24, // removed
+    // ClearFailedPaths = 25, // removed
     QueryPathInfo = 26,
     // ImportPaths = 27, // removed
     QueryDerivationOutputNames = 28, // obsolete
@@ -184,6 +261,10 @@ enum struct WorkerProto::Op : uint64_t {
     AddBuildLog = 45,
     BuildPathsWithResults = 46,
     AddPermRoot = 47,
+    // QueryActiveBuilds = 48, // reserved for https://github.com/NixOS/nix/pull/15979
+    // AddTempRoots = 49, // reserved for https://github.com/NixOS/nix/pull/16113
+    // QueryPathInfos = 50, // reserved for https://github.com/DeterminateSystems/nix-src/pull/539
+    AddToStoreScanning = 1001,
 };
 
 struct WorkerProto::ClientHandshakeInfo
@@ -261,13 +342,29 @@ DECLARE_WORKER_SERIALISER(ValidPathInfo);
 template<>
 DECLARE_WORKER_SERIALISER(UnkeyedValidPathInfo);
 template<>
+DECLARE_WORKER_SERIALISER(DrvOutput);
+template<>
+DECLARE_WORKER_SERIALISER(UnkeyedRealisation);
+template<>
+DECLARE_WORKER_SERIALISER(Realisation);
+template<>
+DECLARE_WORKER_SERIALISER(std::optional<UnkeyedRealisation>);
+template<>
 DECLARE_WORKER_SERIALISER(BuildMode);
+template<>
+DECLARE_WORKER_SERIALISER(GCAction);
 template<>
 DECLARE_WORKER_SERIALISER(std::optional<TrustedFlag>);
 template<>
 DECLARE_WORKER_SERIALISER(std::optional<std::chrono::microseconds>);
 template<>
 DECLARE_WORKER_SERIALISER(WorkerProto::ClientHandshakeInfo);
+
+template<>
+DECLARE_WORKER_SERIALISER(GCOptions::SpecificPaths);
+
+template<>
+DECLARE_WORKER_SERIALISER(GCOptions::GCPaths);
 
 template<typename T>
 DECLARE_WORKER_SERIALISER(std::vector<T>);
@@ -277,8 +374,8 @@ DECLARE_WORKER_SERIALISER(std::set<T COMMA_ Compare>);
 template<typename... Ts>
 DECLARE_WORKER_SERIALISER(std::tuple<Ts...>);
 
-template<typename K, typename V>
-DECLARE_WORKER_SERIALISER(std::map<K COMMA_ V>);
+template<typename K, typename V, typename Compare>
+DECLARE_WORKER_SERIALISER(std::map<K COMMA_ V COMMA_ Compare>);
 #undef COMMA_
 
 } // namespace nix

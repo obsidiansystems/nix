@@ -2,12 +2,7 @@
 
 source common.sh
 
-clearStoreIfPossible
-
-rm -rf "$TEST_HOME"
-
 tarroot=$TEST_ROOT/tarball
-rm -rf "$tarroot"
 mkdir -p "$tarroot"
 cp dependencies.nix "$tarroot/default.nix"
 cp "${config_nix}" dependencies.builder*.sh "$tarroot/"
@@ -28,18 +23,18 @@ test_tarball() {
 
     nix-build -o "$TEST_ROOT"/result '<foo>' -I foo=file://"$tarball"
 
-    nix-build -o "$TEST_ROOT"/result -E "import (fetchTarball file://$tarball)"
+    nix-build -o "$TEST_ROOT"/result -E "import (fetchTarball \"file://$tarball\")"
     # Do not re-fetch paths already present
-    nix-build  -o "$TEST_ROOT"/result -E "import (fetchTarball { url = file:///does-not-exist/must-remain-unused/$tarball; sha256 = \"$hash\"; })"
+    nix-build  -o "$TEST_ROOT"/result -E "import (fetchTarball { url = \"file:///does-not-exist/must-remain-unused/$tarball\"; sha256 = \"$hash\"; })"
 
-    nix-build  -o "$TEST_ROOT"/result -E "import (fetchTree file://$tarball)"
-    nix-build  -o "$TEST_ROOT"/result -E "import (fetchTree { type = \"tarball\"; url = file://$tarball; })"
-    nix-build  -o "$TEST_ROOT"/result -E "import (fetchTree { type = \"tarball\"; url = file://$tarball; narHash = \"$hash\"; })"
+    nix-build  -o "$TEST_ROOT"/result -E "import (fetchTree \"file://$tarball\")"
+    nix-build  -o "$TEST_ROOT"/result -E "import (fetchTree { type = \"tarball\"; url = \"file://$tarball\"; })"
+    nix-build  -o "$TEST_ROOT"/result -E "import (fetchTree { type = \"tarball\"; url = \"file://$tarball\"; narHash = \"$hash\"; })"
 
-    [[ $(nix eval --impure --expr "(fetchTree file://$tarball).lastModified") = 1000000000 ]]
+    [[ $(nix eval --impure --expr "(fetchTree \"file://$tarball\").lastModified") = 1000000000 ]]
 
-    nix-instantiate --strict --eval -E "!((import (fetchTree { type = \"tarball\"; url = file://$tarball; narHash = \"$hash\"; })) ? submodules)" >&2
-    nix-instantiate --strict --eval -E "!((import (fetchTree { type = \"tarball\"; url = file://$tarball; narHash = \"$hash\"; })) ? submodules)" 2>&1 | grep 'true'
+    nix-instantiate --strict --eval -E "!((import (fetchTree { type = \"tarball\"; url = \"file://$tarball\"; narHash = \"$hash\"; })) ? submodules)" >&2
+    nix-instantiate --strict --eval -E "!((import (fetchTree { type = \"tarball\"; url = \"file://$tarball\"; narHash = \"$hash\"; })) ? submodules)" 2>&1 | grep 'true'
 
     nix-instantiate --eval -E '1 + 2' -I fnord=file:///no-such-tarball.tar"$ext"
     nix-instantiate --eval -E 'with <fnord/xyzzy>; 1 + 2' -I fnord=file:///no-such-tarball"$ext"
@@ -49,7 +44,7 @@ test_tarball() {
 
     # Ensure that the `name` attribute isn’t accepted as that would mess
     # with the content-addressing
-    (! nix-instantiate --eval -E "fetchTree { type = \"tarball\"; url = file://$tarball; narHash = \"$hash\"; name = \"foo\"; }")
+    (! nix-instantiate --eval -E "fetchTree { type = \"tarball\"; url = \"file://$tarball\"; narHash = \"$hash\"; name = \"foo\"; }")
 
     store_path=$(nix store prefetch-file --json "file://$tarball" | jq -r .storePath)
     if ! cmp -s "$store_path" "$tarball"; then
@@ -83,7 +78,6 @@ json=$(nix flake prefetch --json "tarball+file://$(pwd)/tree.tar.gz" --out-link 
 [[ $(cat "$TEST_ROOT/result/fnord") = bar ]]
 
 # Test a tarball that has multiple top-level directories.
-rm -rf "$TEST_ROOT/tar_root"
 mkdir -p "$TEST_ROOT/tar_root" "$TEST_ROOT/tar_root/foo" "$TEST_ROOT/tar_root/bar"
 tar cvf "$TEST_ROOT/tar.tar" -C "$TEST_ROOT/tar_root" .
 path="$(nix flake prefetch --json "tarball+file://$TEST_ROOT/tar.tar" | jq -r .storePath)"
@@ -112,3 +106,21 @@ path="$(nix flake prefetch --refresh --json "tarball+file://$TEST_ROOT/tar.tar" 
 [[ $(cat "$path/a/b/xyzzy") = xyzzy ]]
 [[ $(cat "$path/a/b/foo") = foo ]]
 [[ $(cat "$path/bla") = abc ]]
+
+# Test that unpacking an empty file does not segfault (see https://github.com/NixOS/nix/issues/15116).
+touch "$TEST_ROOT/empty"
+expectStderr 1 nix store prefetch-file --unpack "file://$TEST_ROOT/empty" | grepQuiet "archive.*is empty"
+
+# Test that concurrent invocations of Nix will fetch the tarball only once.
+rm -rf "$TEST_HOME/.cache"
+store="$TEST_ROOT/prefetch-store"
+nix-store --store "$store" --init # needed because concurrent creation of the store can give SQLite errors
+_NIX_TEST_CONCURRENT_FETCHES=1 _NIX_FORCE_HTTP=1 nix flake prefetch --store "$store" -v "tarball+file://$TEST_ROOT/tar.tar" 2> "$TEST_ROOT/log1" &
+pid1="$!"
+_NIX_TEST_CONCURRENT_FETCHES=1 _NIX_FORCE_HTTP=1 nix flake prefetch --store "$store" -v "tarball+file://$TEST_ROOT/tar.tar" 2> "$TEST_ROOT/log2" &
+pid2="$!"
+wait "$pid1"
+wait "$pid2"
+[[ $(cat "$TEST_ROOT/log1" "$TEST_ROOT/log2" | grep -c "Download.*to") -eq 2 ]]
+[[ $(cat "$TEST_ROOT/log1" "$TEST_ROOT/log2" | grep -c "downloading.*tar.tar") -eq 1 ]]
+[[ $(cat "$TEST_ROOT/log1" "$TEST_ROOT/log2" | grep -c "waiting for another Nix process to finish fetching input") -eq 1 ]]

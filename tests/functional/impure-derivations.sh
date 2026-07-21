@@ -9,14 +9,12 @@ TODO_NixOS
 enableFeatures "ca-derivations impure-derivations"
 restartDaemon
 
-clearStoreIfPossible
-
 # Basic test of impure derivations: building one a second time should not use the previous result.
 printf 0 > "$TEST_ROOT"/counter
 
 # `nix derivation add` with impure derivations work
 drvPath=$(nix-instantiate ./impure-derivations.nix -A impure)
-nix derivation show "$drvPath" | jq .[] > "$TEST_HOME"/impure-drv.json
+nix derivation show "$drvPath" | jq '.derivations[]' > "$TEST_HOME"/impure-drv.json
 drvPath2=$(nix derivation add < "$TEST_HOME"/impure-drv.json)
 [[ "$drvPath" = "$drvPath2" ]]
 
@@ -30,7 +28,7 @@ path1_stuff=$(echo "$json" | jq -r .[].outputs.stuff)
 [[ $(< "$path1"/n) = 0 ]]
 [[ $(< "$path1_stuff"/bla) = 0 ]]
 
-nix path-info --json --json-format 2 "$path1" | jq -e '.info.[].ca | .method == "nar" and .hash.algorithm == "sha256"'
+nix path-info --json --json-format 2 "$path1" | jq -e '.info.[].ca | .method == "nar" and (.hash | startswith("sha256-"))'
 
 path2=$(nix build -L --no-link --json --file ./impure-derivations.nix impure | jq -r .[].outputs.out)
 [[ $(< "$path2"/n) = 1 ]]
@@ -50,8 +48,8 @@ path4=$(nix build -L --no-link --json --file ./impure-derivations.nix impureOnIm
 (! nix build -L --no-link --json --file ./impure-derivations.nix inputAddressed 2>&1) | grep 'depends on impure derivation'
 
 drvPath=$(nix eval --json --file ./impure-derivations.nix impure.drvPath | jq -r .)
-[[ $(nix derivation show "$drvPath" | jq ".[\"$(basename "$drvPath")\"].outputs.out.impure") = true ]]
-[[ $(nix derivation show "$drvPath" | jq ".[\"$(basename "$drvPath")\"].outputs.stuff.impure") = true ]]
+[[ $(nix derivation show "$drvPath" | jq ".derivations[\"$(basename "$drvPath")\"].outputs.out.impure") = true ]]
+[[ $(nix derivation show "$drvPath" | jq ".derivations[\"$(basename "$drvPath")\"].outputs.stuff.impure") = true ]]
 
 # Fixed-output derivations *can* depend on impure derivations.
 path5=$(nix build -L --no-link --json --file ./impure-derivations.nix contentAddressed | jq -r .[].outputs.out)
@@ -69,5 +67,5 @@ path6=$(nix build -L --no-link --json --file ./impure-derivations.nix inputAddre
 [[ $(< "$TEST_ROOT"/counter) = 5 ]]
 
 # Test nix/fetchurl.nix.
-path7=$(nix build -L --no-link --print-out-paths --expr "import <nix/fetchurl.nix> { impure = true; url = file://$PWD/impure-derivations.sh; }")
+path7=$(nix build -L --no-link --print-out-paths --expr "import <nix/fetchurl.nix> { impure = true; url = \"file://$PWD/impure-derivations.sh\"; }")
 cmp "$path7" "$PWD"/impure-derivations.sh

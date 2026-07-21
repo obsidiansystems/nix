@@ -9,7 +9,6 @@ subflake0="$rootFlake/sub0"
 subflake1="$rootFlake/sub1"
 subflake2="$rootFlake/sub2"
 
-rm -rf "$rootFlake"
 mkdir -p "$rootFlake" "$subflake0" "$subflake1" "$subflake2"
 
 cat > "$rootFlake/flake.nix" <<EOF
@@ -65,7 +64,7 @@ git -C "$rootFlake" add flake.nix sub2/flake.nix
 
 [[ $(nix eval "$subflake2#y") = 15 ]]
 
-# Make sure that this still works after commiting the lock file.
+# Make sure that this still works after committing the lock file.
 git -C "$rootFlake" add sub2/flake.lock
 [[ $(nix eval "$subflake2#y") = 15 ]]
 
@@ -135,10 +134,8 @@ EOF
 # https://github.com/NixOS/nix/issues/13164
 mkdir -p "$TEST_ROOT/issue-13164/nested-flake1/nested-flake2"
 (
+  initGitRepo "$TEST_ROOT/issue-13164"
   cd "$TEST_ROOT/issue-13164"
-  git init
-  git config --global user.email "you@example.com"
-  git config --global user.name "Your Name"
   cat >flake.nix <<EOF
 {
   inputs.nestedFlake1.url = "path:./nested-flake1";

@@ -6,12 +6,11 @@
 #include "nix/util/hash.hh"
 
 namespace rc {
-using namespace nix;
 
 template<>
-struct Arbitrary<Hash>
+struct Arbitrary<nix::Hash>
 {
-    static Gen<Hash> arbitrary();
+    static Gen<nix::Hash> arbitrary();
 };
 
 } // namespace rc

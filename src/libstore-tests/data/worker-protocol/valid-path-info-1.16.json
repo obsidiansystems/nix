@@ -2,27 +2,20 @@
   {
     "ca": null,
     "deriver": null,
-    "narHash": {
-      "algorithm": "sha256",
-      "format": "base16",
-      "hash": "15e3c560894cbb27085cf65b5a2ecb18488c999497f4531b6907a7581ce6d527"
-    },
+    "narHash": "sha256-FePFYIlMuycIXPZbWi7LGEiMmZSX9FMbaQenWBzm1Sc=",
     "narSize": 34878,
     "path": "g1w7hy3qg1w7hy3qg1w7hy3qg1w7hy3q-bar",
     "references": [],
     "registrationTime": 23423,
     "signatures": [],
+    "storeDir": "/nix/store",
     "ultimate": true,
-    "version": 2
+    "version": 3
   },
   {
     "ca": null,
     "deriver": "g1w7hy3qg1w7hy3qg1w7hy3qg1w7hy3q-bar.drv",
-    "narHash": {
-      "algorithm": "sha256",
-      "format": "base16",
-      "hash": "15e3c560894cbb27085cf65b5a2ecb18488c999497f4531b6907a7581ce6d527"
-    },
+    "narHash": "sha256-FePFYIlMuycIXPZbWi7LGEiMmZSX9FMbaQenWBzm1Sc=",
     "narSize": 34878,
     "path": "g1w7hy3qg1w7hy3qg1w7hy3qg1w7hy3q-bar",
     "references": [
@@ -31,27 +24,26 @@
     ],
     "registrationTime": 23423,
     "signatures": [
-      "fake-sig-1",
-      "fake-sig-2"
+      {
+        "keyName": "fake-sig-1",
+        "sig": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      },
+      {
+        "keyName": "fake-sig-2",
+        "sig": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      }
     ],
+    "storeDir": "/nix/store",
     "ultimate": false,
-    "version": 2
+    "version": 3
   },
   {
     "ca": {
-      "hash": {
-        "algorithm": "sha256",
-        "format": "base16",
-        "hash": "10c209fa0890fe02c85a8c663ca8e7a37cc766bc5b1b29a0cc61b266f64121d3"
-      },
+      "hash": "sha256-EMIJ+giQ/gLIWoxmPKjno3zHZrxbGymgzGGyZvZBIdM=",
       "method": "nar"
     },
     "deriver": null,
-    "narHash": {
-      "algorithm": "sha256",
-      "format": "base16",
-      "hash": "15e3c560894cbb27085cf65b5a2ecb18488c999497f4531b6907a7581ce6d527"
-    },
+    "narHash": "sha256-FePFYIlMuycIXPZbWi7LGEiMmZSX9FMbaQenWBzm1Sc=",
     "narSize": 34878,
     "path": "n5wkd9frr45pa74if5gpz9j7mifg27fh-foo",
     "references": [
@@ -60,7 +52,8 @@
     ],
     "registrationTime": 23423,
     "signatures": [],
+    "storeDir": "/nix/store",
     "ultimate": false,
-    "version": 2
+    "version": 3
   }
 ]

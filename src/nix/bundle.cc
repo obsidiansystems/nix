@@ -1,27 +1,24 @@
 #include "nix/cmd/installable-flake.hh"
 #include "nix/cmd/command-installable-value.hh"
-#include "nix/main/common-args.hh"
 #include "nix/main/shared.hh"
 #include "nix/store/store-api.hh"
+#include "nix/store/build.hh"
 #include "nix/store/local-fs-store.hh"
 #include "nix/expr/eval-inline.hh"
 #include "nix/store/globals.hh"
 
-namespace nix::fs {
-using namespace std::filesystem;
-}
-
-using namespace nix;
+namespace nix {
 
 struct CmdBundle : InstallableValueCommand
 {
     std::string bundler = "github:NixOS/bundlers";
-    std::optional<Path> outLink;
+    std::optional<std::filesystem::path> outLink;
 
     CmdBundle()
     {
         addFlag({
             .longName = "bundler",
+            .shortName = 'B',
             .description = fmt("Use a custom bundler instead of the default (`%s`).", bundler),
             .labels = {"flake-url"},
             .handler = {&bundler},
@@ -115,7 +112,7 @@ struct CmdBundle : InstallableValueCommand
 
         auto outPath = evalState->coerceToStorePath(attr2->pos, *attr2->value, context2, "");
 
-        store->buildPaths({
+        store->getBuilder()->buildPaths({
             DerivedPath::Built{
                 .drvPath = makeConstantStorePathRef(drvPath),
                 .outputs = OutputsSpec::All{},
@@ -130,8 +127,10 @@ struct CmdBundle : InstallableValueCommand
         }
 
         // TODO: will crash if not a localFSStore?
-        store.dynamic_pointer_cast<LocalFSStore>()->addPermRoot(outPath, absPath(*outLink));
+        store.dynamic_pointer_cast<LocalFSStore>()->addPermRoot(outPath, absPath(*outLink).string());
     }
 };
 
 static auto r2 = registerCommand<CmdBundle>("bundle");
+
+} // namespace nix

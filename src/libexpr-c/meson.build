@@ -8,7 +8,7 @@ project(
     'warning_level=1',
     'errorlogs=true', # Please print logs for tests that fail
   ],
-  meson_version : '>= 1.1',
+  meson_version : '>= 1.8',
   license : 'LGPL-2.1-or-later',
 )
 
@@ -30,6 +30,7 @@ subdir('nix-meson-build-support/subprojects')
 subdir('nix-meson-build-support/common')
 
 sources = files(
+  'nix_api_eval.cc',
   'nix_api_expr.cc',
   'nix_api_external.cc',
   'nix_api_value.cc',
@@ -47,16 +48,33 @@ headers = files(
 subdir('nix-meson-build-support/export-all-symbols')
 subdir('nix-meson-build-support/windows-version')
 
-this_library = library(
-  'nixexprc',
-  sources,
-  soversion : nix_soversion,
-  dependencies : deps_public + deps_private + deps_other,
-  include_directories : include_dirs,
-  link_args : linker_export_flags,
-  prelink : true, # For C++ static initializers
-  install : true,
-)
+# For linking -c bindings into the cli for plugins.
+build_both_libraries = get_option('plugin-c-api')
+
+library_kwargs = {
+  'soversion' : nix_soversion,
+  'dependencies' : deps_public + deps_private + deps_other,
+  'include_directories' : include_dirs,
+  'link_args' : linker_export_flags,
+  'install' : true,
+}
+
+if build_both_libraries
+  this_libraries = both_libraries(
+    'nixexprc',
+    sources,
+    kwargs : library_kwargs,
+    override_options : [ 'b_lto=false' ],
+  )
+else
+  this_library = library(
+    'nixexprc',
+    sources,
+    kwargs : library_kwargs,
+  )
+endif
+
+plugin_c_api_enabled = build_both_libraries
 
 install_headers(headers, preserve_path : true)
 

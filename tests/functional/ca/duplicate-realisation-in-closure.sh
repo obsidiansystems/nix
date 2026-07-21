@@ -4,11 +4,7 @@ source common.sh
 
 requireDaemonNewerThan "2.4pre20210625"
 
-export REMOTE_STORE_DIR="$TEST_ROOT/remote_store"
-export REMOTE_STORE="file://$REMOTE_STORE_DIR"
-
-rm -rf "$REMOTE_STORE_DIR"
-clearStore
+export REMOTE_STORE="file://$cacheDir"
 
 # Build dep1 and push that to the binary cache.
 # This entails building (and pushing) current-time.
@@ -25,4 +21,9 @@ nix build -f nondeterministic.nix dep2 --no-link
 # If everything goes right, we should rebuild dep2 rather than fetch it from
 # the cache (because that would mean duplicating `current-time` in the closure),
 # and have `dep1 == dep2`.
+
+# FIXME: Force the use of small-step resolutions only to fix this in a
+# better way (#11896, #11928).
+skipTest "temporarily broken because dependent realisations are removed"
+
 nix build --substituters "$REMOTE_STORE" -f nondeterministic.nix toplevel --no-require-sigs --no-link

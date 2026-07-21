@@ -27,7 +27,7 @@ properties:
     type: object
     title: Store Objects
     description: |
-      Map of [store path](@docroot@/store/store-path.md) base names to [store objects](@docroot@/store/store-object.md).
+      Map of [store path](@docroot@/store/store-path.md) base names to [store objects](@docroot@/store/store-object/index.md).
     patternProperties:
       "^[0123456789abcdfghijklmnpqrsvwxyz]{32}-.+$":
         type: object
@@ -37,10 +37,10 @@ properties:
           - contents
         properties:
           info:
-            "$ref": "./store-object-info-v2.yaml#/$defs/impure"
+            "$ref": "./store-object-info-v3.yaml#/$defs/impure"
             title: Store Object Info
             description: |
-              Metadata about the [store object](@docroot@/store/store-object.md) including hash, size, references, etc.
+              Metadata about the [store object](@docroot@/store/store-object/index.md) including hash, size, references, etc.
           contents:
             "$ref": "./file-system-object-v1.yaml"
             title: File System Object Contents
@@ -70,7 +70,7 @@ properties:
       "^[A-Za-z0-9+/]{43}=$":
         type: object
         additionalProperties:
-          "$ref": "./build-trace-entry-v1.yaml#/$defs/value"
+          "$ref": "./build-trace-entry-v3.yaml#/$defs/value"
     additionalProperties: false
 
 "$defs":

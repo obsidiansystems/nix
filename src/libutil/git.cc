@@ -1,7 +1,5 @@
 #include <cerrno>
 #include <algorithm>
-#include <vector>
-#include <map>
 #include <regex>
 #include <strings.h> // for strcasecmp
 
@@ -13,9 +11,6 @@
 #include "nix/util/serialise.hh"
 
 namespace nix::git {
-
-using namespace nix;
-using namespace std::string_literals;
 
 std::optional<Mode> decodeMode(RawMode m)
 {
@@ -68,17 +63,7 @@ void parseBlob(
 
             crf.preallocateContents(size);
 
-            unsigned long long left = size;
-            std::string buf;
-            buf.reserve(65536);
-
-            while (left) {
-                checkInterrupt();
-                buf.resize(std::min((unsigned long long) buf.capacity(), left));
-                source(buf);
-                crf(buf);
-                left -= buf.size();
-            }
+            source.drainInto(crf, size);
         });
     };
 
@@ -115,7 +100,7 @@ void parseTree(
     const CanonPath & sinkPath,
     Source & source,
     HashAlgorithm hashAlgo,
-    std::function<SinkHook> hook,
+    fun<SinkHook> hook,
     const ExperimentalFeatureSettings & xpSettings)
 {
     const unsigned long long size = std::stoi(getStringUntil(source, 0));
@@ -178,7 +163,7 @@ void parse(
     Source & source,
     BlobMode rootModeIfBlob,
     HashAlgorithm hashAlgo,
-    std::function<SinkHook> hook,
+    fun<SinkHook> hook,
     const ExperimentalFeatureSettings & xpSettings)
 {
     xpSettings.require(Xp::GitHashing);
@@ -217,7 +202,7 @@ std::optional<Mode> convertMode(SourceAccessor::Type type)
     }
 }
 
-void restore(FileSystemObjectSink & sink, Source & source, HashAlgorithm hashAlgo, std::function<RestoreHook> hook)
+void restore(FileSystemObjectSink & sink, Source & source, HashAlgorithm hashAlgo, fun<RestoreHook> hook)
 {
     parse(sink, CanonPath::root, source, BlobMode::Regular, hashAlgo, [&](CanonPath name, TreeEntry entry) {
         auto [accessor, from] = hook(entry.hash);
@@ -242,6 +227,7 @@ void restore(FileSystemObjectSink & sink, Source & source, HashAlgorithm hashAlg
 
 void dumpBlobPrefix(uint64_t size, Sink & sink, const ExperimentalFeatureSettings & xpSettings)
 {
+    using namespace std::string_literals;
     xpSettings.require(Xp::GitHashing);
     auto s = fmt("blob %d\0"s, std::to_string(size));
     sink(s);
@@ -249,6 +235,7 @@ void dumpBlobPrefix(uint64_t size, Sink & sink, const ExperimentalFeatureSetting
 
 void dumpTree(const Tree & entries, Sink & sink, const ExperimentalFeatureSettings & xpSettings)
 {
+    using namespace std::string_literals;
     xpSettings.require(Xp::GitHashing);
 
     std::string v1;
@@ -275,7 +262,7 @@ void dumpTree(const Tree & entries, Sink & sink, const ExperimentalFeatureSettin
 Mode dump(
     const SourcePath & path,
     Sink & sink,
-    std::function<DumpHook> hook,
+    fun<DumpHook> hook,
     PathFilter & filter,
     const ExperimentalFeatureSettings & xpSettings)
 {
@@ -325,8 +312,7 @@ Mode dump(
 
 TreeEntry dumpHash(HashAlgorithm ha, const SourcePath & path, PathFilter & filter)
 {
-    std::function<DumpHook> hook;
-    hook = [&](const SourcePath & path) -> TreeEntry {
+    fun<DumpHook> hook = [&](const SourcePath & path) -> TreeEntry {
         auto hashSink = HashSink(ha);
         auto mode = dump(path, hashSink, hook, filter);
         auto hash = hashSink.finish().hash;

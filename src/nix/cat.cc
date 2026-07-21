@@ -1,12 +1,12 @@
 #include "nix/cmd/command.hh"
 #include "nix/store/store-api.hh"
-#include "nix/util/nar-accessor.hh"
+#include "nix/util/archive.hh"
 #include "nix/util/serialise.hh"
 #include "nix/util/source-accessor.hh"
 
 #include <nlohmann/json.hpp>
 
-using namespace nix;
+namespace nix {
 
 struct MixCat : virtual Args
 {
@@ -17,7 +17,9 @@ struct MixCat : virtual Args
             throw Error("path '%1%' is not a regular file", path.abs());
         logger->stop();
 
-        writeFull(getStandardOutput(), accessor->readFile(path));
+        FdSink output{getStandardOutput()};
+        accessor->readFile(path, output);
+        output.flush();
     }
 };
 
@@ -45,13 +47,13 @@ struct CmdCatStore : StoreCommand, MixCat
     void run(ref<Store> store) override
     {
         auto [storePath, rest] = store->toStorePath(path);
-        cat(store->requireStoreObjectAccessor(storePath), CanonPath{rest});
+        cat(store->requireStoreObjectAccessor(storePath), rest);
     }
 };
 
 struct CmdCatNar : StoreCommand, MixCat
 {
-    Path narPath;
+    std::filesystem::path narPath;
 
     std::string path;
 
@@ -75,15 +77,50 @@ struct CmdCatNar : StoreCommand, MixCat
 
     void run(ref<Store> store) override
     {
-        AutoCloseFD fd = toDescriptor(open(narPath.c_str(), O_RDONLY));
+        auto fd = openFileReadonly(narPath);
         if (!fd)
-            throw SysError("opening NAR file '%s'", narPath);
+            throw NativeSysError("opening NAR file %s", PathFmt(narPath));
         auto source = FdSource{fd.get()};
-        auto narAccessor = makeNarAccessor(source);
-        nlohmann::json listing = listNarDeep(*narAccessor, CanonPath::root);
-        cat(makeLazyNarAccessor(listing, seekableGetNarBytes(narPath)), CanonPath{path});
+
+        struct CatRegularFileSink : NullFileSystemObjectSink
+        {
+            CanonPath neededPath = CanonPath::root;
+            bool found = false;
+
+            void createRegularFile(const CanonPath & path, fun<void(CreateRegularFileSink &)> crf) override
+            {
+                struct : CreateRegularFileSink, FdSink
+                {
+                    void isExecutable() override {}
+
+                    void anchor() override {}
+                } crfSink;
+
+                crfSink.fd = INVALID_DESCRIPTOR;
+
+                if (path == neededPath) {
+                    logger->stop();
+                    crfSink.skipContents = false;
+                    crfSink.fd = getStandardOutput();
+                    found = true;
+                } else {
+                    crfSink.skipContents = true;
+                }
+
+                crf(crfSink);
+            }
+        } sink;
+
+        sink.neededPath = CanonPath(path);
+        /* NOTE: We still parse the whole file to validate that it's a correct NAR. */
+        parseDump(sink, source);
+
+        if (!sink.found)
+            throw Error("NAR does not contain regular file '%1%'", path);
     }
 };
 
 static auto rCmdCatStore = registerCommand2<CmdCatStore>({"store", "cat"});
 static auto rCmdCatNar = registerCommand2<CmdCatNar>({"nar", "cat"});
+
+} // namespace nix

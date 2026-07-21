@@ -1,7 +1,8 @@
 #include "nix/cmd/command.hh"
 #include "nix/store/store-api.hh"
+#include "nix/store/build.hh"
 
-using namespace nix;
+namespace nix {
 
 struct CmdStoreRepair : StorePathsCommand
 {
@@ -20,8 +21,10 @@ struct CmdStoreRepair : StorePathsCommand
     void run(ref<Store> store, StorePaths && storePaths) override
     {
         for (auto & path : storePaths)
-            store->repairPath(path);
+            store->getBuilder()->repairPath(path);
     }
 };
 
 static auto rStoreRepair = registerCommand2<CmdStoreRepair>({"store", "repair"});
+
+} // namespace nix

@@ -9,9 +9,10 @@
   ],
   "registrationTime": 23423,
   "signatures": [
-    "asdf",
-    "qwer"
+    "asdf:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+    "qwer:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
   ],
+  "storeDir": "/nix/store",
   "ultimate": true,
   "version": 1
 }

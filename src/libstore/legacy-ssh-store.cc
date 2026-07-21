@@ -3,6 +3,7 @@
 #include "nix/util/archive.hh"
 #include "nix/util/pool.hh"
 #include "nix/store/remote-store.hh"
+#include "nix/store/common-protocol.hh"
 #include "nix/store/serve-protocol.hh"
 #include "nix/store/serve-protocol-connection.hh"
 #include "nix/store/serve-protocol-impl.hh"
@@ -11,17 +12,68 @@
 #include "nix/store/path-with-outputs.hh"
 #include "nix/store/ssh.hh"
 #include "nix/store/derivations.hh"
+#include "nix/store/build.hh"
 #include "nix/util/callback.hh"
 #include "nix/store/store-registration.hh"
 #include "nix/store/globals.hh"
 
 namespace nix {
 
-LegacySSHStoreConfig::LegacySSHStoreConfig(std::string_view scheme, std::string_view authority, const Params & params)
-    : StoreConfig(params)
-    , CommonSSHStoreConfig(scheme, ParsedURL::Authority::parse(authority), params)
+struct LegacySSHBuilder : Builder
+{
+    ref<LegacySSHStore> store;
+
+    LegacySSHBuilder(ref<LegacySSHStore> store)
+        : store(store)
+    {
+    }
+
+private:
+
+    [[noreturn]] void unsupported(const std::string & op)
+    {
+        throw Unsupported("operation '%s' is not supported by store '%s'", op, store->config->getHumanReadableURI());
+    }
+
+    std::variant<BuildResultSuccessStatus, BuildError>
+    buildPathsRaw(const std::vector<DerivedPath> & reqs, BuildMode buildMode);
+
+public:
+
+    void buildPaths(const std::vector<DerivedPath> & reqs, BuildMode buildMode) override;
+
+    std::vector<KeyedBuildResult>
+    buildPathsWithResults(const std::vector<DerivedPath> & reqs, BuildMode buildMode) override;
+
+    BuildResult buildDerivation(const StorePath & drvPath, const BasicDerivation & drv, BuildMode buildMode) override;
+
+    /**
+     * Note, the returned function must only be called once, or we'll
+     * try to read from the connection twice.
+     *
+     * @todo Use C++23 `std::move_only_function`.
+     */
+    fun<BuildResult()> buildDerivationAsync(
+        const StorePath & drvPath, const BasicDerivation & drv, const ServeProto::BuildOptions & options);
+
+    void ensurePath(const StorePath & path) override
+    {
+        unsupported("ensurePath");
+    }
+
+    void repairPath(const StorePath & path) override
+    {
+        unsupported("repairPath");
+    }
+};
+
+LegacySSHStoreConfig::LegacySSHStoreConfig(const ParsedURL::Authority & authority, const Params & params)
+    : StoreConfig(params, FilePathType::Unix)
+    , CommonSSHStoreConfig(authority, params)
 {
 }
+
+void LegacySSHStoreConfig::anchor() {}
 
 std::string LegacySSHStoreConfig::doc()
 {
@@ -35,6 +87,8 @@ struct LegacySSHStore::Connection : public ServeProto::BasicClientConnection
     std::unique_ptr<SSHMaster::Connection> sshConn;
     bool good = true;
 };
+
+void LegacySSHStore::anchor() {}
 
 LegacySSHStore::LegacySSHStore(ref<const Config> config)
     : Store{*config}
@@ -61,7 +115,7 @@ ref<LegacySSHStore::Connection> LegacySSHStore::openConnection()
         command.push_back("--store");
         command.push_back(config->remoteStore.get());
     }
-    conn->sshConn = master.startCommand(std::move(command), std::list{config->extraSshArgs});
+    conn->sshConn = master.startCommand(toOsStrings(std::move(command)), toOsStrings(std::list{config->extraSshArgs}));
     if (config->connPipeSize) {
         conn->sshConn->trySetBufferSize(*config->connPipeSize);
     }
@@ -72,7 +126,7 @@ ref<LegacySSHStore::Connection> LegacySSHStore::openConnection()
     TeeSource tee(conn->from, saved);
     try {
         conn->remoteVersion =
-            ServeProto::BasicClientConnection::handshake(conn->to, tee, SERVE_PROTOCOL_VERSION, config->authority.host);
+            ServeProto::BasicClientConnection::handshake(conn->to, tee, ServeProto::latest, config->authority.host);
     } catch (SerialisationError & e) {
         // in.close(): Don't let the remote block on us not writing.
         conn->sshConn->in.close();
@@ -153,7 +207,9 @@ void LegacySSHStore::addToStore(const ValidPathInfo & info, Source & source, Rep
              << (info.deriver ? printStorePath(*info.deriver) : "")
              << info.narHash.to_string(HashFormat::Base16, false);
     ServeProto::write(*this, *conn, info.references);
-    conn->to << info.registrationTime << info.narSize << info.ultimate << info.sigs << renderContentAddress(info.ca);
+    conn->to << info.registrationTime << info.narSize << info.ultimate;
+    ServeProto::write(*this, *conn, info.sigs);
+    conn->to << renderContentAddress(info.ca);
     try {
         copyNAR(source, conn->to);
     } catch (...) {
@@ -171,50 +227,48 @@ void LegacySSHStore::narFromPath(const StorePath & path, Sink & sink)
     narFromPath(path, [&](auto & source) { copyNAR(source, sink); });
 }
 
-void LegacySSHStore::narFromPath(const StorePath & path, std::function<void(Source &)> fun)
+void LegacySSHStore::narFromPath(const StorePath & path, fun<void(Source &)> receiveNar)
 {
     auto conn(connections->get());
-    conn->narFromPath(*this, path, fun);
+    conn->narFromPath(*this, path, receiveNar);
 }
 
 static ServeProto::BuildOptions buildSettings()
 {
     return {
-        .maxSilentTime = settings.maxSilentTime,
-        .buildTimeout = settings.buildTimeout,
-        .maxLogSize = settings.maxLogSize,
+        .maxSilentTime = settings.getWorkerSettings().maxSilentTime,
+        .buildTimeout = settings.getWorkerSettings().buildTimeout,
+        .maxLogSize = settings.getWorkerSettings().maxLogSize,
         .nrRepeats = 0, // buildRepeat hasn't worked for ages anyway
         .enforceDeterminism = 0,
         .keepFailed = settings.keepFailed,
     };
 }
 
-BuildResult LegacySSHStore::buildDerivation(const StorePath & drvPath, const BasicDerivation & drv, BuildMode buildMode)
+BuildResult
+LegacySSHBuilder::buildDerivation(const StorePath & drvPath, const BasicDerivation & drv, BuildMode buildMode)
 {
-    auto conn(connections->get());
+    auto conn(store->connections->get());
 
-    conn->putBuildDerivationRequest(*this, drvPath, drv, buildSettings());
+    conn->putBuildDerivationRequest(*store, drvPath, drv, buildSettings());
 
-    return conn->getBuildDerivationResponse(*this);
+    return conn->getBuildDerivationResponse(*store);
 }
 
-std::function<BuildResult()> LegacySSHStore::buildDerivationAsync(
+fun<BuildResult()> LegacySSHBuilder::buildDerivationAsync(
     const StorePath & drvPath, const BasicDerivation & drv, const ServeProto::BuildOptions & options)
 {
     // Until we have C++23 std::move_only_function
-    auto conn = std::make_shared<Pool<Connection>::Handle>(connections->get());
-    (*conn)->putBuildDerivationRequest(*this, drvPath, drv, options);
+    auto conn = std::make_shared<Pool<LegacySSHStore::Connection>::Handle>(store->connections->get());
+    (*conn)->putBuildDerivationRequest(*store, drvPath, drv, options);
 
-    return [this, conn]() -> BuildResult { return (*conn)->getBuildDerivationResponse(*this); };
+    return [store = this->store, conn]() -> BuildResult { return (*conn)->getBuildDerivationResponse(*store); };
 }
 
-void LegacySSHStore::buildPaths(
-    const std::vector<DerivedPath> & drvPaths, BuildMode buildMode, std::shared_ptr<Store> evalStore)
+std::variant<BuildResultSuccessStatus, BuildError>
+LegacySSHBuilder::buildPathsRaw(const std::vector<DerivedPath> & drvPaths, BuildMode buildMode)
 {
-    if (evalStore && evalStore.get() != this)
-        throw Error("building on an SSH store is incompatible with '--eval-store'");
-
-    auto conn(connections->get());
+    auto conn(store->connections->get());
 
     conn->to << ServeProto::Command::BuildPaths;
     Strings ss;
@@ -222,11 +276,11 @@ void LegacySSHStore::buildPaths(
         auto sOrDrvPath = StorePathWithOutputs::tryFromDerivedPath(p);
         std::visit(
             overloaded{
-                [&](const StorePathWithOutputs & s) { ss.push_back(s.to_string(*this)); },
+                [&](const StorePathWithOutputs & s) { ss.push_back(s.to_string(*store)); },
                 [&](const StorePath & drvPath) {
                     throw Error(
                         "wanted to fetch '%s' but the legacy ssh protocol doesn't support merely substituting drv files via the build paths command. It would build them instead. Try using ssh-ng://",
-                        printStorePath(drvPath));
+                        store->printStorePath(drvPath));
                 },
                 [&](std::monostate) {
                     throw Error(
@@ -237,18 +291,108 @@ void LegacySSHStore::buildPaths(
     }
     conn->to << ss;
 
-    ServeProto::write(*this, *conn, buildSettings());
+    ServeProto::write(*store, *conn, buildSettings());
 
     conn->to.flush();
 
-    auto status = readInt(conn->from);
-    if (!BuildResult::Success::statusIs(status)) {
-        BuildResult::Failure failure{
-            .status = (BuildResult::Failure::Status) status,
-        };
-        conn->from >> failure.errorMsg;
-        throw Error(failure.status, std::move(failure.errorMsg));
+    auto status = CommonProto::Serialise<BuildResultStatus>::read(*store, {conn->from});
+    return std::visit(
+        overloaded{
+            [&](BuildResultSuccessStatus s) -> std::variant<BuildResultSuccessStatus, BuildError> { return s; },
+            [&](BuildResultFailureStatus s) -> std::variant<BuildResultSuccessStatus, BuildError> {
+                std::string errorMsg;
+                conn->from >> errorMsg;
+                return BuildError{s, std::move(errorMsg)};
+            },
+        },
+        status);
+}
+
+void LegacySSHBuilder::buildPaths(const std::vector<DerivedPath> & drvPaths, BuildMode buildMode)
+{
+    auto status = buildPathsRaw(drvPaths, buildMode);
+    if (auto * failure = std::get_if<BuildError>(&status))
+        throw *failure;
+}
+
+std::vector<KeyedBuildResult>
+LegacySSHBuilder::buildPathsWithResults(const std::vector<DerivedPath> & reqs, BuildMode buildMode)
+{
+    auto status = buildPathsRaw(reqs, buildMode);
+
+    std::vector<KeyedBuildResult> results;
+
+    // N.B. This logic is inspired by the fallback old protocol code in
+    // `RemoteBuilder::buildPathsWithResults`, which handles a very
+    // similar problem.
+    for (auto & req : reqs) {
+        std::visit(
+            overloaded{
+                [&](const DerivedPath::Opaque & bo) {
+                    results.push_back(
+                        KeyedBuildResult{
+                            {.inner = std::visit(
+                                 overloaded{
+                                     [](const BuildResultSuccessStatus & s) -> decltype(BuildResult::inner) {
+                                         return BuildResult::Success{.status = s};
+                                     },
+                                     [](const BuildError & e) -> decltype(BuildResult::inner) { return e; },
+                                 },
+                                 status)},
+                            /* .path = */ req,
+                        });
+                },
+                [&](const DerivedPath::Built & bfd) {
+                    if (auto * failure = std::get_if<BuildError>(&status)) {
+                        results.push_back(
+                            KeyedBuildResult{
+                                {.inner = *failure},
+                                /* .path = */ req,
+                            });
+                        return;
+                    }
+
+                    BuildResult::Success success{
+                        .status = std::get<BuildResultSuccessStatus>(status),
+                    };
+
+                    auto drvPath = resolveDerivedPath(*store, *bfd.drvPath);
+                    auto built = resolveDerivedPath(*store, bfd);
+                    for (auto & [output, outputPath] : built) {
+                        auto outputId = DrvOutput{drvPath, output};
+                        if (experimentalFeatureSettings.isEnabled(Xp::CaDerivations)) {
+                            auto realisation = store->queryRealisation(outputId);
+                            if (!realisation)
+                                throw MissingRealisation(*store, outputId);
+                            success.builtOutputs.emplace(output, *realisation);
+                        } else {
+                            success.builtOutputs.emplace(
+                                output,
+                                UnkeyedRealisation{
+                                    .outPath = outputPath,
+                                });
+                        }
+                    }
+
+                    results.push_back(
+                        KeyedBuildResult{
+                            {.inner = std::move(success)},
+                            /* .path = */ req,
+                        });
+                },
+            },
+            req.raw());
     }
+
+    return results;
+}
+
+ref<Builder> LegacySSHStore::getBuilder(std::shared_ptr<Store> evalStore)
+{
+    if (evalStore && evalStore.get() != this)
+        throw Error("building on an SSH store is incompatible with '--eval-store'");
+    return make_ref<LegacySSHBuilder>(
+        ref<LegacySSHStore>(std::dynamic_pointer_cast<LegacySSHStore>(shared_from_this())));
 }
 
 void LegacySSHStore::computeFSClosure(
@@ -289,7 +433,7 @@ void LegacySSHStore::connect()
 unsigned int LegacySSHStore::getProtocol()
 {
     auto conn(connections->get());
-    return conn->remoteVersion;
+    return conn->remoteVersion.toWire();
 }
 
 pid_t LegacySSHStore::getConnectionPid()

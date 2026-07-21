@@ -8,7 +8,7 @@ project(
     'warning_level=1',
     'errorlogs=true', # Please print logs for tests that fail
   ],
-  meson_version : '>= 1.1',
+  meson_version : '>= 1.8',
   license : 'LGPL-2.1-or-later',
 )
 
@@ -51,7 +51,9 @@ sources = files(
   'error_traces.cc',
   'eval.cc',
   'json.cc',
+  'lazy-fetcher-attr.cc',
   'main.cc',
+  'nix_api_eval.cc',
   'nix_api_expr.cc',
   'nix_api_external.cc',
   'nix_api_value.cc',
@@ -84,6 +86,38 @@ test(
   this_exe,
   env : {
     '_NIX_TEST_UNIT_DATA' : meson.current_source_dir() / 'data',
+    'HOME' : meson.current_build_dir() / 'test-home',
+    'NIX_STORE' : '',
   },
   protocol : 'gtest',
 )
+
+# Build benchmarks if enabled
+if get_option('benchmarks')
+  gbenchmark = dependency('benchmark', required : true)
+
+  benchmark_sources = files(
+    'bench-main.cc',
+    'dynamic-attrs-bench.cc',
+    'get-drvs-bench.cc',
+    'regex-cache-bench.cc',
+  )
+
+  benchmark_exe = executable(
+    'nix-expr-benchmarks',
+    benchmark_sources,
+    config_priv_h,
+    dependencies : deps_private_subproject + deps_private + deps_other + [
+      gbenchmark,
+    ],
+    include_directories : include_dirs,
+    link_args : linker_export_flags,
+    install : true,
+    cpp_pch : do_pch ? [ 'pch/precompiled-headers.hh' ] : [],
+  )
+
+  benchmark(
+    'nix-expr-benchmarks',
+    benchmark_exe,
+  )
+endif

@@ -1,3 +1,4 @@
+#include "nix/cmd/built-path.hh"
 #include "nix/store/globals.hh"
 #include "nix/cmd/installables.hh"
 #include "nix/cmd/installable-derived-path.hh"
@@ -13,17 +14,13 @@
 #include "nix/expr/eval-inline.hh"
 #include "nix/expr/eval.hh"
 #include "nix/expr/eval-settings.hh"
-#include "nix/expr/get-drvs.hh"
 #include "nix/store/store-api.hh"
+#include "nix/store/build.hh"
 #include "nix/main/shared.hh"
 #include "nix/flake/flake.hh"
 #include "nix/expr/eval-cache.hh"
-#include "nix/util/url.hh"
 #include "nix/fetchers/registry.hh"
 #include "nix/store/build-result.hh"
-
-#include <regex>
-#include <queue>
 
 #include <nlohmann/json.hpp>
 
@@ -116,7 +113,11 @@ MixFlakeOptions::MixFlakeOptions()
         .labels = {"input-path"},
         .handler = {[&](std::string s) {
             warn("'--update-input' is a deprecated alias for 'flake update' and will be removed in a future version.");
-            lockFlags.inputUpdates.insert(flake::parseInputAttrPath(s));
+            auto path = flake::NonEmptyInputAttrPath::parse(s);
+            if (!path)
+                throw UsageError(
+                    "--update-input was passed a zero-length input path, which would refer to the flake itself, not an input");
+            lockFlags.inputUpdates.insert(*path);
         }},
         .completer = {[&](AddCompletions & completions, size_t, std::string_view prefix) {
             completeFlakeInputAttrPath(completions, getEvalState(), getFlakeRefsForCompletion(), prefix);
@@ -125,14 +126,18 @@ MixFlakeOptions::MixFlakeOptions()
 
     addFlag({
         .longName = "override-input",
-        .description = "Override a specific flake input (e.g. `dwarffs/nixpkgs`). This implies `--no-write-lock-file`.",
+        .description =
+            "Override a specific flake input (e.g. `dwarffs/nixpkgs`). The input path must not be empty. This implies `--no-write-lock-file`.",
         .category = category,
         .labels = {"input-path", "flake-url"},
         .handler = {[&](std::string inputAttrPath, std::string flakeRef) {
             lockFlags.writeLockFile = false;
+            auto path = flake::NonEmptyInputAttrPath::parse(inputAttrPath);
+            if (!path)
+                throw UsageError(
+                    "--override-input was passed a zero-length input path, which would refer to the flake itself, not an input");
             lockFlags.inputOverrides.insert_or_assign(
-                flake::parseInputAttrPath(inputAttrPath),
-                parseFlakeRef(fetchSettings, flakeRef, absPath(getCommandBaseDir()).string(), true));
+                std::move(*path), parseFlakeRef(fetchSettings, flakeRef, absPath(getCommandBaseDir()).string(), true));
         }},
         .completer = {[&](AddCompletions & completions, size_t n, std::string_view prefix) {
             if (n == 0) {
@@ -149,7 +154,7 @@ MixFlakeOptions::MixFlakeOptions()
         .category = category,
         .labels = {"flake-lock-path"},
         .handler = {[&](std::string lockFilePath) {
-            lockFlags.referenceLockFilePath = {getFSSourceAccessor(), CanonPath(absPath(lockFilePath))};
+            lockFlags.referenceLockFilePath = {getFSSourceAccessor(), CanonPath(absPath(lockFilePath).string())};
         }},
         .completer = completePath,
     });
@@ -392,7 +397,7 @@ void completeFlakeRefWithFragment(
             }
         }
     } catch (Error & e) {
-        warn(e.msg());
+        logWarning(e.info());
     }
 }
 
@@ -532,28 +537,6 @@ ref<Installable> SourceExprCommand::parseInstallable(ref<Store> store, const std
     return installables.front();
 }
 
-static SingleBuiltPath getBuiltPath(ref<Store> evalStore, ref<Store> store, const SingleDerivedPath & b)
-{
-    return std::visit(
-        overloaded{
-            [&](const SingleDerivedPath::Opaque & bo) -> SingleBuiltPath { return SingleBuiltPath::Opaque{bo.path}; },
-            [&](const SingleDerivedPath::Built & bfd) -> SingleBuiltPath {
-                auto drvPath = getBuiltPath(evalStore, store, *bfd.drvPath);
-                // Resolving this instead of `bfd` will yield the same result, but avoid duplicative work.
-                SingleDerivedPath::Built truncatedBfd{
-                    .drvPath = makeConstantStorePathRef(drvPath.outPath()),
-                    .output = bfd.output,
-                };
-                auto outputPath = resolveDerivedPath(*store, truncatedBfd, &*evalStore);
-                return SingleBuiltPath::Built{
-                    .drvPath = make_ref<SingleBuiltPath>(std::move(drvPath)),
-                    .output = {bfd.output, outputPath},
-                };
-            },
-        },
-        b.raw());
-}
-
 std::vector<BuiltPathWithResult> Installable::build(
     ref<Store> evalStore, ref<Store> store, Realise mode, const Installables & installables, BuildMode bMode)
 {
@@ -575,16 +558,12 @@ static void throwBuildErrors(std::vector<KeyedBuildResult> & buildResults, const
     auto failedResult = failed.begin();
     if (failedResult != failed.end()) {
         if (failed.size() == 1) {
-            failedResult->second->rethrow();
+            throw *failedResult->second;
         } else {
             StringSet failedPaths;
             for (; failedResult != failed.end(); failedResult++) {
-                if (!failedResult->second->errorMsg.empty()) {
-                    logError(
-                        ErrorInfo{
-                            .level = lvlError,
-                            .msg = failedResult->second->errorMsg,
-                        });
+                if (!failedResult->second->message().empty()) {
+                    logError(failedResult->second->info());
                 }
                 failedPaths.insert(failedResult->first->path.to_string(store));
             }
@@ -653,36 +632,18 @@ std::vector<std::pair<ref<Installable>, BuiltPathWithResult>> Installable::build
         if (settings.printMissing)
             printMissing(store, pathsToBuild, lvlInfo);
 
-        auto buildResults = store->buildPathsWithResults(pathsToBuild, bMode, evalStore);
+        auto buildResults = store->getBuilder(evalStore)->buildPathsWithResults(pathsToBuild, bMode);
         throwBuildErrors(buildResults, *store);
         for (auto & buildResult : buildResults) {
-            // If we didn't throw, they must all be sucesses
-            auto & success = std::get<nix::BuildResult::Success>(buildResult.inner);
             for (auto & aux : backmap[buildResult.path]) {
-                std::visit(
-                    overloaded{
-                        [&](const DerivedPath::Built & bfd) {
-                            std::map<std::string, StorePath> outputs;
-                            for (auto & [outputName, realisation] : success.builtOutputs)
-                                outputs.emplace(outputName, realisation.outPath);
-                            res.push_back(
-                                {aux.installable,
-                                 {.path =
-                                      BuiltPath::Built{
-                                          .drvPath =
-                                              make_ref<SingleBuiltPath>(getBuiltPath(evalStore, store, *bfd.drvPath)),
-                                          .outputs = outputs,
-                                      },
-                                  .info = aux.info,
-                                  .result = buildResult}});
-                        },
-                        [&](const DerivedPath::Opaque & bo) {
-                            res.push_back(
-                                {aux.installable,
-                                 {.path = BuiltPath::Opaque{bo.path}, .info = aux.info, .result = buildResult}});
-                        },
+                res.push_back({
+                    aux.installable,
+                    BuiltPathWithResult{
+                        .path = toBuiltPath(buildResult, evalStore, store),
+                        .info = aux.info,
+                        .result = buildResult,
                     },
-                    buildResult.path.raw());
+                });
             }
         }
 

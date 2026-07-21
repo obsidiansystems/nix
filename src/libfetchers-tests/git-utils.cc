@@ -1,5 +1,7 @@
 #include "nix/fetchers/git-utils.hh"
 #include "nix/util/file-system.hh"
+#include "nix/util/tests/gmock-matchers.hh"
+
 #include <gmock/gmock.h>
 #include <git2/global.h>
 #include <git2/repository.h>
@@ -10,17 +12,16 @@
 #include <gtest/gtest.h>
 #include "nix/util/fs-sink.hh"
 #include "nix/util/serialise.hh"
-#include "nix/fetchers/git-lfs-fetch.hh"
 
 #include <git2/blob.h>
 #include <git2/tree.h>
 
-namespace nix {
+namespace nix::fetchers {
 
 class GitUtilsTest : public ::testing::Test
 {
     // We use a single repository for all tests.
-    std::unique_ptr<AutoDelete> delTmpDir;
+    AutoDelete delTmpDir;
 
 protected:
     std::filesystem::path tmpDir;
@@ -28,27 +29,19 @@ protected:
 public:
     void SetUp() override
     {
-        tmpDir = createTempDir();
-        delTmpDir = std::make_unique<AutoDelete>(tmpDir, true);
-
-        // Create the repo with libgit2
-        git_libgit2_init();
-        git_repository * repo = nullptr;
-        auto r = git_repository_init(&repo, tmpDir.string().c_str(), 0);
-        ASSERT_EQ(r, 0);
-        git_repository_free(repo);
+        tmpDir = createTempDir() / "test-git-repo";
+        GitRepo::openRepo(tmpDir, {.create = true});
+        delTmpDir = AutoDelete(tmpDir, true);
     }
 
     void TearDown() override
     {
-        // Destroy the AutoDelete, triggering removal
-        // not AutoDelete::reset(), which would cancel the deletion.
-        delTmpDir.reset();
+        delTmpDir.deletePath();
     }
 
     ref<GitRepo> openRepo()
     {
-        return GitRepo::openRepo(tmpDir, true, false);
+        return GitRepo::openRepo(tmpDir, {.create = false});
     }
 
     std::string getRepoName() const
@@ -115,13 +108,76 @@ TEST_F(GitUtilsTest, sink_hardlink)
 
     try {
         sink->createHardlink(CanonPath("foo-1.1/link"), CanonPath("hello"));
+        sink->flush();
         FAIL() << "Expected an exception";
     } catch (const nix::Error & e) {
-        ASSERT_THAT(e.msg(), testing::HasSubstr("cannot find hard link target"));
-        ASSERT_THAT(e.msg(), testing::HasSubstr("/hello"));
-        ASSERT_THAT(e.msg(), testing::HasSubstr("foo-1.1/link"));
+        ASSERT_THAT(e.msg(), ::testing::HasSubstr("does not exist"));
+        ASSERT_THAT(e.msg(), ::testing::HasSubstr("/hello"));
+        ASSERT_THAT(e.msg(), ::testing::HasSubstr("foo-1.1/link"));
     }
 };
+
+TEST_F(GitUtilsTest, sink_no_parent_dir)
+{
+    ASSERT_THAT(
+        [&]() {
+            auto repo = openRepo();
+            auto sink = repo->getFileSystemObjectSink();
+
+            sink->createDirectory(CanonPath::root);
+
+            sink->createRegularFile(CanonPath("foo"), [](CreateRegularFileSink & fileSink) {
+                writeString(fileSink, "test", /*executable=*/false);
+            });
+
+            sink->createRegularFile(CanonPath("foo/bar"), [](CreateRegularFileSink & fileSink) {
+                writeString(fileSink, "boom", /*executable=*/false);
+            });
+
+            sink->flush();
+        },
+        ::testing::ThrowsMessage<Error>(testing::HasSubstrIgnoreANSIMatcher("parent of 'foo/bar' is not a directory")));
+}
+
+TEST_F(GitUtilsTest, sink_no_parent_dir_symlink)
+{
+    ASSERT_THAT(
+        [&]() {
+            auto repo = openRepo();
+            auto sink = repo->getFileSystemObjectSink();
+
+            sink->createDirectory(CanonPath::root);
+
+            sink->createRegularFile(CanonPath("foo"), [](CreateRegularFileSink & fileSink) {
+                writeString(fileSink, "test", /*executable=*/false);
+            });
+
+            sink->createSymlink(CanonPath("foo/bar"), "target");
+
+            sink->flush();
+        },
+        ::testing::ThrowsMessage<Error>(testing::HasSubstrIgnoreANSIMatcher("parent of 'foo/bar' is not a directory")));
+}
+
+TEST_F(GitUtilsTest, sink_no_parent_dir_hardlink)
+{
+    ASSERT_THAT(
+        [&]() {
+            auto repo = openRepo();
+            auto sink = repo->getFileSystemObjectSink();
+
+            sink->createDirectory(CanonPath::root);
+
+            sink->createRegularFile(CanonPath("foo"), [](CreateRegularFileSink & fileSink) {
+                writeString(fileSink, "test", /*executable=*/false);
+            });
+
+            sink->createHardlink(CanonPath("foo/bar"), CanonPath("foo"));
+
+            sink->flush();
+        },
+        ::testing::ThrowsMessage<Error>(testing::HasSubstrIgnoreANSIMatcher("parent of 'foo/bar' is not a directory")));
+}
 
 TEST_F(GitUtilsTest, peel_reference)
 {
@@ -233,4 +289,4 @@ TEST(GitUtils, isLegalRefName)
     ASSERT_FALSE(isLegalRefName(""));
 }
 
-} // namespace nix
+} // namespace nix::fetchers

@@ -1,15 +1,10 @@
-configure_file(
-  input : 'config.nix.in',
-  output : 'config.nix',
-  configuration : test_confdata,
-)
-
 suites += {
   'name' : 'ca',
   'deps' : [],
   'tests' : [
     'build-cache.sh',
     'build-delete.sh',
+    'build-trace-delete.sh',
     'build-with-garbage-path.sh',
     'build.sh',
     'concurrent-builds.sh',

@@ -80,6 +80,12 @@ struct Hash
     static Hash parseAny(std::string_view s, std::optional<HashAlgorithm> optAlgo);
 
     /**
+     * Like `parseAny`, but also returns the format the hash was parsed from.
+     */
+    static std::pair<Hash, HashFormat>
+    parseAnyReturningFormat(std::string_view s, std::optional<HashAlgorithm> optAlgo);
+
+    /**
      * Parse a hash from a string representation like the above, except the
      * type prefix is mandatory is there is no separate argument.
      */
@@ -104,7 +110,8 @@ struct Hash
         HashFormat explicitFormat,
         const ExperimentalFeatureSettings & xpSettings = experimentalFeatureSettings);
 
-    static Hash parseSRI(std::string_view original);
+    static Hash
+    parseSRI(std::string_view original, const ExperimentalFeatureSettings & xpSettings = experimentalFeatureSettings);
 
 public:
     /**
@@ -158,7 +165,7 @@ Hash hashString(
  *
  * (Metadata, such as the executable permission bit, is ignored.)
  */
-Hash hashFile(HashAlgorithm ha, const Path & path);
+Hash hashFile(HashAlgorithm ha, const std::filesystem::path & path);
 
 /**
  * The final hash and the number of bytes digested.
@@ -209,6 +216,9 @@ std::string_view printHashAlgo(HashAlgorithm ha);
 
 struct AbstractHashSink : virtual Sink
 {
+private:
+    void anchor() override;
+public:
     virtual HashResult finish() = 0;
 };
 
@@ -218,6 +228,8 @@ private:
     HashAlgorithm ha;
     Hash::Ctx * ctx;
     uint64_t bytes;
+
+    void anchor() override;
 
 public:
     HashSink(HashAlgorithm ha);
@@ -253,4 +265,4 @@ inline std::size_t hash_value(const Hash & hash)
 
 } // namespace nix
 
-JSON_IMPL_WITH_XP_FEATURES(Hash)
+JSON_IMPL_WITH_XP_FEATURES(nix::Hash)

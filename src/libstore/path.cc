@@ -5,6 +5,10 @@
 
 namespace nix {
 
+void BadStorePathName::anchor() {}
+
+void BadStorePath::anchor() {}
+
 void checkName(std::string_view name)
 {
     if (name.empty())
@@ -81,14 +85,12 @@ StorePath StorePath::random(std::string_view name)
 
 namespace nlohmann {
 
-using namespace nix;
-
-StorePath adl_serializer<StorePath>::from_json(const json & json)
+nix::StorePath adl_serializer<nix::StorePath>::from_json(const json & json)
 {
-    return StorePath{getString(json)};
+    return nix::StorePath{nix::getString(json)};
 }
 
-void adl_serializer<StorePath>::to_json(json & json, const StorePath & storePath)
+void adl_serializer<nix::StorePath>::to_json(json & json, const nix::StorePath & storePath)
 {
     json = storePath.to_string();
 }

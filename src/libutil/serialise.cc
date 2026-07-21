@@ -1,23 +1,68 @@
 #include "nix/util/serialise.hh"
-#include "nix/util/compression.hh"
+#include "nix/util/file-descriptor.hh"
 #include "nix/util/signals.hh"
+#include "nix/util/socket.hh"
 #include "nix/util/util.hh"
 
 #include <cstring>
 #include <cerrno>
+#include <limits>
 #include <memory>
 
 #include <boost/coroutine2/coroutine.hpp>
+#include <boost/coroutine2/protected_fixedsize_stack.hpp>
 
 #ifdef _WIN32
 #  include <fileapi.h>
-#  include <winsock2.h>
-#  include "nix/util/windows-error.hh"
 #else
 #  include <poll.h>
 #endif
 
 namespace nix {
+
+void SerialisationError::anchor() {}
+
+void Sink::anchor() {}
+
+void BufferedSink::anchor() {}
+
+void FdSink::anchor() {}
+
+void StringSink::anchor() {}
+
+void TeeSink::anchor() {}
+
+void FinishSink::anchor() {}
+
+void LambdaSink::anchor() {}
+
+void NullSink::anchor() {}
+
+void FramedSink::anchor() {}
+
+void Source::anchor() {}
+
+void BufferedSource::anchor() {}
+
+void RestartableSource::anchor() {}
+
+void FdSource::anchor() {}
+
+void TeeSource::anchor() {}
+
+void StringSource::anchor() {}
+
+void LambdaSource::anchor() {}
+
+void FramedSource::anchor() {}
+
+void LengthSource::anchor() {}
+
+void EnsureRead::anchor() {}
+
+void ChainSource::anchor() {}
+
+void SizedSource::anchor() {}
 
 void BufferedSink::operator()(std::string_view data)
 {
@@ -27,14 +72,14 @@ void BufferedSink::operator()(std::string_view data)
     while (!data.empty()) {
         /* Optimisation: bypass the buffer if the data exceeds the
            buffer size. */
-        if (bufPos + data.size() >= bufSize) {
+        if (data.size() >= bufSize - bufPos) {
             flush();
             writeUnbuffered(data);
             break;
         }
         /* Otherwise, copy the bytes to the buffer.  Flush the buffer
            when it's full. */
-        size_t n = bufPos + data.size() > bufSize ? bufSize - bufPos : data.size();
+        size_t n = data.size() > bufSize - bufPos ? bufSize - bufPos : data.size();
         memcpy(buffer.get() + bufPos, data.data(), n);
         data.remove_prefix(n);
         bufPos += n;
@@ -104,6 +149,20 @@ void Source::drainInto(Sink & sink)
     }
 }
 
+void Source::drainInto(Sink & sink, uint64_t len)
+{
+    std::array<char, 65536> buf;
+    while (len) {
+        checkInterrupt();
+        // Until std::saturate_cast is available (C++26)
+        auto lenTrunc = static_cast<size_t>(std::min<uint64_t>(len, std::numeric_limits<size_t>::max()));
+        auto n = read(buf.data(), std::min(lenTrunc, buf.size()));
+        sink({buf.data(), n});
+        assert(n <= len);
+        len -= n;
+    }
+}
+
 std::string Source::drain()
 {
     StringSink s;
@@ -124,7 +183,7 @@ void Source::skip(size_t len)
 size_t BufferedSource::read(char * data, size_t len)
 {
     if (!buffer)
-        buffer = decltype(buffer)(new char[bufSize]);
+        buffer = std::make_unique_for_overwrite<char[]>(bufSize);
 
     if (!bufPosIn)
         bufPosIn = readUnbuffered(buffer.get(), bufSize);
@@ -138,6 +197,51 @@ size_t BufferedSource::read(char * data, size_t len)
     return n;
 }
 
+std::string BufferedSource::readLine(bool eofOk, char terminator)
+{
+    if (!buffer)
+        buffer = std::make_unique_for_overwrite<char[]>(bufSize);
+
+    std::string line;
+    while (true) {
+        if (bufPosOut < bufPosIn) {
+            auto * start = buffer.get() + bufPosOut;
+            auto * end = buffer.get() + bufPosIn;
+            if (auto * newline = static_cast<char *>(memchr(start, terminator, end - start))) {
+                line.append(start, newline - start);
+                bufPosOut = (newline - buffer.get()) + 1;
+                if (bufPosOut == bufPosIn)
+                    bufPosOut = bufPosIn = 0;
+                return line;
+            }
+
+            line.append(start, end - start);
+            bufPosOut = bufPosIn = 0;
+        }
+
+        auto handleEof = [&]() -> std::string {
+            bufPosOut = bufPosIn = 0;
+            if (eofOk)
+                return line;
+            throw EndOfFile("unexpected EOF reading a line");
+        };
+
+        size_t n = 0;
+        try {
+            n = readUnbuffered(buffer.get(), bufSize);
+        } catch (EndOfFile & e) {
+            return handleEof();
+        }
+
+        if (n == 0) {
+            return handleEof();
+        }
+
+        bufPosIn = n;
+        bufPosOut = 0;
+    }
+}
+
 bool BufferedSource::hasData()
 {
     return bufPosOut < bufPosIn;
@@ -145,28 +249,11 @@ bool BufferedSource::hasData()
 
 size_t FdSource::readUnbuffered(char * data, size_t len)
 {
-#ifdef _WIN32
-    DWORD n;
-    checkInterrupt();
-    if (!::ReadFile(fd, data, len, &n, NULL)) {
-        _good = false;
-        throw windows::WinError("ReadFile when FdSource::readUnbuffered");
-    }
-#else
-    ssize_t n;
-    do {
-        checkInterrupt();
-        n = ::read(fd, data, len);
-    } while (n == -1 && errno == EINTR);
-    if (n == -1) {
-        _good = false;
-        throw SysError("reading from file");
-    }
+    auto n = nix::read(fd, {reinterpret_cast<std::byte *>(data), len});
     if (n == 0) {
         _good = false;
         throw EndOfFile(std::string(*endOfFileError));
     }
-#endif
     read += n;
     return n;
 }
@@ -182,22 +269,39 @@ bool FdSource::hasData()
         return true;
 
     while (true) {
+#ifdef _WIN32
+        /* Windows' fd_set is a bounded handle array, so FD_SET can't
+           overflow; on Unix use poll() since fd may exceed FD_SETSIZE. */
         fd_set fds;
         FD_ZERO(&fds);
-        int fd_ = fromDescriptorReadOnly(fd);
-        FD_SET(fd_, &fds);
+        Socket sock = toSocket(fd);
+        FD_SET(sock, &fds);
 
         struct timeval timeout;
         timeout.tv_sec = 0;
         timeout.tv_usec = 0;
 
-        auto n = select(fd_ + 1, &fds, nullptr, nullptr, &timeout);
+        auto n = select(sock + 1, &fds, nullptr, nullptr, &timeout);
         if (n < 0) {
             if (errno == EINTR)
                 continue;
             throw SysError("polling file descriptor");
         }
-        return FD_ISSET(fd, &fds);
+        return FD_ISSET(sock, &fds);
+#else
+        struct pollfd pfd;
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+        pfd.revents = 0;
+
+        auto n = poll(&pfd, 1, 0);
+        if (n < 0) {
+            if (errno == EINTR)
+                continue;
+            throw SysError("polling file descriptor");
+        }
+        return n > 0 && (pfd.revents & (POLLIN | POLLHUP | POLLERR)) != 0;
+#endif
     }
 }
 
@@ -207,8 +311,7 @@ void FdSource::restart()
         throw Error("can't seek to the start of a file");
     buffer.reset();
     read = bufPosIn = bufPosOut = 0;
-    int fd_ = fromDescriptorReadOnly(fd);
-    if (lseek(fd_, 0, SEEK_SET) == -1)
+    if (lseek(fd, 0, SEEK_SET) == -1)
         throw SysError("seeking to the start of a file");
 }
 
@@ -228,6 +331,8 @@ void FdSource::skip(size_t len)
 #ifndef _WIN32
     /* If we can, seek forward in the file to skip the rest. */
     if (isSeekable && len) {
+        if (len > static_cast<size_t>(std::numeric_limits<off_t>::max()))
+            throw Error("cannot skip %d bytes: exceeds maximum file offset", len);
         if (lseek(fd, len, SEEK_CUR) == -1) {
             if (errno == ESPIPE)
                 isSeekable = false;
@@ -264,30 +369,24 @@ void StringSource::skip(size_t len)
     pos += len;
 }
 
-CompressedSource::CompressedSource(RestartableSource & source, const std::string & compressionMethod)
-    : compressedData([&]() {
-        StringSink sink;
-        auto compressionSink = makeCompressionSink(compressionMethod, sink);
-        source.drainInto(*compressionSink);
-        compressionSink->finish();
-        return std::move(sink.s);
-    }())
-    , compressionMethod(compressionMethod)
-    , stringSource(compressedData)
-{
-}
+/* 512KiB is a conservative estimate for deeply nested NARs, which are limited
+   to 64 levels. We also tend to allocate rather large buffers on the stack, so
+   we should leave plenty of headroom. Note that no evaluation is supposed to
+   happen on sourceToSink/sinkToSource coroutine stacks (for Boehm GC reasons),
+   which requires much more stack space. */
+static constexpr size_t defaultCoroutineStackSize = 512 * 1024;
 
-std::unique_ptr<FinishSink> sourceToSink(std::function<void(Source &)> fun)
+std::unique_ptr<FinishSink> sourceToSink(fun<void(Source &)> reader)
 {
     struct SourceToSink : FinishSink
     {
         typedef boost::coroutines2::coroutine<bool> coro_t;
 
-        std::function<void(Source &)> fun;
+        fun<void(Source &)> reader;
         std::optional<coro_t::push_type> coro;
 
-        SourceToSink(std::function<void(Source &)> fun)
-            : fun(fun)
+        SourceToSink(fun<void(Source &)> reader)
+            : reader(reader)
         {
         }
 
@@ -300,20 +399,22 @@ std::unique_ptr<FinishSink> sourceToSink(std::function<void(Source &)> fun)
             cur = in;
 
             if (!coro) {
-                coro = coro_t::push_type([&](coro_t::pull_type & yield) {
-                    LambdaSource source([&](char * out, size_t out_len) {
-                        if (cur.empty()) {
-                            yield();
-                            if (yield.get())
-                                throw EndOfFile("coroutine has finished");
-                        }
+                coro = coro_t::push_type(
+                    boost::coroutines2::protected_fixedsize_stack(defaultCoroutineStackSize),
+                    [&](coro_t::pull_type & yield) {
+                        LambdaSource source([&](char * out, size_t out_len) {
+                            if (cur.empty()) {
+                                yield();
+                                if (yield.get())
+                                    throw EndOfFile("coroutine has finished");
+                            }
 
-                        size_t n = cur.copy(out, out_len);
-                        cur.remove_prefix(n);
-                        return n;
+                            size_t n = cur.copy(out, out_len);
+                            cur.remove_prefix(n);
+                            return n;
+                        });
+                        reader(source);
                     });
-                    fun(source);
-                });
             }
 
             if (!*coro) {
@@ -332,21 +433,21 @@ std::unique_ptr<FinishSink> sourceToSink(std::function<void(Source &)> fun)
         }
     };
 
-    return std::make_unique<SourceToSink>(fun);
+    return std::make_unique<SourceToSink>(reader);
 }
 
-std::unique_ptr<Source> sinkToSource(std::function<void(Sink &)> fun, std::function<void()> eof)
+std::unique_ptr<Source> sinkToSource(fun<void(Sink &)> writer, fun<void()> eof)
 {
     struct SinkToSource : Source
     {
         typedef boost::coroutines2::coroutine<std::string_view> coro_t;
 
-        std::function<void(Sink &)> fun;
-        std::function<void()> eof;
+        fun<void(Sink &)> writer;
+        fun<void()> eof;
         std::optional<coro_t::pull_type> coro;
 
-        SinkToSource(std::function<void(Sink &)> fun, std::function<void()> eof)
-            : fun(fun)
+        SinkToSource(fun<void(Sink &)> writer, fun<void()> eof)
+            : writer(writer)
             , eof(eof)
         {
         }
@@ -357,18 +458,36 @@ std::unique_ptr<Source> sinkToSource(std::function<void(Sink &)> fun, std::funct
         {
             bool hasCoro = coro.has_value();
             if (!hasCoro) {
-                coro = coro_t::pull_type([&](coro_t::push_type & yield) {
-                    LambdaSink sink([&](std::string_view data) {
-                        if (!data.empty()) {
-                            yield(data);
-                        }
+                coro = coro_t::pull_type(
+                    boost::coroutines2::protected_fixedsize_stack(defaultCoroutineStackSize),
+                    [&](coro_t::push_type & yield) {
+                        /* Feed the consumer in chunks, instead of on each write
+                           to avoid excessive context switching. parseDump does
+                           lots of small writes to the sink, which we should
+                           accumulate. */
+                        struct CoroBufferedSink : BufferedSink
+                        {
+                            coro_t::push_type & yield;
+
+                            void writeUnbuffered(std::string_view data) override
+                            {
+                                yield(data);
+                            }
+
+                            CoroBufferedSink(coro_t::push_type & yield)
+                                : yield(yield)
+                            {
+                            }
+                        };
+
+                        CoroBufferedSink sink(yield);
+                        writer(sink);
+                        sink.flush();
                     });
-                    fun(sink);
-                });
             }
 
             if (cur.empty()) {
-                if (hasCoro) {
+                if (hasCoro && *coro) {
                     (*coro)();
                 }
                 if (*coro) {
@@ -383,11 +502,21 @@ std::unique_ptr<Source> sinkToSource(std::function<void(Sink &)> fun, std::funct
             size_t n = cur.copy(data, len);
             cur.remove_prefix(n);
 
+            /* This is necessary to ensure that the coroutine gets resumed
+               after the consumer has finished reading the Source. Otherwise the
+               coroutine is always abandoned (i.e. it is always destroyed when
+               suspended). */
+            if (cur.empty() && coro && *coro) {
+                (*coro)();
+                if (*coro)
+                    cur = coro->get();
+            }
+
             return n;
         }
     };
 
-    return std::make_unique<SinkToSource>(fun, eof);
+    return std::make_unique<SinkToSource>(writer, eof);
 }
 
 void writePadding(size_t len, Sink & sink)
@@ -448,12 +577,11 @@ Sink & operator<<(Sink & sink, const Error & ex)
 void readPadding(size_t len, Source & source)
 {
     if (len % 8) {
-        char zero[8];
+        uint64_t zero = 0;
         size_t n = 8 - (len % 8);
-        source(zero, n);
-        for (unsigned int i = 0; i < n; i++)
-            if (zero[i])
-                throw SerialisationError("non-zero padding");
+        source(reinterpret_cast<char *>(&zero), n);
+        if (zero)
+            throw SerialisationError("non-zero padding");
     }
 }
 
@@ -494,13 +622,14 @@ T readStrings(Source & source)
     return ss;
 }
 
-template Paths readStrings(Source & source);
-template PathSet readStrings(Source & source);
+template Strings readStrings(Source & source);
+template StringSet readStrings(Source & source);
 
 Error readError(Source & source)
 {
     auto type = readString(source);
-    assert(type == "Error");
+    if (type != "Error")
+        throw SerialisationError("unexpected error type '%s'", type);
     auto level = (Verbosity) readInt(source);
     [[maybe_unused]] auto name = readString(source); // removed
     auto msg = readString(source);
@@ -509,11 +638,13 @@ Error readError(Source & source)
         .msg = HintFmt(msg),
     };
     auto havePos = readNum<size_t>(source);
-    assert(havePos == 0);
+    if (havePos != 0)
+        throw SerialisationError("deserializing error positions is not supported");
     auto nrTraces = readNum<size_t>(source);
     for (size_t i = 0; i < nrTraces; ++i) {
         havePos = readNum<size_t>(source);
-        assert(havePos == 0);
+        if (havePos != 0)
+            throw SerialisationError("deserializing error positions is not supported");
         info.traces.push_back(Trace{.hint = HintFmt(readString(source))});
     }
     return Error(std::move(info));
