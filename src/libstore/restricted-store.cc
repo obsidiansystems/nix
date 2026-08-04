@@ -113,7 +113,9 @@ public:
 
     void narFromPath(const StorePath & path, Sink & sink) override;
 
-    void registerDrvOutput(const Realisation & info) override;
+    void registerDrvOutputUnchecked(const Realisation & info) override;
+
+    void submitOutput(const SingleDerivedPath & path, const OutputName & output) override;
 
     ref<const ValidPathInfo> addToStoreScanning(
         Source & dump,
@@ -277,11 +279,16 @@ void RestrictedBuilder::ensurePath(const StorePath & path)
     /* Nothing to be done; 'path' must already be valid. */
 }
 
-void RestrictedStore::registerDrvOutput(const Realisation & info)
+void RestrictedStore::registerDrvOutputUnchecked(const Realisation & info)
 // XXX: This should probably be allowed as a no-op if the realisation
 // corresponds to an allowed derivation
 {
     throw Error("registerDrvOutput");
+}
+
+void RestrictedStore::submitOutput(const SingleDerivedPath & path, const OutputName & output)
+{
+    goal.submitOutput(path, output);
 }
 
 ref<const ValidPathInfo> RestrictedStore::addToStoreScanning(

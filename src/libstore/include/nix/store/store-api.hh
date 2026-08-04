@@ -1,6 +1,7 @@
 #pragma once
 ///@file
 
+#include "nix/store/outputs-spec.hh"
 #include "nix/store/path.hh"
 #include "nix/store/derived-path.hh"
 #include "nix/util/hash.hh"
@@ -36,8 +37,15 @@ struct Realisation;
 struct RealisedPath;
 struct DrvOutput;
 
-struct BasicDerivation;
+namespace derivation {
+template<typename Inputs, typename Out>
 struct Derivation;
+struct FullInputs;
+struct Output;
+} // namespace derivation
+
+using BasicDerivation = derivation::Derivation<StorePathSet, derivation::Output>;
+using Derivation = derivation::Derivation<derivation::FullInputs, derivation::Output>;
 
 struct SourceAccessor;
 struct NarInfoDiskCache;
@@ -440,9 +448,9 @@ protected:
 
     void invalidatePathInfoCacheFor(const StorePath & path);
 
-    // Note: this is a `ref` to avoid false sharing with immutable
+    // Note: this is a `shared_ptr` to avoid false sharing with immutable
     // bits of `Store`.
-    ref<SharedSync<LRUCache<StorePath, PathInfoCacheValue>>> pathInfoCache;
+    std::shared_ptr<SharedSync<LRUCache<StorePath, PathInfoCacheValue>>> pathInfoCache;
 
     std::shared_ptr<NarInfoDiskCache> diskCache;
 
@@ -743,12 +751,17 @@ public:
      * as this information is already present in the drv file, but necessary for
      * floating-ca derivations and their dependencies as there's no way to
      * retrieve this information otherwise.
+     *
+     * The method that does not perform signature checks is internal only, users should
+     * explicitly set the `checkSigs` argument to `NoCheckSigs`.
      */
-    virtual void registerDrvOutput(const Realisation & output) = 0;
+protected:
+    virtual void registerDrvOutputUnchecked(const Realisation & output) = 0;
 
+public:
     virtual void registerDrvOutput(const Realisation & output, CheckSigsFlag checkSigs)
     {
-        return registerDrvOutput(output);
+        return registerDrvOutputUnchecked(output);
     }
 
     /**
@@ -942,25 +955,6 @@ public:
      */
     virtual StorePaths topoSortPaths(const StorePathSet & paths);
 
-    struct Stats
-    {
-        std::atomic<uint64_t> narInfoRead{0};
-        std::atomic<uint64_t> narInfoReadAverted{0};
-        std::atomic<uint64_t> narInfoMissing{0};
-        std::atomic<uint64_t> narInfoWrite{0};
-        std::atomic<uint64_t> pathInfoCacheSize{0};
-        std::atomic<uint64_t> narRead{0};
-        std::atomic<uint64_t> narReadBytes{0};
-        std::atomic<uint64_t> narReadCompressedBytes{0};
-        std::atomic<uint64_t> narWrite{0};
-        std::atomic<uint64_t> narWriteAverted{0};
-        std::atomic<uint64_t> narWriteBytes{0};
-        std::atomic<uint64_t> narWriteCompressedBytes{0};
-        std::atomic<uint64_t> narWriteCompressionTimeMs{0};
-    };
-
-    const Stats & getStats();
-
     /**
      * Computes the full closure of of a set of store-paths for e.g.
      * derivations that need this information for `exportReferencesGraph`.
@@ -980,7 +974,8 @@ public:
      */
     void clearPathInfoCache()
     {
-        pathInfoCache->lock()->clear();
+        if (pathInfoCache)
+            pathInfoCache->lock()->clear();
     }
 
     /**
@@ -1019,8 +1014,6 @@ public:
     }
 
 protected:
-
-    Stats stats;
 
     /**
      * Helper for methods that are not unsupported: this is used for
@@ -1107,7 +1100,7 @@ OutputPathMap resolveDerivedPath(Store &, const DerivedPath::Built &, Store * ev
 std::optional<ValidPathInfo>
 decodeValidPathInfo(const Store & store, std::istream & str, std::optional<HashResult> hashGiven = std::nullopt);
 
-const ContentAddress * getDerivationCA(const BasicDerivation & drv);
+const ContentAddress * getDerivationCA(const Derivation & drv);
 
 template<>
 struct json_avoids_null<TrustedFlag> : std::true_type

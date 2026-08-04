@@ -45,7 +45,7 @@ public:
         : DerivationBuilderParams{std::move(params)}
         , store{store}
         , miscMethods{miscMethods}
-        , derivationType{drv.type()}
+        , derivationType{derivation::type(drv)}
     {
     }
 
@@ -101,7 +101,7 @@ protected:
      *
      * Just a cached value, computed from `drv`.
      */
-    const DerivationType derivationType;
+    const derivation::Type derivationType;
 
     typedef StringMap Environment;
     Environment env;
@@ -129,7 +129,16 @@ protected:
      */
     OutputPathMap scratchOutputs;
 
-    const static std::filesystem::path homeDir;
+    /**
+     * Whether or not derivation is using outputs submitted via recursive-nix
+     */
+    bool usingSubmitted;
+    /**
+     * Output paths from the `SubmitOutput` store command
+     */
+    Sync<OutputPathMap> submittedOutputs;
+
+    static const std::filesystem::path homeDir;
 
     /**
      * The recursive Nix daemon socket.
@@ -174,6 +183,33 @@ protected:
     }
 
     bool isAllowed(const DerivedPath & req);
+
+    bool shouldModifySandbox() override
+    {
+        return !usingSubmitted;
+    }
+
+    void submitOutput(const SingleDerivedPath & path, const OutputName & output) override
+    {
+        auto submittedOutputs(this->submittedOutputs.lock());
+
+        auto * opaque = std::get_if<SingleDerivedPath::Opaque>(&path.raw());
+        if (!opaque)
+            throw Error(
+                "Attempted to submit Built path '%s' for output '%s'.\n"
+                " Only Opaque paths are supported, see https://github.com/NixOS/nix/issues/12727",
+                path.to_string(store),
+                output);
+
+        if (submittedOutputs->contains(output))
+            throw Error(
+                "Attempted to submit duplicate output '%s' (old '%s', new '%s')",
+                output,
+                store.printStorePath(*get(*submittedOutputs, output)),
+                store.printStorePath(opaque->path));
+
+        submittedOutputs->insert_or_assign(output, opaque->path);
+    };
 
     friend struct RestrictedStore;
 
@@ -366,6 +402,11 @@ private:
      */
     SingleDrvOutputs registerOutputs();
 
+    /**
+     * Check that the derivation outputs submitted by recursive-nix exist
+     * and attach them to the derivation
+     */
+    SingleDrvOutputs checkSubmittedOutputs();
 protected:
 
     /**

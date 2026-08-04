@@ -97,7 +97,6 @@ struct ProcessOptions
     std::string errorPrefix = "";
     bool dieWithParent = true;
     bool runExitHandlers = false;
-    bool allowVfork = false;
     /**
      * use clone() with the specified flags (Linux only)
      */
@@ -124,6 +123,7 @@ struct RunOptions
     bool lookupPath = true;
     OsStrings args;
 #ifndef _WIN32
+    std::optional<std::string> argv0;
     std::optional<uid_t> uid;
     std::optional<uid_t> gid;
 #endif

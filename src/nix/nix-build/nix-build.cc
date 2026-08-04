@@ -511,7 +511,7 @@ static void main_nix_build(int argc, char ** argv)
         };
 
         // Build or fetch all dependencies of the derivation.
-        for (const auto & [inputDrv0, inputNode] : drv.inputDrvs.map) {
+        for (const auto & [inputDrv0, inputNode] : drv.inputs.drvs.map) {
             // To get around lambda capturing restrictions in the
             // standard.
             const auto & inputDrv = inputDrv0;
@@ -522,7 +522,7 @@ static void main_nix_build(int argc, char ** argv)
                 pathsToCopy.insert(inputDrv);
             }
         }
-        for (const auto & src : drv.inputSrcs) {
+        for (const auto & src : drv.inputs.srcs) {
             pathsToBuild.emplace_back(DerivedPath::Opaque{src});
             pathsToCopy.insert(src);
         }
@@ -541,11 +541,11 @@ static void main_nix_build(int argc, char ** argv)
             shell = store->printStorePath(*outPath) + "/bin/bash";
         }
 
-        if (drv.shouldResolve()) {
-            auto resolvedDrv = drv.tryResolve(*store);
+        if (shouldResolve(drv)) {
+            auto resolvedDrv = tryResolve(drv, *store);
             if (!resolvedDrv)
                 throw Error("failed to resolve derivation '%s'", store->printStorePath(packageInfo.requireDrvPath()));
-            drv = *resolvedDrv;
+            drv = unresolve(*resolvedDrv);
         }
 
         // Set the environment.
@@ -611,7 +611,7 @@ static void main_nix_build(int argc, char ** argv)
                     }
                 };
 
-            for (const auto & [inputDrv, inputNode] : drv.inputDrvs.map)
+            for (const auto & [inputDrv, inputNode] : drv.inputs.drvs.map)
                 accumInputClosure(inputDrv, inputNode);
 
             auto json = drv.structuredAttrs->prepareStructuredAttrs(*store, drvOptions, inputs, drv.outputs);
@@ -678,6 +678,8 @@ static void main_nix_build(int argc, char ** argv)
 
         Strings envStrs;
         for (auto & i : env)
+            /* TODO: Check that `i.first` doesn't contain an `=` sign. Or maybe factor out the environment
+               strings preparation code. */
             envStrs.push_back(i.first + "=" + i.second);
 
         auto args = interactive ? Strings{"bash", "--rcfile", rcfile} : Strings{"bash", rcfile};
@@ -692,7 +694,7 @@ static void main_nix_build(int argc, char ** argv)
 
         logger->stop();
 
-        execvp(shell->c_str(), argPtrs.data());
+        execvp(requireCString(shell.value()), argPtrs.data());
 
         throw SysError("executing shell '%s'", *shell);
     }

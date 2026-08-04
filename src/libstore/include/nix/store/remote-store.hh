@@ -112,7 +112,9 @@ public:
     void
     addMultipleToStore(PathsSource && pathsToCopy, Activity & act, RepairFlag repair, CheckSigsFlag checkSigs) override;
 
-    void registerDrvOutput(const Realisation & info) override;
+    void registerDrvOutputUnchecked(const Realisation & info) override;
+
+    void submitOutput(const SingleDerivedPath & path, const OutputName & output) override;
 
     ref<const ValidPathInfo> addToStoreScanning(
         Source & dump,

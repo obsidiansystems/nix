@@ -6,6 +6,7 @@
 #include "nix/store/derived-path.hh"
 #include "nix/store/realisation.hh"
 #include "nix/store/derivations.hh"
+#include "nix/store/derivation/aterm.hh"
 #include "nix/store/store-api.hh"
 #include "nix/store/build.hh"
 #include "nix/store/store-open.hh"
@@ -24,6 +25,8 @@
 #include "store-config-private.hh"
 
 #include <filesystem>
+#include <array>
+
 #include <nlohmann/json.hpp>
 
 #ifdef _WIN32
@@ -396,8 +399,13 @@ StringSet Store::Config::getDefaultSystemFeatures()
     if (experimentalFeatureSettings.isEnabled(Xp::CaDerivations))
         res.insert("ca-derivations");
 
-    if (experimentalFeatureSettings.isEnabled(Xp::RecursiveNix))
+    if (experimentalFeatureSettings.isEnabled(Xp::RecursiveNix)) {
         res.insert("recursive-nix");
+    }
+
+    if (experimentalFeatureSettings.isEnabled(Xp::DynamicDerivations)) {
+        res.insert(std::string{drvFeatureBuilderRpcV0});
+    }
 
     return res;
 }
@@ -405,7 +413,10 @@ StringSet Store::Config::getDefaultSystemFeatures()
 Store::Store(const Store::Config & config)
     : StoreDirConfig{config}
     , config{config}
-    , pathInfoCache(make_ref<decltype(pathInfoCache)::element_type>((size_t) config.pathInfoCacheSize))
+    , pathInfoCache(
+          config.pathInfoCacheSize
+              ? std::make_shared<decltype(pathInfoCache)::element_type>((size_t) config.pathInfoCacheSize)
+              : nullptr)
 {
     assertLibStoreInitialized();
 }
@@ -430,14 +441,15 @@ bool Store::PathInfoCacheValue::isKnownNow(const NarInfoDiskCacheSettings & sett
 
 void Store::invalidatePathInfoCacheFor(const StorePath & path)
 {
-    pathInfoCache->lock()->erase(path);
+    if (pathInfoCache)
+        pathInfoCache->lock()->erase(path);
 }
 
 std::map<std::string, std::optional<StorePath>> Store::queryStaticPartialDerivationOutputMap(const StorePath & path)
 {
     std::map<std::string, std::optional<StorePath>> outputs;
     auto drv = readInvalidDerivation(path);
-    for (auto & [outputName, output] : drv.outputsAndOptPaths(*this)) {
+    for (auto & [outputName, output] : outputsAndOptPaths(drv, *this)) {
         outputs.emplace(outputName, output.second);
     }
     return outputs;
@@ -447,7 +459,7 @@ std::optional<StorePath>
 Store::queryStaticPartialDerivationOutput(const StorePath & path, const std::string & outputName)
 {
     auto drv = readInvalidDerivation(path);
-    auto outputs = drv.outputsAndOptPaths(*this);
+    auto outputs = outputsAndOptPaths(drv, *this);
     auto it = outputs.find(outputName);
     if (it == outputs.end())
         throw Error("derivation '%s' does not have an output named '%s'", printStorePath(path), outputName);
@@ -528,17 +540,16 @@ StorePathSet Store::querySubstitutablePaths(const StorePathSet & paths)
 
 bool Store::isValidPath(const StorePath & storePath)
 {
-    auto res = pathInfoCache->lock()->get(storePath);
-    if (res && res->isKnownNow(settings.getNarInfoDiskCacheSettings())) {
-        stats.narInfoReadAverted++;
-        return res->didExist();
+    if (pathInfoCache) {
+        auto res = pathInfoCache->lock()->get(storePath);
+        if (res && res->isKnownNow(settings.getNarInfoDiskCacheSettings()))
+            return res->didExist();
     }
 
     if (diskCache) {
         auto res = diskCache->lookupNarInfo(
             config.getReference().render(/*FIXME withParams=*/false), std::string(storePath.hashPart()));
         if (res.first != NarInfoDiskCache::oUnknown) {
-            stats.narInfoReadAverted++;
             pathInfoCache->lock()->upsert(
                 storePath,
                 res.first == NarInfoDiskCache::oInvalid ? PathInfoCacheValue{}
@@ -594,23 +605,25 @@ std::optional<std::shared_ptr<const ValidPathInfo>> Store::queryPathInfoFromClie
 {
     auto hashPart = std::string(storePath.hashPart());
 
-    auto res = pathInfoCache->lock()->get(storePath);
-    if (res && res->isKnownNow(settings.getNarInfoDiskCacheSettings())) {
-        stats.narInfoReadAverted++;
-        if (res->didExist())
-            return std::make_optional(res->value);
-        else
-            return std::make_optional(nullptr);
+    if (pathInfoCache) {
+        auto res = pathInfoCache->lock()->get(storePath);
+        if (res && res->isKnownNow(settings.getNarInfoDiskCacheSettings())) {
+            if (res->didExist())
+                return std::make_optional(res->value);
+            else
+                return std::make_optional(nullptr);
+        }
     }
 
     if (diskCache) {
         auto res = diskCache->lookupNarInfo(config.getReference().render(/*FIXME withParams=*/false), hashPart);
         if (res.first != NarInfoDiskCache::oUnknown) {
-            stats.narInfoReadAverted++;
-            pathInfoCache->lock()->upsert(
-                storePath,
-                res.first == NarInfoDiskCache::oInvalid ? PathInfoCacheValue{}
-                                                        : PathInfoCacheValue{.value = res.second});
+            if (pathInfoCache)
+                pathInfoCache->lock()->upsert(
+                    storePath,
+                    res.first == NarInfoDiskCache::oInvalid ? PathInfoCacheValue{}
+                                                            : PathInfoCacheValue{.value = res.second});
+
             if (res.first == NarInfoDiskCache::oInvalid || !goodStorePath(storePath, res.second->path))
                 return std::make_optional(nullptr);
             assert(res.second);
@@ -648,12 +661,11 @@ void Store::queryPathInfo(const StorePath & storePath, Callback<ref<const ValidP
                 if (diskCache)
                     diskCache->upsertNarInfo(config.getReference().render(/*FIXME withParams=*/false), hashPart, info);
 
-                pathInfoCache->lock()->upsert(storePath, PathInfoCacheValue{.value = info});
+                if (pathInfoCache)
+                    pathInfoCache->lock()->upsert(storePath, PathInfoCacheValue{.value = info});
 
-                if (!info || !goodStorePath(storePath, info->path)) {
-                    stats.narInfoMissing++;
+                if (!info || !goodStorePath(storePath, info->path))
                     throw InvalidPath("path '%s' is not valid", printStorePath(storePath));
-                }
 
                 (*callbackPtr)(ref<const ValidPathInfo>(info));
             } catch (...) {
@@ -861,7 +873,7 @@ StorePathSet Store::exportReferences(const StorePathSet & storePaths, const Stor
     for (auto & j : paths2) {
         if (j.isDerivation()) {
             Derivation drv = derivationFromPath(j);
-            for (auto & k : drv.outputsAndOptPaths(*this)) {
+            for (auto & k : outputsAndOptPaths(drv, *this)) {
                 if (!k.second.second)
                     /* FIXME: I am confused why we are calling
                        `computeFSClosure` on the output path, rather than
@@ -874,12 +886,6 @@ StorePathSet Store::exportReferences(const StorePathSet & storePaths, const Stor
     }
 
     return paths;
-}
-
-const Store::Stats & Store::getStats()
-{
-    stats.pathInfoCacheSize = pathInfoCache->readLock()->size();
-    return stats;
 }
 
 static std::string
@@ -927,7 +933,7 @@ void copyStorePath(
         lvlInfo,
         actCopyPath,
         makeCopyPathMessage(srcCfg, dstCfg, storePathS),
-        {storePathS, srcCfg.getHumanReadableURI(), dstCfg.getHumanReadableURI()});
+        std::to_array<Logger::Field>({storePathS, srcCfg.getHumanReadableURI(), dstCfg.getHumanReadableURI()}));
     PushActivity pact(act.id);
 
     auto info = srcStore.queryPathInfo(storePath);
@@ -1084,7 +1090,7 @@ std::map<StorePath, StorePath> copyPaths(
                 lvlInfo,
                 actCopyPath,
                 makeCopyPathMessage(srcCfg, dstCfg, storePathS),
-                {storePathS, srcCfg.getHumanReadableURI(), dstCfg.getHumanReadableURI()});
+                std::to_array<Logger::Field>({storePathS, srcCfg.getHumanReadableURI(), dstCfg.getHumanReadableURI()}));
             PushActivity pact(act.id);
 
             LambdaSink progressSink([&](std::string_view data) {
@@ -1201,7 +1207,7 @@ static Derivation readDerivationCommon(Store & store, const StorePath & drvPath,
         if (contents.empty())
             throw FormatError("file is empty (possible filesystem corruption)");
 
-        return parseDerivation(store, std::move(contents), Derivation::nameFromPath(drvPath));
+        return derivation::parse(store, std::move(contents), Derivation::nameFromPath(drvPath));
     } catch (FormatError & e) {
         throw Error("error parsing derivation '%s': %s", store.printStorePath(drvPath), e.message());
     }
@@ -1225,12 +1231,12 @@ std::optional<StorePath> Store::getBuildDerivationPath(const StorePath & path)
         return path;
 
     auto drv = readDerivation(path);
-    if (!drv.type().hasKnownOutputPaths()) {
+    if (!type(drv).hasKnownOutputPaths()) {
         // The build log is actually attached to the corresponding
         // resolved derivation, so we need to get it first
-        auto resolvedDrv = drv.tryResolve(*this);
+        auto resolvedDrv = tryResolve(drv, *this);
         if (resolvedDrv)
-            return nix::computeStorePath(*this, Derivation{*resolvedDrv});
+            return nix::computeStorePath(*this, unresolve(*resolvedDrv));
     }
 
     return path;
