@@ -262,6 +262,7 @@ struct FileTransferRequest
     std::optional<uint32_t> retryDelayRateLimitedMs;
     std::optional<uint32_t> retryMaxDelayMs;
     std::optional<uint32_t> retryAttempts;
+    bool retryTimeouts = true;
 
     /**
      * Optional path to the client certificate in "PEM" format. Only used for TLS-based protocols.

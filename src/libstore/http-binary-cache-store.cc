@@ -328,8 +328,13 @@ void HttpBinaryCacheStore::getFile(const std::string & path, Callback<std::optio
 
 std::optional<std::string> HttpBinaryCacheStore::getNixCacheInfo()
 {
+    auto request = makeRequest(cacheInfoFile);
+    /* A full connection timeout is long enough that retrying it only
+       delays dropping an unreachable cache. */
+    if (!request.retryAttempts)
+        request.retryTimeouts = false;
     try {
-        auto result = fileTransfer->download(makeRequest(cacheInfoFile));
+        auto result = fileTransfer->download(std::move(request));
         return result.data;
     } catch (FileTransferError & e) {
         if (e.error == FileTransfer::NotFound)
