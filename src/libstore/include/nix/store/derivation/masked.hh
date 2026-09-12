@@ -231,3 +231,5 @@ extern template Hash hashDerivation(const StoreDirConfig & store, const Drv<Outp
 } // namespace derivation::masked
 
 } // namespace nix
+
+JSON_IMPL_WITH_XP_FEATURES(nix::derivation::masked::HashInputs)
