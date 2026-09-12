@@ -250,7 +250,7 @@ INSTANTIATE_TEST_SUITE_P(MaskedHashJSON, MaskedHashJsonTest, ::testing::ValuesIn
 struct MaskedHashATermTest : MaskedHashTest, ::testing::WithParamInterface<std::string_view>
 {};
 
-TEST_P(MaskedHashATermTest, parse)
+TEST_P(MaskedHashATermTest, from_aterm)
 {
     Written written;
     auto expected = named(written, GetParam());
@@ -260,7 +260,7 @@ TEST_P(MaskedHashATermTest, parse)
     });
 }
 
-TEST_P(MaskedHashATermTest, unparse)
+TEST_P(MaskedHashATermTest, to_aterm)
 {
     Written written;
     writeTest(std::string{GetParam()} + ".drv", [&] { return unparse(named(written, GetParam()), store); });
@@ -281,19 +281,67 @@ INSTANTIATE_TEST_SUITE_P(MaskedHashATerm, MaskedHashATermTest, ::testing::Values
 struct MaskedHashFullyMaskedTest : MaskedHashTest, ::testing::WithParamInterface<std::string_view>
 {};
 
-TEST_P(MaskedHashFullyMaskedTest, unparse)
+TEST_P(MaskedHashFullyMaskedTest, to_aterm)
 {
     Written written;
-    writeTest(std::string{GetParam()} + "-fully-masked.drv", [&] {
-        auto m = bothMasked(written, named(written, GetParam()));
-        EXPECT_TRUE(m);
-        return m ? unparse(*m, store) : "";
+    auto m = bothMasked(written, named(written, GetParam()));
+    ASSERT_TRUE(m);
+    writeTest(std::string{GetParam()} + "-fully-masked.drv", [&] { return unparse(*m, store); });
+}
+
+/**
+ * The encoding is unambiguous: reading a masked derivation back yields
+ * what was printed.
+ *
+ * This is the property that matters most about this format. If two
+ * distinct masked derivations could ever print the same bytes, they
+ * would hash the same, and two derivations that mean different things
+ * would share an output path.
+ */
+TEST_P(MaskedHashFullyMaskedTest, from_aterm)
+{
+    Written written;
+    auto expected = bothMasked(written, named(written, GetParam()));
+    ASSERT_TRUE(expected);
+    readTest(std::string{GetParam()} + "-fully-masked.drv", [&](auto encoded) {
+        EXPECT_EQ((parse<masked::HashInputs, Output::Deferred>(store, std::move(encoded), expected->name)), *expected);
     });
 }
 
 INSTANTIATE_TEST_SUITE_P(
     MaskedHashFullyMasked,
     MaskedHashFullyMaskedTest,
+    ::testing::Values("intermediate-first", "intermediate-second", "parent-split", "parent-joined"));
+
+/**
+ * The same value in JSON. Unlike the ATerm encoding, this one is not
+ * what anything is hashed from; it exists so that the masked form can
+ * be inspected in the format the rest of the derivation tooling speaks.
+ */
+struct MaskedHashFullyMaskedJsonTest : MaskedHashTest,
+                                       JsonCharacterizationTest<Drv<Output::Deferred>>,
+                                       ::testing::WithParamInterface<std::string_view>
+{};
+
+TEST_P(MaskedHashFullyMaskedJsonTest, from_json)
+{
+    Written written;
+    auto expected = bothMasked(written, named(written, GetParam()));
+    ASSERT_TRUE(expected);
+    readJsonTest(std::string{GetParam()} + "-fully-masked", *expected);
+}
+
+TEST_P(MaskedHashFullyMaskedJsonTest, to_json)
+{
+    Written written;
+    auto m = bothMasked(written, named(written, GetParam()));
+    ASSERT_TRUE(m);
+    writeJsonTest(std::string{GetParam()} + "-fully-masked", *m);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    MaskedHashFullyMaskedJSON,
+    MaskedHashFullyMaskedJsonTest,
     ::testing::Values("intermediate-first", "intermediate-second", "parent-split", "parent-joined"));
 
 /**
