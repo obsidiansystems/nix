@@ -40,6 +40,21 @@ TEST_F(DerivationTest, BadATerm_inputDrvNotDerivation)
         FormatError);
 }
 
+/**
+ * The JSON reader enforces the same requirement as the ATerm one: this
+ * is `simple-derivation.json` with the `.drv` dropped from its one
+ * input derivation.
+ */
+TEST_F(DerivationTest, BadJSON_inputDrvNotDerivation)
+{
+    auto j = json::parse(readFile(goldenMaster("simple-derivation.json")));
+    auto & drvs = j["inputs"]["drvs"];
+    auto node = drvs["c015dhfh5l0lp6wxyvdn7bmwhbbr6hr9-dep2.drv"];
+    drvs.erase("c015dhfh5l0lp6wxyvdn7bmwhbbr6hr9-dep2.drv");
+    drvs["c015dhfh5l0lp6wxyvdn7bmwhbbr6hr9-dep2"] = std::move(node);
+    ASSERT_THROW(nlohmann::adl_serializer<Derivation>::from_json(j, mockXpSettings), FormatError);
+}
+
 TEST_F(DerivationTest, UnterminatedString)
 {
     ASSERT_THROW(
