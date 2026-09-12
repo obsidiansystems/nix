@@ -142,8 +142,7 @@ StorePath Store::writeDerivation(const Derivation & drv, RepairFlag repair)
     return path;
 }
 
-// FIXME: remove
-bool isDerivation(std::string_view fileName)
+bool isDerivationFileName(std::string_view fileName)
 {
     return hasSuffix(fileName, drvExtension);
 }
